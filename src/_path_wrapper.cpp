@@ -176,6 +176,11 @@ static PyObject *Py_get_path_extents(PyObject *self, PyObject *args, PyObject *k
 const char *Py_update_path_extents__doc__ =
     "update_path_extents(path, trans, rect, minpos, ignore)";
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces minpos.converter:
+static int (*minpos_converter)(PyObject *obj, void *arrp) = numpy::numpy_converter<double, 1>;
+#endif
+
 static PyObject *Py_update_path_extents(PyObject *self, PyObject *args, PyObject *kwds)
 {
     py::PathIterator path;
@@ -193,7 +198,11 @@ static PyObject *Py_update_path_extents(PyObject *self, PyObject *args, PyObject
                           &trans,
                           &convert_rect,
                           &rect,
+#if !TARGET_OS_IPHONE
                           &minpos.converter,
+#else
+						  minpos_converter,
+#endif
                           &minpos,
                           &ignore)) {
         return NULL;

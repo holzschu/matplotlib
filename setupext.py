@@ -531,7 +531,19 @@ class FreeType(SetupPackage):
     def add_flags(self, ext):
         ext.sources.insert(0, 'src/checkdep_freetype2.c')
         if options.get('system_freetype'):
-            pkg_config_setup_extension(
+            # iOS: we need to use freetype as a framework, not as a library.
+            platform = os.getenv('PLATFORM') or 'macosx'
+            if platform.startswith('iphone'):
+                pkg_config_setup_extension(
+                # FreeType 2.3 has libtool version 9.11.3 as can be checked
+                # from the tarball.  For FreeType>=2.4, there is a conversion
+                # table in docs/VERSIONS.txt in the FreeType source tree.
+                ext, 'freetype2',
+                atleast_version='9.11.3',
+                alt_exec=['freetype-config'],
+                default_libraries=[])
+            else: 
+                pkg_config_setup_extension(
                 # FreeType 2.3 has libtool version 9.11.3 as can be checked
                 # from the tarball.  For FreeType>=2.4, there is a conversion
                 # table in docs/VERSIONS.txt in the FreeType source tree.

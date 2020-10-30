@@ -227,6 +227,11 @@ static PyObject *PyRendererAgg_draw_path(PyRendererAgg *self, PyObject *args, Py
     Py_RETURN_NONE;
 }
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces image.converter_contiguous:
+static int (*image2_converter_contiguous)(PyObject *obj, void *arrp) = numpy::numpy_converter_contiguous<agg::int8u, 2>;
+#endif
+
 static PyObject *PyRendererAgg_draw_text_image(PyRendererAgg *self, PyObject *args, PyObject *kwds)
 {
     numpy::array_view<agg::int8u, 2> image;
@@ -237,7 +242,11 @@ static PyObject *PyRendererAgg_draw_text_image(PyRendererAgg *self, PyObject *ar
 
     if (!PyArg_ParseTuple(args,
                           "O&dddO&:draw_text_image",
+#if !TARGET_OS_IPHONE
                           &image.converter_contiguous,
+#else
+						  image2_converter_contiguous,
+#endif
                           &image,
                           &x,
                           &y,
@@ -288,6 +297,11 @@ PyObject *PyRendererAgg_draw_markers(PyRendererAgg *self, PyObject *args, PyObje
     Py_RETURN_NONE;
 }
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces image.converter_contiguous:
+static int (*image3_converter_contiguous)(PyObject *obj, void *arrp) = numpy::numpy_converter_contiguous<agg::int8u, 3>;
+#endif
+
 static PyObject *PyRendererAgg_draw_image(PyRendererAgg *self, PyObject *args, PyObject *kwds)
 {
     GCAgg gc;
@@ -301,7 +315,11 @@ static PyObject *PyRendererAgg_draw_image(PyRendererAgg *self, PyObject *args, P
                           &gc,
                           &x,
                           &y,
+#if !TARGET_OS_IPHONE
                           &image.converter_contiguous,
+#else
+						  image3_converter_contiguous,
+#endif
                           &image)) {
         return NULL;
     }
@@ -314,6 +332,12 @@ static PyObject *PyRendererAgg_draw_image(PyRendererAgg *self, PyObject *args, P
 
     Py_RETURN_NONE;
 }
+
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces linewidths.converter and antialiaseds.converter:
+static int (*linewidths_converter)(PyObject *, void *) = numpy::numpy_converter<const double, 1>;
+static int (*antialiaseds_converter)(PyObject *, void *) = numpy::numpy_converter<const uint8_t, 1>;
+#endif
 
 static PyObject *
 PyRendererAgg_draw_path_collection(PyRendererAgg *self, PyObject *args, PyObject *kwds)
@@ -349,11 +373,19 @@ PyRendererAgg_draw_path_collection(PyRendererAgg *self, PyObject *args, PyObject
                           &facecolors,
                           &convert_colors,
                           &edgecolors,
+#if !TARGET_OS_IPHONE
                           &linewidths.converter,
+#else
+						  linewidths_converter,
+#endif
                           &linewidths,
                           &convert_dashes_vector,
                           &dashes,
+#if !TARGET_OS_IPHONE
                           &antialiaseds.converter,
+#else
+						  antialiaseds_converter,
+#endif
                           &antialiaseds,
                           &ignored,
                           &convert_offset_position,
@@ -387,6 +419,12 @@ PyRendererAgg_draw_path_collection(PyRendererAgg *self, PyObject *args, PyObject
     Py_RETURN_NONE;
 }
 
+
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces coordinates.converter:
+int (*coordinates_converter)(PyObject *, void *) = numpy::numpy_converter<const double, 3>;
+#endif
+
 static PyObject *PyRendererAgg_draw_quad_mesh(PyRendererAgg *self, PyObject *args, PyObject *kwds)
 {
     GCAgg gc;
@@ -408,7 +446,11 @@ static PyObject *PyRendererAgg_draw_quad_mesh(PyRendererAgg *self, PyObject *arg
                           &master_transform,
                           &mesh_width,
                           &mesh_height,
+#if !TARGET_OS_IPHONE
                           &coordinates.converter,
+#else
+						  coordinates_converter,
+#endif
                           &coordinates,
                           &convert_points,
                           &offsets,
@@ -438,6 +480,12 @@ static PyObject *PyRendererAgg_draw_quad_mesh(PyRendererAgg *self, PyObject *arg
     Py_RETURN_NONE;
 }
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces points.converter and colors.converter:
+static int (*points2_converter)(PyObject *, void *) = numpy::numpy_converter<const double, 2>;
+static int (*colors2_converter)(PyObject *, void *) = numpy::numpy_converter<const double, 2>;
+#endif
+
 static PyObject *
 PyRendererAgg_draw_gouraud_triangle(PyRendererAgg *self, PyObject *args, PyObject *kwds)
 {
@@ -450,9 +498,15 @@ PyRendererAgg_draw_gouraud_triangle(PyRendererAgg *self, PyObject *args, PyObjec
                           "O&O&O&O&|O:draw_gouraud_triangle",
                           &convert_gcagg,
                           &gc,
+#if !TARGET_OS_IPHONE
                           &points.converter,
                           &points,
                           &colors.converter,
+#else
+                          points2_converter,
+                          &points,
+                          colors2_converter,
+#endif
                           &colors,
                           &convert_trans_affine,
                           &trans)) {
@@ -479,6 +533,12 @@ PyRendererAgg_draw_gouraud_triangle(PyRendererAgg *self, PyObject *args, PyObjec
     Py_RETURN_NONE;
 }
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces points.converter and colors.converter:
+static int (*points3_converter)(PyObject *, void *) = numpy::numpy_converter<const double, 3>;
+static int (*colors3_converter)(PyObject *, void *) = numpy::numpy_converter<const double, 3>;
+#endif
+
 static PyObject *
 PyRendererAgg_draw_gouraud_triangles(PyRendererAgg *self, PyObject *args, PyObject *kwds)
 {
@@ -491,9 +551,15 @@ PyRendererAgg_draw_gouraud_triangles(PyRendererAgg *self, PyObject *args, PyObje
                           "O&O&O&O&|O:draw_gouraud_triangles",
                           &convert_gcagg,
                           &gc,
+#if !TARGET_OS_IPHONE
                           &points.converter,
                           &points,
                           &colors.converter,
+#else
+                          points3_converter,
+                          &points,
+                          colors3_converter,
+#endif
                           &colors,
                           &convert_trans_affine,
                           &trans)) {

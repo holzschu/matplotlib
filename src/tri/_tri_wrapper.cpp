@@ -28,6 +28,15 @@ const char* PyTriangulation_init__doc__ =
     "This should not be called directly, instead use the python class\n"
     "matplotlib.tri.Triangulation instead.\n";
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces x.converter, triangles.converter, mask.converter, edges.converter, neighbors.converter:
+static int (*x_converter)(PyObject *obj, void *arrp) = numpy::numpy_converter<const double, 1>;
+static int (*triangles_converter)(PyObject *obj, void *arrp) = numpy::numpy_converter<int, 2>;
+static int (*mask_converter)(PyObject *obj, void *arrp) = numpy::numpy_converter<const bool, 1>;
+static int (*edges_converter)(PyObject *obj, void *arrp) = numpy::numpy_converter<int, 2>;
+static int (*neighbors_converter)(PyObject *obj, void *arrp) = numpy::numpy_converter<int, 2>;
+#endif
+
 static int PyTriangulation_init(PyTriangulation* self, PyObject* args, PyObject* kwds)
 {
     Triangulation::CoordinateArray x, y;
@@ -39,12 +48,21 @@ static int PyTriangulation_init(PyTriangulation* self, PyObject* args, PyObject*
 
     if (!PyArg_ParseTuple(args,
                           "O&O&O&O&O&O&i",
+#if !TARGET_OS_IPHONE
                           &x.converter, &x,
                           &y.converter, &y,
                           &triangles.converter, &triangles,
                           &mask.converter, &mask,
                           &edges.converter, &edges,
                           &neighbors.converter, &neighbors,
+#else
+                          x_converter, &x,
+                          x_converter, &y,
+                          triangles_converter, &triangles,
+                          mask_converter, &mask,
+                          edges_converter, &edges,
+                          neighbors_converter, &neighbors,
+#endif
                           &correct_triangle_orientations)) {
         return -1;
     }
@@ -107,7 +125,11 @@ static PyObject* PyTriangulation_calculate_plane_coefficients(PyTriangulation* s
 {
     Triangulation::CoordinateArray z;
     if (!PyArg_ParseTuple(args, "O&:calculate_plane_coefficients",
+#if !TARGET_OS_IPHONE
                           &z.converter, &z)) {
+#else
+                          x_converter, &z)) {
+#endif
         return NULL;
     }
 
@@ -166,7 +188,11 @@ static PyObject* PyTriangulation_set_mask(PyTriangulation* self, PyObject* args,
 {
     Triangulation::MaskArray mask;
 
+#if !TARGET_OS_IPHONE
     if (!PyArg_ParseTuple(args, "O&:set_mask", &mask.converter, &mask)) {
+#else
+    if (!PyArg_ParseTuple(args, "O&:set_mask", mask_converter, &mask)) {
+#endif
         return NULL;
     }
 
@@ -246,7 +272,11 @@ static int PyTriContourGenerator_init(PyTriContourGenerator* self, PyObject* arg
 
     if (!PyArg_ParseTuple(args, "O!O&",
                           &PyTriangulationType, &triangulation_arg,
+#if !TARGET_OS_IPHONE
                           &z.converter, &z)) {
+#else
+                          x_converter, &z)) {
+#endif
         return -1;
     }
 
@@ -408,8 +438,13 @@ static PyObject* PyTrapezoidMapTriFinder_find_many(PyTrapezoidMapTriFinder* self
 {
     TrapezoidMapTriFinder::CoordinateArray x, y;
     if (!PyArg_ParseTuple(args, "O&O&:find_many",
+#if !TARGET_OS_IPHONE
                           &x.converter, &x,
                           &y.converter, &y)) {
+#else
+                          x_converter, &x,
+                          x_converter, &y)) {
+#endif
         return NULL;
     }
 

@@ -26,6 +26,12 @@ const char* PyQuadContourGenerator_init__doc__ =
     "--\n\n"
     "Create a new C++ QuadContourGenerator object\n";
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces x.converter and d.converter_contiguous:
+static int (*x_converter_contiguous)(PyObject *, void *) = numpy::numpy_converter_contiguous<const double, 2>;
+static int (*mask_converter_contiguous)(PyObject *, void *) = numpy::numpy_converter_contiguous<const bool, 2> ;
+#endif
+
 static int PyQuadContourGenerator_init(PyQuadContourGenerator* self, PyObject* args, PyObject* kwds)
 {
     QuadContourGenerator::CoordinateArray x, y, z;
@@ -34,10 +40,17 @@ static int PyQuadContourGenerator_init(PyQuadContourGenerator* self, PyObject* a
     long chunk_size;
 
     if (!PyArg_ParseTuple(args, "O&O&O&O&O&l",
+#if !TARGET_OS_IPHONE
                           &x.converter_contiguous, &x,
                           &y.converter_contiguous, &y,
                           &z.converter_contiguous, &z,
                           &mask.converter_contiguous, &mask,
+#else
+                          x_converter_contiguous, &x,
+                          x_converter_contiguous, &y,
+                          x_converter_contiguous, &z,
+                          mask_converter_contiguous, &mask,
+#endif
                           &convert_bool, &corner_mask,
                           &chunk_size)) {
         return -1;

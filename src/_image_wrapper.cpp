@@ -299,6 +299,12 @@ const char *image_pcolor__doc__ =
     "bounds = (x_min, x_max, y_min, y_max)\n"
     "interpolation = NEAREST or BILINEAR \n";
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces x.converter and d.converter_contiguous:
+static int (*xf_converter)(PyObject *, void *) = numpy::numpy_converter<const float, 1>;
+static int (*d_converter_contiguous)(PyObject *, void *) = numpy::numpy_converter_contiguous<const agg::int8u, 3>;
+#endif
+
 static PyObject *image_pcolor(PyObject *self, PyObject *args, PyObject *kwds)
 {
     numpy::array_view<const float, 1> x;
@@ -310,11 +316,19 @@ static PyObject *image_pcolor(PyObject *self, PyObject *args, PyObject *kwds)
 
     if (!PyArg_ParseTuple(args,
                           "O&O&O&nn(ffff)i:pcolor",
+#if !TARGET_OS_IPHONE
                           &x.converter,
                           &x,
                           &y.converter,
                           &y,
                           &d.converter_contiguous,
+#else
+                          xf_converter,
+                          &x,
+                          xf_converter,
+                          &y,
+                          d_converter_contiguous,
+#endif
                           &d,
                           &rows,
                           &cols,
@@ -342,6 +356,12 @@ const char *image_pcolor2__doc__ =
     "bounds = (x_left, x_right, y_bot, y_top)\n"
     "bg = ndarray of 4 uint8 representing background rgba\n";
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces x.converter_contiguous:
+static int (*xd_converter_contiguous)(PyObject *, void *) = numpy::numpy_converter_contiguous<const double, 1>;
+static int (*bg_converter)(PyObject *, void *) = numpy::numpy_converter<const agg::int8u, 1>;
+#endif
+
 static PyObject *image_pcolor2(PyObject *self, PyObject *args, PyObject *kwds)
 {
     numpy::array_view<const double, 1> x;
@@ -353,11 +373,19 @@ static PyObject *image_pcolor2(PyObject *self, PyObject *args, PyObject *kwds)
 
     if (!PyArg_ParseTuple(args,
                           "O&O&O&nn(ffff)O&:pcolor2",
+#if !TARGET_OS_IPHONE
                           &x.converter_contiguous,
                           &x,
                           &y.converter_contiguous,
                           &y,
                           &d.converter_contiguous,
+#else 
+                          xd_converter_contiguous,
+                          &x,
+                          xd_converter_contiguous,
+                          &y,
+                          d_converter_contiguous,
+#endif
                           &d,
                           &rows,
                           &cols,
@@ -365,7 +393,11 @@ static PyObject *image_pcolor2(PyObject *self, PyObject *args, PyObject *kwds)
                           &bounds[1],
                           &bounds[2],
                           &bounds[3],
+#if !TARGET_OS_IPHONE
                           &bg.converter,
+#else
+                          bg_converter,
+#endif
                           &bg)) {
         return NULL;
     }

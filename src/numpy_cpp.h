@@ -549,6 +549,9 @@ class array_view : public detail::array_view_accessors<array_view, T, ND>
         return (PyObject *)m_arr;
     }
 
+    // iOS: we need static members because we need pointers to that function.
+    // But we also need to re-initialize this pointer for each library. 
+#if !TARGET_OS_IPHONE
     static int converter(PyObject *obj, void *arrp)
     {
         array_view<T, ND> *arr = (array_view<T, ND> *)arrp;
@@ -570,7 +573,36 @@ class array_view : public detail::array_view_accessors<array_view, T, ND>
 
         return 1;
     }
+#endif
 };
+
+#ifdef TARGET_OS_IPHONE
+// iOS: non-static member versions of converter and converter_contiguous.
+template <typename T, int ND>
+static int numpy_converter(PyObject *obj, void *arrp)
+{
+        array_view<T, ND> *arr = (array_view<T, ND> *)arrp;
+
+        if (!arr->set(obj)) {
+            return 0;
+        }
+
+        return 1;
+}
+
+template <typename T, int ND>
+static int numpy_converter_contiguous(PyObject *obj, void *arrp)
+{
+	array_view<T, ND> *arr = (array_view<T, ND> *)arrp;
+
+	if (!arr->set(obj, true)) {
+		return 0;
+	}
+
+	return 1;
+}
+#endif
+
 
 } // namespace numpy
 
