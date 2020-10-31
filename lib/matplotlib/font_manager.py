@@ -261,6 +261,13 @@ def _win32RegistryFonts(reg_domain, base_dir):
 
     return items
 
+def OSXInstalledFonts(directories=None, fontext='ttf'):
+    """Get list of font files on OS X."""
+    if directories is None:
+        directories = OSXFontDirectories
+    return [path
+            for directory in directories
+            for path in list_fonts(directory, get_fontext_synonyms(fontext))]
 
 def win32InstalledFonts(directory=None, fontext='ttf'):
     """
@@ -327,10 +334,15 @@ def findSystemFonts(fontpaths=None, fontext='ttf'):
             # now get all installed fonts directly...
             fontfiles.update(win32InstalledFonts(fontext=fontext))
         else:
-            fontpaths = X11FontDirectories
-            if sys.platform == 'darwin':
-                fontpaths = [*X11FontDirectories, *OSXFontDirectories]
-            fontfiles.update(get_fontconfig_fonts(fontext))
+            if sys.platform == 'darwin' and os.uname().machine.startswith('iP'): 
+                # iOS, no "fc-list" command, we just use system fonts:
+                fontpaths = OSXFontDirectories
+                fontfiles.update(OSXInstalledFonts(fontext=fontext))
+            else:
+                fontpaths = X11FontDirectories
+                if sys.platform == 'darwin':
+                    fontpaths = [*X11FontDirectories, *OSXFontDirectories]
+                fontfiles.update(get_fontconfig_fonts(fontext))
 
     elif isinstance(fontpaths, str):
         fontpaths = [fontpaths]
