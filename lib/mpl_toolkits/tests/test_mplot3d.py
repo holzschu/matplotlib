@@ -6,12 +6,14 @@ import pytest
 from mpl_toolkits.mplot3d import Axes3D, axes3d, proj3d, art3d
 import matplotlib as mpl
 from matplotlib.backend_bases import MouseButton
+from matplotlib.cbook import MatplotlibDeprecationWarning
 from matplotlib import cm
 from matplotlib import colors as mcolors
 from matplotlib.testing.decorators import image_comparison, check_figures_equal
 from matplotlib.testing.widgets import mock_event
 from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.patches import Circle
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -108,7 +110,7 @@ def test_bar3d_lightsource():
     # the top facecolors compared to the default, and that those colors are
     # precisely the colors from the colormap, due to the illumination parallel
     # to the z-axis.
-    np.testing.assert_array_equal(color, collection._facecolors3d[1::6])
+    np.testing.assert_array_equal(color, collection._facecolor3d[1::6])
 
 
 @mpl3d_image_comparison(['contour3d.png'])
@@ -152,7 +154,7 @@ def test_contourf3d_fill():
     ax.set_zlim(-1, 1)
 
 
-@mpl3d_image_comparison(['tricontour.png'])
+@mpl3d_image_comparison(['tricontour.png'], tol=0.02)
 def test_tricontour():
     fig = plt.figure()
 
@@ -233,6 +235,8 @@ def test_scatter3d():
     x = y = z = np.arange(10, 20)
     ax.scatter(x, y, z, c='b', marker='^')
     z[-1] = 0  # Check that scatter() copies the data.
+    # Ensure empty scatters do not break.
+    ax.scatter([], [], [], c='r', marker='X')
 
 
 @mpl3d_image_comparison(['scatter3d_color.png'])
@@ -580,6 +584,19 @@ def test_quiver3d_masked():
     ax.quiver(x, y, z, u, v, w, length=0.1, pivot='tip', normalize=True)
 
 
+def test_patch_modification():
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    circle = Circle((0, 0))
+    ax.add_patch(circle)
+    art3d.patch_2d_to_3d(circle)
+    circle.set_facecolor((1.0, 0.0, 0.0, 1))
+
+    assert mcolors.same_color(circle.get_facecolor(), (1, 0, 0, 1))
+    fig.canvas.draw()
+    assert mcolors.same_color(circle.get_facecolor(), (1, 0, 0, 1))
+
+
 @check_figures_equal(extensions=['png'])
 def test_patch_collection_modification(fig_test, fig_ref):
     # Test that modifying Patch3DCollection properties after creation works.
@@ -624,6 +641,14 @@ def test_poly_collection_2d_to_3d_empty():
     art3d.poly_collection_2d_to_3d(poly)
     assert isinstance(poly, art3d.Poly3DCollection)
     assert poly.get_paths() == []
+
+    fig, ax = plt.subplots(subplot_kw=dict(projection='3d'))
+    ax.add_artist(poly)
+    minz = poly.do_3d_projection()
+    assert np.isnan(minz)
+
+    # Ensure drawing actually works.
+    fig.canvas.draw()
 
 
 @mpl3d_image_comparison(['poly3dcollection_alpha.png'])
@@ -702,7 +727,7 @@ def test_add_collection3d_zs_scalar():
 @mpl3d_image_comparison(['axes3d_labelpad.png'], remove_text=False)
 def test_axes3d_labelpad():
     fig = plt.figure()
-    ax = fig.add_axes(Axes3D(fig))
+    ax = fig.add_axes(Axes3D(fig, auto_add_to_figure=False))
     # labelpad respects rcParams
     assert ax.xaxis.labelpad == mpl.rcParams['axes.labelpad']
     # labelpad can be set in set_label
@@ -895,11 +920,49 @@ def test_autoscale():
     assert ax.get_w_lims() == (0, 1, -.1, 1.1, -.4, 2.4)
 
 
+@pytest.mark.parametrize('axis', ('x', 'y', 'z'))
+@pytest.mark.parametrize('auto', (True, False, None))
+def test_unautoscale(axis, auto):
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+
+    x = np.arange(100)
+    y = np.linspace(-0.1, 0.1, 100)
+    ax.scatter(x, y)
+
+    get_autoscale_on = getattr(ax, f'get_autoscale{axis}_on')
+    set_lim = getattr(ax, f'set_{axis}lim')
+    get_lim = getattr(ax, f'get_{axis}lim')
+
+    post_auto = get_autoscale_on() if auto is None else auto
+
+    set_lim((-0.5, 0.5), auto=auto)
+    assert post_auto == get_autoscale_on()
+    fig.canvas.draw()
+    np.testing.assert_array_equal(get_lim(), (-0.5, 0.5))
+
+
 @mpl3d_image_comparison(['axes3d_ortho.png'], remove_text=False)
 def test_axes3d_ortho():
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
     ax.set_proj_type('ortho')
+
+
+@mpl3d_image_comparison(['axes3d_isometric.png'])
+def test_axes3d_isometric():
+    from itertools import combinations, product
+    fig, ax = plt.subplots(subplot_kw=dict(
+        projection='3d',
+        proj_type='ortho',
+        box_aspect=(4, 4, 4)
+    ))
+    r = (-1, 1)  # stackoverflow.com/a/11156353
+    for s, e in combinations(np.array(list(product(r, r, r))), 2):
+        if abs(s - e).sum() == r[1] - r[0]:
+            ax.plot3D(*zip(s, e), c='k')
+    ax.view_init(elev=np.degrees(np.arctan(1. / np.sqrt(2))), azim=-45)
+    ax.grid(True)
 
 
 @pytest.mark.parametrize('value', [np.inf, np.nan])
@@ -1087,7 +1150,8 @@ def test_inverted_cla():
 
 def test_ax3d_tickcolour():
     fig = plt.figure()
-    ax = Axes3D(fig)
+    with pytest.warns(MatplotlibDeprecationWarning):
+        ax = Axes3D(fig)
 
     ax.tick_params(axis='x', colors='red')
     ax.tick_params(axis='y', colors='red')
@@ -1203,6 +1267,35 @@ def test_errorbar3d():
     ax.legend()
 
 
+@image_comparison(['stem3d.png'], style='mpl20')
+def test_stem3d():
+    fig, axs = plt.subplots(2, 3, figsize=(8, 6),
+                            constrained_layout=True,
+                            subplot_kw={'projection': '3d'})
+
+    theta = np.linspace(0, 2*np.pi)
+    x = np.cos(theta - np.pi/2)
+    y = np.sin(theta - np.pi/2)
+    z = theta
+
+    for ax, zdir in zip(axs[0], ['x', 'y', 'z']):
+        ax.stem(x, y, z, orientation=zdir)
+        ax.set_title(f'orientation={zdir}')
+
+    x = np.linspace(-np.pi/2, np.pi/2, 20)
+    y = np.ones_like(x)
+    z = np.cos(x)
+
+    for ax, zdir in zip(axs[1], ['x', 'y', 'z']):
+        markerline, stemlines, baseline = ax.stem(
+            x, y, z,
+            linefmt='C4-.', markerfmt='C1D', basefmt='C2',
+            orientation=zdir)
+        ax.set_title(f'orientation={zdir}')
+        markerline.set(markerfacecolor='none', markeredgewidth=2)
+        baseline.set_linewidth(3)
+
+
 @image_comparison(["equal_box_aspect.png"], style="mpl20")
 def test_equal_box_aspect():
     from itertools import product, combinations
@@ -1302,3 +1395,33 @@ def test_pan():
     assert x_center != pytest.approx(x_center0)
     assert y_center != pytest.approx(y_center0)
     assert z_center != pytest.approx(z_center0)
+
+
+@pytest.mark.style('default')
+@check_figures_equal(extensions=["png"])
+def test_scalarmap_update(fig_test, fig_ref):
+
+    x, y, z = np.array((list(itertools.product(*[np.arange(0, 5, 1),
+                                                 np.arange(0, 5, 1),
+                                                 np.arange(0, 5, 1)])))).T
+    c = x + y
+
+    # test
+    ax_test = fig_test.add_subplot(111, projection='3d')
+    sc_test = ax_test.scatter(x, y, z, c=c, s=40, cmap='viridis')
+    # force a draw
+    fig_test.canvas.draw()
+    # mark it as "stale"
+    sc_test.changed()
+
+    # ref
+    ax_ref = fig_ref.add_subplot(111, projection='3d')
+    sc_ref = ax_ref.scatter(x, y, z, c=c, s=40, cmap='viridis')
+
+
+def test_subfigure_simple():
+    # smoketest that subfigures can work...
+    fig = plt.figure()
+    sf = fig.subfigures(1, 2)
+    ax = sf[0].add_subplot(1, 1, 1, projection='3d')
+    ax = sf[1].add_subplot(1, 1, 1, projection='3d', label='other')

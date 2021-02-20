@@ -17,7 +17,8 @@ import logging
 
 import numpy as np
 
-import matplotlib.cbook as cbook
+from matplotlib import _api
+import matplotlib.transforms as mtransforms
 
 _log = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ often just set to 1 for an equal grid.
 Subplotspecs that are derived from this gridspec can contain either a
 ``SubPanel``, a ``GridSpecFromSubplotSpec``, or an axes.  The ``SubPanel`` and
 ``GridSpecFromSubplotSpec`` are dealt with recursively and each contain an
-analagous layout.
+analogous layout.
 
 Each ``GridSpec`` has a ``_layoutgrid`` attached to it.  The ``_layoutgrid``
 has the same logical layout as the ``GridSpec``.   Each row of the grid spec
@@ -73,15 +74,15 @@ def do_constrained_layout(fig, renderer, h_pad, w_pad,
     renderer : Renderer
         Renderer to use.
 
-     h_pad, w_pad : float
-       Padding around the axes elements in figure-normalized units.
+    h_pad, w_pad : float
+      Padding around the axes elements in figure-normalized units.
 
-     hspace, wspace : float
-        Fraction of the figure to dedicate to space between the
-        axes.  These are evenly spread between the gaps between the axes.
-        A value of 0.2 for a three-column layout would have a space
-        of 0.1 of the figure width between each column.
-        If h/wspace < h/w_pad, then the pads are used instead.
+    hspace, wspace : float
+       Fraction of the figure to dedicate to space between the
+       axes.  These are evenly spread between the gaps between the axes.
+       A value of 0.2 for a three-column layout would have a space
+       of 0.1 of the figure width between each column.
+       If h/wspace < h/w_pad, then the pads are used instead.
     """
 
     # list of unique gridspecs that contain child axes:
@@ -93,9 +94,9 @@ def do_constrained_layout(fig, renderer, h_pad, w_pad,
                 gss.add(gs)
     gss = list(gss)
     if len(gss) == 0:
-        cbook._warn_external('There are no gridspecs with layoutgrids. '
-                             'Possibly did not call parent GridSpec with the'
-                             ' "figure" keyword')
+        _api.warn_external('There are no gridspecs with layoutgrids. '
+                           'Possibly did not call parent GridSpec with the'
+                           ' "figure" keyword')
 
     for _ in range(2):
         # do the algorithm twice.  This has to be done because decorations
@@ -121,9 +122,9 @@ def do_constrained_layout(fig, renderer, h_pad, w_pad,
             _reposition_axes(fig, renderer, h_pad=h_pad, w_pad=w_pad,
                              hspace=hspace, wspace=wspace)
         else:
-            cbook._warn_external('constrained_layout not applied because '
-                                 'axes sizes collapsed to zero.  Try making '
-                                 'figure larger or axes decorations smaller.')
+            _api.warn_external('constrained_layout not applied because '
+                               'axes sizes collapsed to zero.  Try making '
+                               'figure larger or axes decorations smaller.')
         _reset_margins(fig)
 
 
@@ -276,21 +277,35 @@ def _make_layout_margins(fig, renderer, *, w_pad=0, h_pad=0,
 def _make_margin_suptitles(fig, renderer, *, w_pad=0, h_pad=0):
     # Figure out how large the suptitle is and make the
     # top level figure margin larger.
+
+    inv_trans_fig = fig.transFigure.inverted().transform_bbox
+    # get the h_pad and w_pad as distances in the local subfigure coordinates:
+    padbox = mtransforms.Bbox([[0, 0], [w_pad, h_pad]])
+    padbox = (fig.transFigure -
+                   fig.transSubfigure).transform_bbox(padbox)
+    h_pad_local = padbox.height
+    w_pad_local = padbox.width
+
     for panel in fig.subfigs:
         _make_margin_suptitles(panel, renderer, w_pad=w_pad, h_pad=h_pad)
 
     if fig._suptitle is not None and fig._suptitle.get_in_layout():
-        invTransFig = fig.transSubfigure.inverted().transform_bbox
-        parenttrans = fig.transFigure
-        w_pad, h_pad = (fig.transSubfigure -
-                        parenttrans).transform((w_pad, 1 - h_pad))
-        w_pad, one = (fig.transSubfigure -
-                      parenttrans).transform((w_pad, 1))
-        h_pad = one - h_pad
-        bbox = invTransFig(fig._suptitle.get_tightbbox(renderer))
         p = fig._suptitle.get_position()
-        fig._suptitle.set_position((p[0], 1-h_pad))
-        fig._layoutgrid.edit_margin_min('top', bbox.height + 2 * h_pad)
+        fig._suptitle.set_position((p[0], 1 - h_pad_local))
+        bbox = inv_trans_fig(fig._suptitle.get_tightbbox(renderer))
+        fig._layoutgrid.edit_margin_min('top', bbox.height + 2.0 * h_pad)
+
+    if fig._supxlabel is not None and fig._supxlabel.get_in_layout():
+        p = fig._supxlabel.get_position()
+        fig._supxlabel.set_position((p[0], h_pad_local))
+        bbox = inv_trans_fig(fig._supxlabel.get_tightbbox(renderer))
+        fig._layoutgrid.edit_margin_min('bottom', bbox.height + 2.0 * h_pad)
+
+    if fig._supylabel is not None and fig._supxlabel.get_in_layout():
+        p = fig._supylabel.get_position()
+        fig._supylabel.set_position((w_pad_local, p[1]))
+        bbox = inv_trans_fig(fig._supylabel.get_tightbbox(renderer))
+        fig._layoutgrid.edit_margin_min('left', bbox.width + 2.0 * w_pad)
 
 
 def _match_submerged_margins(fig):
@@ -460,8 +475,8 @@ def _reposition_axes(fig, renderer, *, w_pad=0, h_pad=0, hspace=0, wspace=0):
         if not hasattr(ax, 'get_subplotspec') or not ax.get_in_layout():
             continue
 
-        # grid bbox is in Figure co-ordinates, but we specify in panel
-        # co-ordinates...
+        # grid bbox is in Figure coordinates, but we specify in panel
+        # coordinates...
         ss = ax.get_subplotspec()
         gs = ss.get_gridspec()
         nrows, ncols = gs.get_geometry()

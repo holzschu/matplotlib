@@ -352,6 +352,7 @@ class Axes(_AxesBase):
 
         return inset_ax
 
+    @docstring.dedent_interpd
     def indicate_inset(self, bounds, inset_ax=None, *, transform=None,
                        facecolor='none', edgecolor='0.5', alpha=0.5,
                        zorder=4.99, **kwargs):
@@ -396,7 +397,7 @@ class Axes(_AxesBase):
         **kwargs
             Other keyword arguments are passed on to the `.Rectangle` patch:
 
-            %(Rectangle)s
+            %(Rectangle_kwdoc)s
 
         Returns
         -------
@@ -416,7 +417,7 @@ class Axes(_AxesBase):
 
         if transform is None:
             transform = self.transData
-        kwargs.setdefault('label', 'indicate_inset')
+        kwargs.setdefault('label', '_indicate_inset')
 
         x, y, width, height = bounds
         rectangle_patch = mpatches.Rectangle(
@@ -524,8 +525,14 @@ class Axes(_AxesBase):
             ax.set_xlabel('frequency [Hz]')
 
             def invert(x):
-                return 1 / x
+                # 1/x with special treatment of x == 0
+                x = np.array(x).astype(float)
+                near_zero = np.isclose(x, 0)
+                x[near_zero] = np.inf
+                x[~near_zero] = 1 / x[~near_zero]
+                return x
 
+            # the inverse of 1/x is itself
             secax = ax.secondary_xaxis('top', functions=(invert, invert))
             secax.set_xlabel('Period [s]')
             plt.show()
@@ -602,7 +609,7 @@ class Axes(_AxesBase):
         **kwargs : `~matplotlib.text.Text` properties.
             Other miscellaneous text parameters.
 
-            %(Text)s
+            %(Text_kwdoc)s
 
         Examples
         --------
@@ -639,7 +646,7 @@ class Axes(_AxesBase):
         self._add_text(t)
         return t
 
-    @cbook._rename_parameter("3.3", "s", "text")
+    @_api.rename_parameter("3.3", "s", "text")
     @docstring.dedent_interpd
     def annotate(self, text, xy, *args, **kwargs):
         a = mtext.Annotation(text, xy, *args, **kwargs)
@@ -679,7 +686,7 @@ class Axes(_AxesBase):
             Valid keyword arguments are `.Line2D` properties, with the
             exception of 'transform':
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -746,7 +753,7 @@ class Axes(_AxesBase):
             Valid keyword arguments are `.Line2D` properties, with the
             exception of 'transform':
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -808,6 +815,11 @@ class Axes(_AxesBase):
         all other scales, and thus the behavior is undefined. Please specify
         the line using the points *xy1*, *xy2* for non-linear scales.
 
+        The *transform* keyword argument only applies to the points *xy1*,
+        *xy2*. The *slope* (if given) is always in data coordinates. This can
+        be used e.g. with ``ax.transAxes`` for drawing grid lines with a fixed
+        slope.
+
         Parameters
         ----------
         xy1, xy2 : (float, float)
@@ -823,10 +835,9 @@ class Axes(_AxesBase):
         Other Parameters
         ----------------
         **kwargs
-            Valid kwargs are `.Line2D` properties, with the exception of
-            'transform':
+            Valid kwargs are `.Line2D` properties
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -839,30 +850,17 @@ class Axes(_AxesBase):
 
             >>> axline((0, 0), (1, 1), linewidth=4, color='r')
         """
-        def _to_points(xy1, xy2, slope):
-            """
-            Check for a valid combination of input parameters and convert
-            to two points, if necessary.
-            """
-            if (xy2 is None and slope is None or
-                    xy2 is not None and slope is not None):
-                raise TypeError(
-                    "Exactly one of 'xy2' and 'slope' must be given")
-            if xy2 is None:
-                x1, y1 = xy1
-                xy2 = (x1, y1 + 1) if np.isinf(slope) else (x1 + 1, y1 + slope)
-            return xy1, xy2
-
-        if "transform" in kwargs:
-            raise TypeError("'transform' is not allowed as a kwarg; "
-                            "axline generates its own transform")
         if slope is not None and (self.get_xscale() != 'linear' or
                                   self.get_yscale() != 'linear'):
             raise TypeError("'slope' cannot be used with non-linear scales")
 
         datalim = [xy1] if xy2 is None else [xy1, xy2]
-        (x1, y1), (x2, y2) = _to_points(xy1, xy2, slope)
-        line = mlines._AxLine([x1, x2], [y1, y2], **kwargs)
+        if "transform" in kwargs:
+            # if a transform is passed (i.e. line points not in data space),
+            # data limits should not be adjusted.
+            datalim = []
+
+        line = mlines._AxLine(xy1, xy2, slope, **kwargs)
         # Like add_line, but correctly handling data limits.
         self._set_artist_props(line)
         if line.get_clip_path() is None:
@@ -907,7 +905,7 @@ class Axes(_AxesBase):
         ----------------
         **kwargs : `~matplotlib.patches.Polygon` properties
 
-        %(Polygon)s
+        %(Polygon_kwdoc)s
 
         See Also
         --------
@@ -924,6 +922,7 @@ class Axes(_AxesBase):
         self._request_autoscale_view(scalex=False)
         return p
 
+    @docstring.dedent_interpd
     def axvspan(self, xmin, xmax, ymin=0, ymax=1, **kwargs):
         """
         Add a vertical span (rectangle) across the Axes.
@@ -954,7 +953,7 @@ class Axes(_AxesBase):
         ----------------
         **kwargs : `~matplotlib.patches.Polygon` properties
 
-        %(Polygon)s
+        %(Polygon_kwdoc)s
 
         See Also
         --------
@@ -1500,12 +1499,13 @@ class Axes(_AxesBase):
             >>> plot([1, 2, 3], [1, 2, 3], 'go-', label='line 1', linewidth=2)
             >>> plot([1, 2, 3], [1, 4, 9], 'rs', label='line 2')
 
-            If you make multiple lines with one plot call, the kwargs
-            apply to all those lines.
+            If you specify multiple lines with one plot call, the kwargs apply
+            to all those lines. In case the label object is iterable, each
+            element is used as labels for each set of data.
 
             Here is a list of available `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -1529,32 +1529,35 @@ class Axes(_AxesBase):
 
         **Markers**
 
-        =============    ===============================
-        character        description
-        =============    ===============================
-        ``'.'``          point marker
-        ``','``          pixel marker
-        ``'o'``          circle marker
-        ``'v'``          triangle_down marker
-        ``'^'``          triangle_up marker
-        ``'<'``          triangle_left marker
-        ``'>'``          triangle_right marker
-        ``'1'``          tri_down marker
-        ``'2'``          tri_up marker
-        ``'3'``          tri_left marker
-        ``'4'``          tri_right marker
-        ``'s'``          square marker
-        ``'p'``          pentagon marker
-        ``'*'``          star marker
-        ``'h'``          hexagon1 marker
-        ``'H'``          hexagon2 marker
-        ``'+'``          plus marker
-        ``'x'``          x marker
-        ``'D'``          diamond marker
-        ``'d'``          thin_diamond marker
-        ``'|'``          vline marker
-        ``'_'``          hline marker
-        =============    ===============================
+        =============   ===============================
+        character       description
+        =============   ===============================
+        ``'.'``         point marker
+        ``','``         pixel marker
+        ``'o'``         circle marker
+        ``'v'``         triangle_down marker
+        ``'^'``         triangle_up marker
+        ``'<'``         triangle_left marker
+        ``'>'``         triangle_right marker
+        ``'1'``         tri_down marker
+        ``'2'``         tri_up marker
+        ``'3'``         tri_left marker
+        ``'4'``         tri_right marker
+        ``'8'``         octagon marker
+        ``'s'``         square marker
+        ``'p'``         pentagon marker
+        ``'P'``         plus (filled) marker
+        ``'*'``         star marker
+        ``'h'``         hexagon1 marker
+        ``'H'``         hexagon2 marker
+        ``'+'``         plus marker
+        ``'x'``         x marker
+        ``'X'``         x (filled) marker
+        ``'D'``         diamond marker
+        ``'d'``         thin_diamond marker
+        ``'|'``         vline marker
+        ``'_'``         hline marker
+        =============   ===============================
 
         **Line Styles**
 
@@ -1646,7 +1649,7 @@ class Axes(_AxesBase):
         **kwargs
             Keyword arguments control the `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -2217,7 +2220,7 @@ class Axes(_AxesBase):
 
         **kwargs : `.Rectangle` properties
 
-        %(Rectangle)s
+        %(Rectangle_kwdoc)s
 
         See Also
         --------
@@ -2388,7 +2391,13 @@ class Axes(_AxesBase):
 
         self._request_autoscale_view()
 
-        bar_container = BarContainer(patches, errorbar, label=label)
+        if orientation == 'vertical':
+            datavalues = height
+        elif orientation == 'horizontal':
+            datavalues = width
+
+        bar_container = BarContainer(patches, errorbar, datavalues=datavalues,
+                                     orientation=orientation, label=label)
         self.add_container(bar_container)
 
         if tick_labels is not None:
@@ -2486,7 +2495,7 @@ class Axes(_AxesBase):
 
         **kwargs : `.Rectangle` properties
 
-        %(Rectangle)s
+        %(Rectangle_kwdoc)s
 
         See Also
         --------
@@ -2503,6 +2512,132 @@ class Axes(_AxesBase):
         patches = self.bar(x=left, height=height, width=width, bottom=y,
                            align=align, **kwargs)
         return patches
+
+    def bar_label(self, container, labels=None, *, fmt="%g", label_type="edge",
+                  padding=0, **kwargs):
+        """
+        Label a bar plot.
+
+        Adds labels to bars in the given `.BarContainer`.
+        You may need to adjust the axis limits to fit the labels.
+
+        Parameters
+        ----------
+        container : `.BarContainer`
+            Container with all the bars and optionally errorbars, likely
+            returned from `.bar` or `.barh`.
+
+        labels : array-like, optional
+            A list of label texts, that should be displayed. If not given, the
+            label texts will be the data values formatted with *fmt*.
+
+        fmt : str, default: '%g'
+            A format string for the label.
+
+        label_type : {'edge', 'center'}, default: 'edge'
+            The label type. Possible values:
+
+            - 'edge': label placed at the end-point of the bar segment, and the
+              value displayed will be the position of that end-point.
+            - 'center': label placed in the center of the bar segment, and the
+              value displayed will be the length of that segment.
+              (useful for stacked bars, i.e.,
+              :doc:`/gallery/lines_bars_and_markers/bar_label_demo`)
+
+        padding : float, default: 0
+            Distance of label from the end of the bar, in points.
+
+        **kwargs
+            Any remaining keyword arguments are passed through to
+            `.Axes.annotate`.
+
+        Returns
+        -------
+        list of `.Text`
+            A list of `.Text` instances for the labels.
+        """
+
+        # want to know whether to put label on positive or negative direction
+        # cannot use np.sign here because it will return 0 if x == 0
+        def sign(x):
+            return 1 if x >= 0 else -1
+
+        _api.check_in_list(['edge', 'center'], label_type=label_type)
+
+        bars = container.patches
+        errorbar = container.errorbar
+        datavalues = container.datavalues
+        orientation = container.orientation
+
+        if errorbar:
+            # check "ErrorbarContainer" for the definition of these elements
+            lines = errorbar.lines  # attribute of "ErrorbarContainer" (tuple)
+            barlinecols = lines[2]  # 0: data_line, 1: caplines, 2: barlinecols
+            barlinecol = barlinecols[0]  # the "LineCollection" of error bars
+            errs = barlinecol.get_segments()
+        else:
+            errs = []
+
+        if labels is None:
+            labels = []
+
+        annotations = []
+
+        for bar, err, dat, lbl in itertools.zip_longest(
+            bars, errs, datavalues, labels
+        ):
+            (x0, y0), (x1, y1) = bar.get_bbox().get_points()
+            xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
+
+            if orientation == "vertical":
+                extrema = max(y0, y1) if dat >= 0 else min(y0, y1)
+                length = abs(y0 - y1)
+            elif orientation == "horizontal":
+                extrema = max(x0, x1) if dat >= 0 else min(x0, x1)
+                length = abs(x0 - x1)
+
+            if err is None:
+                endpt = extrema
+            elif orientation == "vertical":
+                endpt = err[:, 1].max() if dat >= 0 else err[:, 1].min()
+            elif orientation == "horizontal":
+                endpt = err[:, 0].max() if dat >= 0 else err[:, 0].min()
+
+            if label_type == "center":
+                value = sign(dat) * length
+            elif label_type == "edge":
+                value = extrema
+
+            if label_type == "center":
+                xy = xc, yc
+            elif label_type == "edge" and orientation == "vertical":
+                xy = xc, endpt
+            elif label_type == "edge" and orientation == "horizontal":
+                xy = endpt, yc
+
+            if orientation == "vertical":
+                xytext = 0, sign(dat) * padding
+            else:
+                xytext = sign(dat) * padding, 0
+
+            if label_type == "center":
+                ha, va = "center", "center"
+            elif label_type == "edge":
+                if orientation == "vertical" and dat >= 0:
+                    ha, va = "center", "bottom"
+                elif orientation == "vertical" and dat < 0:
+                    ha, va = "center", "top"
+                elif orientation == "horizontal" and dat >= 0:
+                    ha, va = "left", "center"
+                elif orientation == "horizontal" and dat < 0:
+                    ha, va = "right", "center"
+
+            annotation = self.annotate(fmt % value if lbl is None else lbl,
+                                       xy, xytext, textcoords="offset points",
+                                       ha=ha, va=va, **kwargs)
+            annotations.append(annotation)
+
+        return annotations
 
     @_preprocess_data()
     @docstring.dedent_interpd
@@ -2547,7 +2682,7 @@ class Axes(_AxesBase):
 
             Supported keywords:
 
-            %(BrokenBarHCollection)s
+            %(BrokenBarHCollection_kwdoc)s
         """
         # process the unit information
         if len(xranges):
@@ -2608,8 +2743,7 @@ class Axes(_AxesBase):
             For horizontal stem plots, the x-values of the stem heads.
 
         linefmt : str, optional
-            A string defining the properties of the vertical lines. Usually,
-            this will be a color or a color and a linestyle:
+            A string defining the color and/or linestyle of the vertical lines:
 
             =========  =============
             Character  Line Style
@@ -2623,15 +2757,14 @@ class Axes(_AxesBase):
             Default: 'C0-', i.e. solid line with the first color of the color
             cycle.
 
-            Note: While it is technically possible to specify valid formats
-            other than color or color and linestyle (e.g. 'rx' or '-.'), this
-            is beyond the intention of the method and will most likely not
-            result in a reasonable plot.
+            Note: Markers specified through this parameter (e.g. 'x') will be
+            silently ignored (unless using ``use_line_collection=False``).
+            Instead, markers should be specified using *markerfmt*.
 
         markerfmt : str, optional
-            A string defining the properties of the markers at the stem heads.
-            Default: 'C0o', i.e. filled circles with the first color of the
-            color cycle.
+            A string defining the color and/or shape of the markers at the stem
+            heads.  Default: 'C0o', i.e. filled circles with the first color of
+            the color cycle.
 
         basefmt : str, default: 'C3-' ('C2-' in classic mode)
             A format string defining the properties of the baseline.
@@ -2732,20 +2865,12 @@ class Axes(_AxesBase):
 
         # New behaviour in 3.1 is to use a LineCollection for the stemlines
         if use_line_collection:
-            if orientation == 'horizontal':
-                stemlines = [
-                    ((bottom, loc), (head, loc))
-                    for loc, head in zip(locs, heads)]
-            else:
-                stemlines = [
-                    ((loc, bottom), (loc, head))
-                    for loc, head in zip(locs, heads)]
             if linestyle is None:
                 linestyle = rcParams['lines.linestyle']
-            stemlines = mcoll.LineCollection(stemlines, linestyles=linestyle,
-                                             colors=linecolor,
-                                             label='_nolegend_')
-            self.add_collection(stemlines)
+            xlines = self.vlines if orientation == "vertical" else self.hlines
+            stemlines = xlines(
+                locs, bottom, heads,
+                colors=linecolor, linestyles=linestyle, label="_nolegend_")
         # Old behaviour is to plot each of the lines individually
         else:
             stemlines = []
@@ -2911,7 +3036,7 @@ class Axes(_AxesBase):
 
         if normalize is None:
             if sx < 1:
-                cbook.warn_deprecated(
+                _api.warn_deprecated(
                     "3.3", message="normalize=None does not normalize "
                     "if the sum is less than 1 but this behavior "
                     "is deprecated since %(since)s until %(removal)s. "
@@ -2941,7 +3066,7 @@ class Axes(_AxesBase):
                 return next(color_cycle)
 
         if radius is None:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.3", message="Support for passing a radius of None to mean "
                 "1 is deprecated since %(since)s and will be removed "
                 "%(removal)s.")
@@ -2949,7 +3074,7 @@ class Axes(_AxesBase):
 
         # Starting theta1 is the start fraction of the circle
         if startangle is None:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.3", message="Support for passing a startangle of None to "
                 "mean 0 is deprecated since %(since)s and will be removed "
                 "%(removal)s.")
@@ -3025,7 +3150,9 @@ class Axes(_AxesBase):
 
             theta1 = theta2
 
-        if not frame:
+        if frame:
+            self._request_autoscale_view()
+        else:
             self.set(frame_on=False, xticks=[], yticks=[],
                      xlim=(-1.25 + center[0], 1.25 + center[0]),
                      ylim=(-1.25 + center[1], 1.25 + center[1]))
@@ -3146,7 +3273,7 @@ class Axes(_AxesBase):
 
             Valid kwargs for the marker properties are `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
         """
         kwargs = cbook.normalize_kwargs(kwargs, mlines.Line2D)
         # anything that comes in as 'None', drop so the default thing
@@ -3257,7 +3384,7 @@ class Axes(_AxesBase):
             if key in kwargs:
                 eb_lines_style[key] = kwargs[key]
 
-        # Make the style dict for the caps.
+        # Make the style dict for caps (the "hats").
         eb_cap_style = {**base_style, 'linestyle': 'none'}
         if capsize is None:
             capsize = rcParams["errorbar.capsize"]
@@ -3342,8 +3469,7 @@ class Axes(_AxesBase):
                     mlines.Line2D(lo, yo, marker='|', **eb_cap_style),
                     mlines.Line2D(ro, yo, marker='|', **eb_cap_style)])
             if xlolims.any():
-                xo, yo, lo, ro = apply_mask([x, y, left, right],
-                                            xlolims & everymask)
+                xo, yo, ro = apply_mask([x, y, right], xlolims & everymask)
                 if self.xaxis_inverted():
                     marker = mlines.CARETLEFTBASE
                 else:
@@ -3354,8 +3480,7 @@ class Axes(_AxesBase):
                     caplines.append(mlines.Line2D(
                         xo, yo, marker='|', **eb_cap_style))
             if xuplims.any():
-                xo, yo, lo, ro = apply_mask([x, y, left, right],
-                                            xuplims & everymask)
+                xo, yo, lo = apply_mask([x, y, left], xuplims & everymask)
                 if self.xaxis_inverted():
                     marker = mlines.CARETRIGHTBASE
                 else:
@@ -3379,8 +3504,7 @@ class Axes(_AxesBase):
                     mlines.Line2D(xo, lo, marker='_', **eb_cap_style),
                     mlines.Line2D(xo, uo, marker='_', **eb_cap_style)])
             if lolims.any():
-                xo, yo, lo, uo = apply_mask([x, y, lower, upper],
-                                            lolims & everymask)
+                xo, yo, uo = apply_mask([x, y, upper], lolims & everymask)
                 if self.yaxis_inverted():
                     marker = mlines.CARETDOWNBASE
                 else:
@@ -3391,8 +3515,7 @@ class Axes(_AxesBase):
                     caplines.append(mlines.Line2D(
                         xo, yo, marker='_', **eb_cap_style))
             if uplims.any():
-                xo, yo, lo, uo = apply_mask([x, y, lower, upper],
-                                            uplims & everymask)
+                xo, yo, lo = apply_mask([x, y, lower], uplims & everymask)
                 if self.yaxis_inverted():
                     marker = mlines.CARETUPBASE
                 else:
@@ -3476,7 +3599,6 @@ class Axes(_AxesBase):
             If a pair of floats, they indicate the percentiles at which to
             draw the whiskers (e.g., (5, 95)).  In particular, setting this to
             (0, 100) results in whiskers covering the whole range of the data.
-            "range" is a deprecated synonym for (0, 100).
 
             In the edge case where ``Q1 == Q3``, *whis* is automatically set
             to (0, 100) (cover the whole range of the data) if *autorange* is
@@ -3496,7 +3618,7 @@ class Axes(_AxesBase):
             95% confidence intervals. Values between 1000 and 10000 are
             recommended.
 
-        usermedians : array-like, optional
+        usermedians : 1D array-like, optional
             A 1D array-like of length ``len(x)``.  Each entry that is not
             `None` forces the value of the median for the corresponding
             dataset.  For entries that are `None`, the medians are computed
@@ -3872,23 +3994,20 @@ class Axes(_AxesBase):
             d['zorder'] = zorder + zdelta
             if not use_marker:
                 d['marker'] = ''
-            if explicit is not None:
-                d.update(cbook.normalize_kwargs(explicit, mlines.Line2D))
+            d.update(cbook.normalize_kwargs(explicit, mlines.Line2D))
             return d
 
         # box properties
         if patch_artist:
-            final_boxprops = dict(
-                linestyle=rcParams['boxplot.boxprops.linestyle'],
-                linewidth=rcParams['boxplot.boxprops.linewidth'],
-                edgecolor=rcParams['boxplot.boxprops.color'],
-                facecolor=('white' if rcParams['_internal.classic_mode'] else
-                           rcParams['patch.facecolor']),
-                zorder=zorder,
-            )
-            if boxprops is not None:
-                final_boxprops.update(
-                    cbook.normalize_kwargs(boxprops, mpatches.PathPatch))
+            final_boxprops = {
+                'linestyle': rcParams['boxplot.boxprops.linestyle'],
+                'linewidth': rcParams['boxplot.boxprops.linewidth'],
+                'edgecolor': rcParams['boxplot.boxprops.color'],
+                'facecolor': ('white' if rcParams['_internal.classic_mode']
+                              else rcParams['patch.facecolor']),
+                'zorder': zorder,
+                **cbook.normalize_kwargs(boxprops, mpatches.PathPatch)
+            }
         else:
             final_boxprops = line_props_with_rcdefaults('boxprops', boxprops,
                                                         use_marker=False)
@@ -4231,11 +4350,9 @@ class Axes(_AxesBase):
                                      "edgecolors", "c", "facecolor",
                                      "facecolors", "color"],
                       label_namer="y")
-    @cbook._delete_parameter("3.2", "verts")
     def scatter(self, x, y, s=None, c=None, marker=None, cmap=None, norm=None,
-                vmin=None, vmax=None, alpha=None, linewidths=None,
-                verts=None, edgecolors=None, *, plotnonfinite=False,
-                **kwargs):
+                vmin=None, vmax=None, alpha=None, linewidths=None, *,
+                edgecolors=None, plotnonfinite=False, **kwargs):
         """
         A scatter plot of *y* vs. *x* with varying marker size and/or color.
 
@@ -4369,6 +4486,10 @@ default: :rc:`scatter.edgecolors`
                 "s must be a scalar, "
                 "or float array-like with the same size as x and y")
 
+        # get the original edgecolor the user passed before we normalize
+        orig_edgecolor = edgecolors
+        if edgecolors is None:
+            orig_edgecolor = kwargs.get('edgecolor', None)
         c, colors, edgecolors = \
             self._parse_scatter_color_args(
                 c, edgecolors, kwargs, x.size,
@@ -4382,6 +4503,11 @@ default: :rc:`scatter.edgecolors`
             x, y, s, c, colors, edgecolors, linewidths = \
                 cbook._combine_masks(
                     x, y, s, c, colors, edgecolors, linewidths)
+        # Unmask edgecolors if it was actually a single RGB or RGBA.
+        if (x.size in (3, 4)
+                and np.ma.is_masked(edgecolors)
+                and not np.ma.is_masked(orig_edgecolor)):
+            edgecolors = edgecolors.data
 
         scales = s   # Renamed for readability below.
 
@@ -4397,6 +4523,36 @@ default: :rc:`scatter.edgecolors`
         path = marker_obj.get_path().transformed(
             marker_obj.get_transform())
         if not marker_obj.is_filled():
+            if orig_edgecolor is not None:
+                _api.warn_external(
+                    f"You passed a edgecolor/edgecolors ({orig_edgecolor!r}) "
+                    f"for an unfilled marker ({marker!r}).  Matplotlib is "
+                    "ignoring the edgecolor in favor of the facecolor.  This "
+                    "behavior may change in the future."
+                )
+            # We need to handle markers that can not be filled (like
+            # '+' and 'x') differently than markers that can be
+            # filled, but have their fillstyle set to 'none'.  This is
+            # to get:
+            #
+            #  - respecting the fillestyle if set
+            #  - maintaining back-compatibility for querying the facecolor of
+            #    the un-fillable markers.
+            #
+            # While not an ideal situation, but is better than the
+            # alternatives.
+            if marker_obj.get_fillstyle() == 'none':
+                # promote the facecolor to be the edgecolor
+                edgecolors = colors
+                # set the facecolor to 'none' (at the last chance) because
+                # we can not not fill a path if the facecolor is non-null.
+                # (which is defendable at the renderer level)
+                colors = 'none'
+            else:
+                # if we are not nulling the face color we can do this
+                # simpler
+                edgecolors = 'face'
+
             if linewidths is None:
                 linewidths = rcParams['lines.linewidth']
             elif np.iterable(linewidths):
@@ -4408,8 +4564,8 @@ default: :rc:`scatter.edgecolors`
 
         collection = mcoll.PathCollection(
                 (path,), scales,
-                facecolors=colors if marker_obj.is_filled() else 'none',
-                edgecolors=edgecolors if marker_obj.is_filled() else colors,
+                facecolors=colors,
+                edgecolors=edgecolors,
                 linewidths=linewidths,
                 offsets=offsets,
                 transOffset=kwargs.pop('transform', self.transData),
@@ -4575,7 +4731,7 @@ default: :rc:`scatter.edgecolors`
         **kwargs : `~matplotlib.collections.PolyCollection` properties
             All other keyword arguments are passed on to `.PolyCollection`:
 
-            %(PolyCollection)s
+            %(PolyCollection_kwdoc)s
 
         """
         self._process_unit_info([("x", x), ("y", y)], kwargs, convert=False)
@@ -4689,8 +4845,8 @@ default: :rc:`scatter.edgecolors`
                     else:
                         lattice2[i, j] = np.nan
 
-            accum = np.hstack((lattice1.astype(float).ravel(),
-                               lattice2.astype(float).ravel()))
+            accum = np.concatenate([lattice1.astype(float).ravel(),
+                                    lattice2.astype(float).ravel()])
             good_idxs = ~np.isnan(accum)
 
         offsets = np.zeros((n, 2), float)
@@ -4741,9 +4897,8 @@ default: :rc:`scatter.edgecolors`
         # Set normalizer if bins is 'log'
         if bins == 'log':
             if norm is not None:
-                cbook._warn_external("Only one of 'bins' and 'norm' "
-                                     "arguments can be supplied, ignoring "
-                                     "bins={}".format(bins))
+                _api.warn_external("Only one of 'bins' and 'norm' arguments "
+                                   f"can be supplied, ignoring bins={bins}")
             else:
                 norm = mcolors.LogNorm()
             bins = None
@@ -5091,7 +5246,7 @@ default: :rc:`scatter.edgecolors`
             All other keyword arguments are passed on to `.PolyCollection`.
             They control the `.Polygon` properties:
 
-            %(PolyCollection)s
+            %(PolyCollection_kwdoc)s
 
         See Also
         --------
@@ -5104,7 +5259,6 @@ default: :rc:`scatter.edgecolors`
         """
 
         dep_dir = {"x": "y", "y": "x"}[ind_dir]
-        func_name = {"x": "fill_between", "y": "fill_betweenx"}[dep_dir]
 
         if not rcParams["_internal.classic_mode"]:
             kwargs = cbook.normalize_kwargs(kwargs, mcoll.Collection)
@@ -5127,14 +5281,13 @@ default: :rc:`scatter.edgecolors`
         else:
             where = np.asarray(where, dtype=bool)
             if where.size != ind.size:
-                cbook.warn_deprecated(
-                    "3.2", message=f"Since %(since)s, the parameter *where* "
-                    f"must have the same size as {ind} in {func_name}(). This "
-                    "will become an error %(removal)s.")
+                raise ValueError(f"where size ({where.size}) does not match "
+                                 f"{ind_dir} size ({ind.size})")
         where = where & ~functools.reduce(
             np.logical_or, map(np.ma.getmask, [ind, dep1, dep2]))
 
-        ind, dep1, dep2 = np.broadcast_arrays(np.atleast_1d(ind), dep1, dep2)
+        ind, dep1, dep2 = np.broadcast_arrays(
+            np.atleast_1d(ind), dep1, dep2, subok=True)
 
         polys = []
         for idx0, idx1 in cbook.contiguous_regions(where):
@@ -5305,7 +5458,7 @@ default: :rc:`scatter.edgecolors`
             Supported values are 'none', 'antialiased', 'nearest', 'bilinear',
             'bicubic', 'spline16', 'spline36', 'hanning', 'hamming', 'hermite',
             'kaiser', 'quadric', 'catrom', 'gaussian', 'bessel', 'mitchell',
-            'sinc', 'lanczos'.
+            'sinc', 'lanczos', 'blackman'.
 
             If *interpolation* is 'none', then no interpolation is performed
             on the Agg, ps, pdf and svg backends. Other backends will fall back
@@ -5458,9 +5611,9 @@ default: :rc:`scatter.edgecolors`
         try:
             _api.check_in_list(_valid_shading, shading=shading)
         except ValueError as err:
-            cbook._warn_external(f"shading value '{shading}' not in list of "
-                                 f"valid values {_valid_shading}. Setting "
-                                 "shading='auto'.")
+            _api.warn_external(f"shading value '{shading}' not in list of "
+                               f"valid values {_valid_shading}. Setting "
+                               "shading='auto'.")
             shading = 'auto'
 
         if len(args) == 1:
@@ -5523,7 +5676,7 @@ default: :rc:`scatter.edgecolors`
                                 ' X (%d) and/or Y (%d); see help(%s)' % (
                                     C.shape, Nx, Ny, funcname))
             if (ncols == Nx or nrows == Ny):
-                cbook.warn_deprecated(
+                _api.warn_deprecated(
                     "3.3", message="shading='flat' when X and Y have the same "
                     "dimensions as C is deprecated since %(since)s.  Either "
                     "specify the corners of the quadrilaterals with X and Y, "
@@ -5545,7 +5698,7 @@ default: :rc:`scatter.edgecolors`
                     if np.shape(X)[1] > 1:
                         dX = np.diff(X, axis=1)/2.
                         if not (np.all(dX >= 0) or np.all(dX <= 0)):
-                            cbook._warn_external(
+                            _api.warn_external(
                                 f"The input coordinates to {funcname} are "
                                 "interpreted as cell centers, but are not "
                                 "monotonically increasing or decreasing. "
@@ -5596,8 +5749,8 @@ default: :rc:`scatter.edgecolors`
 
         Parameters
         ----------
-        C : array-like
-            A scalar 2D array. The values will be color-mapped.
+        C : 2D array-like
+            The color-mapped values.
 
         X, Y : array-like, optional
             The coordinates of the corners of quadrilaterals of a pcolormesh::
@@ -5699,7 +5852,7 @@ default: :rc:`scatter.edgecolors`
             Additionally, the following arguments are allowed. They are passed
             along to the `~matplotlib.collections.PolyCollection` constructor:
 
-        %(PolyCollection)s
+        %(PolyCollection_kwdoc)s
 
         See Also
         --------
@@ -5840,8 +5993,8 @@ default: :rc:`scatter.edgecolors`
 
         Parameters
         ----------
-        C : array-like
-            A scalar 2D array. The values will be color-mapped.
+        C : 2D array-like
+            The color-mapped values.
 
         X, Y : array-like, optional
             The coordinates of the corners of quadrilaterals of a pcolormesh::
@@ -5929,6 +6082,11 @@ default: :rc:`scatter.edgecolors`
         snap : bool, default: False
             Whether to snap the mesh to pixel boundaries.
 
+        rasterized: bool, optional
+            Rasterize the pcolormesh when drawing vector graphics.  This can
+            speed up rendering and produce smaller files for large data sets.
+            See also :doc:`/gallery/misc/rasterization_demo`.
+
         Returns
         -------
         `matplotlib.collections.QuadMesh`
@@ -5939,7 +6097,7 @@ default: :rc:`scatter.edgecolors`
             Additionally, the following arguments are allowed. They are passed
             along to the `~matplotlib.collections.QuadMesh` constructor:
 
-        %(QuadMesh)s
+        %(QuadMesh_kwdoc)s
 
         See Also
         --------
@@ -5998,7 +6156,7 @@ default: :rc:`scatter.edgecolors`
         if shading is None:
             shading = rcParams['pcolor.shading']
         shading = shading.lower()
-        kwargs.setdefault('edgecolors', 'None')
+        kwargs.setdefault('edgecolors', 'none')
 
         X, Y, C, shading = self._pcolorargs('pcolormesh', *args,
                                             shading=shading, kwargs=kwargs)
@@ -6071,7 +6229,7 @@ default: :rc:`scatter.edgecolors`
 
         Parameters
         ----------
-        C : array-like(M, N)
+        C : array-like
             The image data. Supported array shapes are:
 
             - (M, N): an image with scalar data. The data is visualized
@@ -6417,10 +6575,7 @@ default: :rc:`scatter.edgecolors`
             Ignored if *histtype* is 'step' or 'stepfilled'.
 
         log : bool, default: False
-            If ``True``, the histogram axis will be set to a log scale. If
-            *log* is ``True`` and *x* is a 1D array, empty bins will be
-            filtered out and only the non-empty ``(n, bins, patches)``
-            will be returned.
+            If ``True``, the histogram axis will be set to a log scale.
 
         color : color or array-like of colors or None, default: None
             Color or sequence of colors, one per dataset.  Default (``None``)
@@ -6742,7 +6897,7 @@ such objects
             return tops[0], bins, patches[0]
         else:
             patch_type = ("BarContainer" if histtype.startswith("bar")
-                          else "List[Polygon]")
+                          else "list[Polygon]")
             return tops, bins, cbook.silent_list(patch_type, patches)
 
     @_preprocess_data()
@@ -6983,7 +7138,7 @@ such objects
         **kwargs
             Keyword arguments control the `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -7096,7 +7251,7 @@ such objects
         **kwargs
             Keyword arguments control the `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -7186,7 +7341,7 @@ such objects
         **kwargs
             Keyword arguments control the `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -7263,7 +7418,7 @@ such objects
         **kwargs
             Keyword arguments control the `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -7329,7 +7484,7 @@ such objects
         **kwargs
             Keyword arguments control the `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         See Also
         --------
@@ -7396,7 +7551,7 @@ such objects
         **kwargs
             Keyword arguments control the `.Line2D` properties:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
 
         References
         ----------
@@ -7595,7 +7750,7 @@ such objects
 
         Parameters
         ----------
-        Z : array-like (M, N)
+        Z : (M, N) array-like
             The array to be plotted.
 
         precision : float or 'present', default: 0
@@ -7646,7 +7801,7 @@ such objects
             For the marker style, you can pass any `.Line2D` property except
             for *linestyle*:
 
-            %(_Line2D_docstr)s
+            %(Line2D_kwdoc)s
         """
         if marker is None and markersize is None and hasattr(Z, 'tocoo'):
             marker = 's'
@@ -7661,8 +7816,11 @@ such objects
             if 'interpolation' in kwargs:
                 raise TypeError(
                     "spy() got an unexpected keyword argument 'interpolation'")
-            ret = self.imshow(mask, interpolation='nearest', aspect=aspect,
-                              origin=origin, **kwargs)
+            if 'norm' not in kwargs:
+                kwargs['norm'] = mcolors.NoNorm()
+            ret = self.imshow(mask, interpolation='nearest',
+                              aspect=aspect, origin=origin,
+                              **kwargs)
         else:
             if hasattr(Z, 'tocoo'):
                 c = Z.tocoo()
@@ -7716,7 +7874,7 @@ such objects
 
         Parameters
         ----------
-        Z : array-like(M, N)
+        Z : (M, N) array-like
             The matrix to be displayed.
 
         Returns

@@ -12,7 +12,6 @@ These tools are used by `matplotlib.backend_managers.ToolManager`
 """
 
 from enum import IntEnum
-import logging
 import re
 import time
 from types import SimpleNamespace
@@ -23,9 +22,7 @@ import numpy as np
 
 import matplotlib as mpl
 from matplotlib._pylab_helpers import Gcf
-import matplotlib.cbook as cbook
-
-_log = logging.getLogger(__name__)
+from matplotlib import _api, cbook
 
 
 class Cursors(IntEnum):  # Must subclass int for the macOS backend.
@@ -80,9 +77,6 @@ class ToolBase:
     """
 
     def __init__(self, toolmanager, name):
-        cbook._warn_external(
-            'The new Tool classes introduced in v1.5 are experimental; their '
-            'API (including names) will likely change in future versions.')
         self._name = name
         self._toolmanager = toolmanager
         self._figure = None
@@ -404,7 +398,7 @@ class _ToolEnableAllNavigation(ToolBase):
         mpl.backend_bases.key_press_handler(event, self.figure.canvas, None)
 
 
-@cbook.deprecated("3.3")
+@_api.deprecated("3.3")
 class ToolEnableAllNavigation(_ToolEnableAllNavigation):
     pass
 
@@ -419,7 +413,7 @@ class _ToolEnableNavigation(ToolBase):
         mpl.backend_bases.key_press_handler(event, self.figure.canvas, None)
 
 
-@cbook.deprecated("3.3")
+@_api.deprecated("3.3")
 class ToolEnableNavigation(_ToolEnableNavigation):
     pass
 
@@ -619,7 +613,7 @@ class ToolViewsPositions(ToolBase):
             if a not in self.home_views[figure]:
                 self.home_views[figure][a] = a._get_view()
 
-    @cbook.deprecated("3.3", alternative="self.figure.canvas.draw_idle()")
+    @_api.deprecated("3.3", alternative="self.figure.canvas.draw_idle()")
     def refresh_locators(self):
         """Redraw the canvases, update the locators."""
         self._refresh_locators()

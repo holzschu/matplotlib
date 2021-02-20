@@ -24,11 +24,11 @@ import numpy as np
 from PIL import Image
 
 import matplotlib as mpl
-from matplotlib import _text_layout, cbook
+from matplotlib import _api, _text_layout, cbook
 from matplotlib._pylab_helpers import Gcf
 from matplotlib.backend_bases import (
     _Backend, _check_savefig_extra_args, FigureCanvasBase, FigureManagerBase,
-    GraphicsContextBase, RendererBase)
+    GraphicsContextBase, RendererBase, _no_output_draw)
 from matplotlib.backends.backend_mixed import MixedModeRenderer
 from matplotlib.figure import Figure
 from matplotlib.font_manager import findfont, get_font
@@ -151,7 +151,7 @@ def _create_pdf_info_dict(backend, metadata):
     backend : str
         The name of the backend to use in the Producer value.
 
-    metadata : Dict[str, Union[str, datetime, Name]]
+    metadata : dict[str, Union[str, datetime, Name]]
         A dictionary of metadata supplied by the user with information
         following the PDF specification, also defined in
         `~.backend_pdf.PdfPages` below.
@@ -161,7 +161,7 @@ def _create_pdf_info_dict(backend, metadata):
 
     Returns
     -------
-    Dict[str, Union[str, datetime, Name]]
+    dict[str, Union[str, datetime, Name]]
         A validated dictionary of metadata.
     """
 
@@ -210,12 +210,12 @@ def _create_pdf_info_dict(backend, metadata):
     }
     for k in info:
         if k not in keywords:
-            cbook._warn_external(f'Unknown infodict keyword: {k!r}. '
-                                 f'Must be one of {set(keywords)!r}.')
+            _api.warn_external(f'Unknown infodict keyword: {k!r}. '
+                               f'Must be one of {set(keywords)!r}.')
         elif not keywords[k](info[k]):
-            cbook._warn_external(f'Bad value for infodict keyword {k}. '
-                                 f'Got {info[k]!r} which is not '
-                                 f'{keywords[k].text_for_warning}.')
+            _api.warn_external(f'Bad value for infodict keyword {k}. '
+                               f'Got {info[k]!r} which is not '
+                               f'{keywords[k].text_for_warning}.')
     if 'Trapped' in info:
         info['Trapped'] = Name(info['Trapped'])
 
@@ -716,7 +716,7 @@ class PdfFile:
                      'ProcSet': procsets}
         self.writeObject(self.resourceObject, resources)
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     @property
     def used_characters(self):
         return self.file._character_tracker.used_characters
@@ -1844,7 +1844,7 @@ class RendererPdf(_backend_pdf_ps.RendererPDFPSBase):
         self.gc = self.new_gc()
         self.image_dpi = image_dpi
 
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     @property
     def mathtext_parser(self):
         return MathTextParser("Pdf")
@@ -1879,12 +1879,12 @@ class RendererPdf(_backend_pdf_ps.RendererPDFPSBase):
         gc._fillcolor = orig_fill
         gc._effective_alphas = orig_alphas
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def track_characters(self, *args, **kwargs):
         """Keep track of which characters are required from each font."""
         self.file._character_tracker.track(*args, **kwargs)
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def merge_used_characters(self, *args, **kwargs):
         self.file._character_tracker.merge(*args, **kwargs)
 
@@ -2155,7 +2155,7 @@ class RendererPdf(_backend_pdf_ps.RendererPDFPSBase):
         # Pop off the global transformation
         self.file.output(Op.grestore)
 
-    @cbook._delete_parameter("3.3", "ismath")
+    @_api.delete_parameter("3.3", "ismath")
     def draw_tex(self, gc, x, y, s, prop, angle, ismath='TeX!', mtext=None):
         # docstring inherited
         texmanager = self.get_texmanager()
@@ -2692,15 +2692,7 @@ class PdfPages:
 
 
 class FigureCanvasPdf(FigureCanvasBase):
-    """
-    The canvas the figure renders into.  Calls the draw and print fig
-    methods, creates the renderers, etc...
-
-    Attributes
-    ----------
-    figure : `matplotlib.figure.Figure`
-        A high-level Figure instance
-    """
+    # docstring inherited
 
     fixed_dpi = 72
     filetypes = {'pdf': 'Portable Document Format'}
@@ -2709,10 +2701,13 @@ class FigureCanvasPdf(FigureCanvasBase):
         return 'pdf'
 
     @_check_savefig_extra_args
+    @_api.delete_parameter("3.4", "dpi")
     def print_pdf(self, filename, *,
-                  dpi=72,  # dpi to use for images
+                  dpi=None,  # dpi to use for images
                   bbox_inches_restore=None, metadata=None):
 
+        if dpi is None:  # always use this branch after deprecation elapses.
+            dpi = self.figure.get_dpi()
         self.figure.set_dpi(72)            # there are 72 pdf points to an inch
         width, height = self.figure.get_size_inches()
         if isinstance(filename, PdfPages):
@@ -2734,6 +2729,10 @@ class FigureCanvasPdf(FigureCanvasBase):
                 file.endStream()
             else:            # we opened the file above; now finish it off
                 file.close()
+
+    def draw(self):
+        _no_output_draw(self.figure)
+        return super().draw()
 
 
 FigureManagerPdf = FigureManagerBase

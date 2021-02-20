@@ -11,20 +11,19 @@ Module containing Axes3D, an object which can plot 3D objects on a
 """
 
 from collections import defaultdict
-from functools import reduce
-from itertools import compress
+import functools
+import itertools
 import math
+from numbers import Integral
 import textwrap
 
 import numpy as np
 
-from matplotlib import artist
-from matplotlib import _api
+from matplotlib import _api, artist, cbook, docstring
 import matplotlib.axes as maxes
-import matplotlib.cbook as cbook
 import matplotlib.collections as mcoll
 import matplotlib.colors as mcolors
-import matplotlib.docstring as docstring
+import matplotlib.lines as mlines
 import matplotlib.scale as mscale
 import matplotlib.container as mcontainer
 import matplotlib.transforms as mtransforms
@@ -67,10 +66,19 @@ class Axes3D(Axes):
             Other axes to share z-limits with.
         proj_type : {'persp', 'ortho'}
             The projection type, default 'persp'.
+        auto_add_to_figure : bool, default: True
+            Prior to Matplotlib 3.4 Axes3D would add themselves
+            to their host Figure on init.  Other Axes class do not
+            do this.
+
+            This behavior is deprecated in 3.4, the default will
+            change to False in 3.5.  The keyword will be undocumented
+            and a non-False value will be an error in 3.6.
+
         **kwargs
             Other optional keyword arguments:
 
-            %(Axes3D)s
+            %(Axes3D_kwdoc)s
 
         Notes
         -----
@@ -89,6 +97,7 @@ class Axes3D(Axes):
         self.zz_viewLim = Bbox.unit()
         self.xy_dataLim = Bbox.unit()
         self.zz_dataLim = Bbox.unit()
+        self._stale_viewlim_z = False
 
         # inhibit autoscale_view until the axes are defined
         # they can't be defined until Axes.__init__ has been called
@@ -98,6 +107,8 @@ class Axes3D(Axes):
         if sharez is not None:
             self._shared_z_axes.join(self, sharez)
             self._adjustable = 'datalim'
+
+        auto_add_to_figure = kwargs.pop('auto_add_to_figure', True)
 
         super().__init__(
             fig, rect, frameon=True, box_aspect=box_aspect, *args, **kwargs
@@ -111,19 +122,15 @@ class Axes3D(Axes):
         # func used to format z -- fall back on major formatters
         self.fmt_zdata = None
 
-        if self.zaxis is not None:
-            self._zcid = self.zaxis.callbacks.connect(
-                'units finalize', lambda: self._on_units_changed(scalez=True))
-        else:
-            self._zcid = None
-
         self.mouse_init()
-        self.figure.canvas.mpl_connect(
-            'motion_notify_event', self._on_move),
-        self.figure.canvas.mpl_connect(
-            'button_press_event', self._button_press),
-        self.figure.canvas.mpl_connect(
-            'button_release_event', self._button_release),
+        self.figure.canvas.callbacks._pickled_cids.update({
+            self.figure.canvas.mpl_connect(
+                'motion_notify_event', self._on_move),
+            self.figure.canvas.mpl_connect(
+                'button_press_event', self._button_press),
+            self.figure.canvas.mpl_connect(
+                'button_release_event', self._button_release),
+        })
         self.set_top_view()
 
         self.patch.set_linewidth(0)
@@ -133,8 +140,19 @@ class Axes3D(Axes):
 
         # mplot3d currently manages its own spines and needs these turned off
         # for bounding box calculations
-        for k in self.spines.keys():
-            self.spines[k].set_visible(False)
+        self.spines[:].set_visible(False)
+
+        if auto_add_to_figure:
+            _api.warn_deprecated(
+                "3.4", removal="3.6", message="Axes3D(fig) adding itself "
+                "to the figure is deprecated since %(since)s. "
+                "Pass the keyword argument auto_add_to_figure=False "
+                "and use fig.add_axes(ax) to suppress this warning. "
+                "The default value of auto_add_to_figure will change to "
+                "False in mpl3.5 and True values will "
+                "no longer work %(removal)s.  This is consistent with "
+                "other Axes classes.")
+            fig.add_axes(self)
 
     def set_axis_off(self):
         self._axis3don = False
@@ -184,15 +202,33 @@ class Axes3D(Axes):
     get_zgridlines = _axis_method_wrapper("zaxis", "get_gridlines")
     get_zticklines = _axis_method_wrapper("zaxis", "get_ticklines")
 
-    w_xaxis = cbook.deprecated("3.1", alternative="xaxis", pending=True)(
+    w_xaxis = _api.deprecated("3.1", alternative="xaxis", pending=True)(
         property(lambda self: self.xaxis))
-    w_yaxis = cbook.deprecated("3.1", alternative="yaxis", pending=True)(
+    w_yaxis = _api.deprecated("3.1", alternative="yaxis", pending=True)(
         property(lambda self: self.yaxis))
-    w_zaxis = cbook.deprecated("3.1", alternative="zaxis", pending=True)(
+    w_zaxis = _api.deprecated("3.1", alternative="zaxis", pending=True)(
         property(lambda self: self.zaxis))
 
     def _get_axis_list(self):
         return super()._get_axis_list() + (self.zaxis, )
+
+    def _unstale_viewLim(self):
+        # We should arrange to store this information once per share-group
+        # instead of on every axis.
+        scalex = any(ax._stale_viewlim_x
+                     for ax in self._shared_x_axes.get_siblings(self))
+        scaley = any(ax._stale_viewlim_y
+                     for ax in self._shared_y_axes.get_siblings(self))
+        scalez = any(ax._stale_viewlim_z
+                     for ax in self._shared_z_axes.get_siblings(self))
+        if scalex or scaley or scalez:
+            for ax in self._shared_x_axes.get_siblings(self):
+                ax._stale_viewlim_x = False
+            for ax in self._shared_y_axes.get_siblings(self):
+                ax._stale_viewlim_y = False
+            for ax in self._shared_z_axes.get_siblings(self):
+                ax._stale_viewlim_z = False
+            self.autoscale_view(scalex=scalex, scaley=scaley, scalez=scalez)
 
     def unit_cube(self, vals=None):
         minx, maxx, miny, maxy, minz, maxz = vals or self.get_w_lims()
@@ -381,6 +417,8 @@ class Axes3D(Axes):
 
     @artist.allow_rasterization
     def draw(self, renderer):
+        self._unstale_viewLim()
+
         # draw the background patch
         self.patch.draw(renderer)
         self._frameon = False
@@ -409,8 +447,8 @@ class Axes3D(Axes):
             # the attributes listed below, and they are temporarily attached to
             # the _class_ in the `_setattr_cm` call. These can both be removed
             # once the deprecation expires
-            name: cbook.deprecated('3.4', name=name,
-                                   alternative=f'self.axes.{name}')(
+            name: _api.deprecated('3.4', name=name,
+                                  alternative=f'self.axes.{name}')(
                 property(lambda self, _value=getattr(self, name): _value))
             for name in ['M', 'vvec', 'eye', 'get_axis_position']
         }
@@ -432,7 +470,7 @@ class Axes3D(Axes):
                     # deprecation has expired.
                     return artist.do_3d_projection()
 
-                cbook.warn_deprecated(
+                _api.warn_deprecated(
                     "3.4",
                     message="The 'renderer' parameter of "
                     "do_3d_projection() was deprecated in Matplotlib "
@@ -473,14 +511,16 @@ class Axes3D(Axes):
         zhigh = tc[0][2] > tc[2][2]
         return xhigh, yhigh, zhigh
 
-    def _on_units_changed(self, scalex=False, scaley=False, scalez=False):
-        """
-        Callback for processing changes to axis units.
-
-        Currently forces updates of data limits and view limits.
-        """
+    def _unit_change_handler(self, axis_name, event=None):
+        # docstring inherited
+        if event is None:  # Allow connecting `self._unit_change_handler(name)`
+            return functools.partial(
+                self._unit_change_handler, axis_name, event=object())
+        _api.check_in_list(self._get_axis_map(), axis_name=axis_name)
         self.relim()
-        self.autoscale_view(scalex=scalex, scaley=scaley, scalez=scalez)
+        self._request_autoscale_view(scalex=(axis_name == "x"),
+                                     scaley=(axis_name == "y"),
+                                     scalez=(axis_name == "z"))
 
     def update_datalim(self, xys, **kwargs):
         pass
@@ -529,6 +569,24 @@ class Axes3D(Axes):
         """
         self._autoscaleZon = b
 
+    def set_xmargin(self, m):
+        # docstring inherited
+        scalez = self._stale_viewlim_z
+        super().set_xmargin(m)
+        # Superclass is 2D and will call _request_autoscale_view with defaults
+        # for unknown Axis, which would be scalez=True, but it shouldn't be for
+        # this call, so restore it.
+        self._stale_viewlim_z = scalez
+
+    def set_ymargin(self, m):
+        # docstring inherited
+        scalez = self._stale_viewlim_z
+        super().set_ymargin(m)
+        # Superclass is 2D and will call _request_autoscale_view with defaults
+        # for unknown Axis, which would be scalez=True, but it shouldn't be for
+        # this call, so restore it.
+        self._stale_viewlim_z = scalez
+
     def set_zmargin(self, m):
         """
         Set padding of Z data limits prior to autoscaling.
@@ -543,6 +601,7 @@ class Axes3D(Axes):
         if m < 0 or m > 1:
             raise ValueError("margin must be in range 0 to 1")
         self._zmargin = m
+        self._request_autoscale_view(scalex=False, scaley=False, scalez=True)
         self.stale = True
 
     def margins(self, *margins, x=None, y=None, z=None, tight=True):
@@ -598,7 +657,7 @@ class Axes3D(Axes):
 
         if x is None and y is None and z is None:
             if tight is not True:
-                cbook._warn_external(f'ignoring tight={tight!r} in get mode')
+                _api.warn_external(f'ignoring tight={tight!r} in get mode')
             return self._xmargin, self._ymargin, self._zmargin
 
         if x is not None:
@@ -640,8 +699,8 @@ class Axes3D(Axes):
                 self._autoscaleZon = scalez = bool(enable)
             else:
                 scalez = False
-        self.autoscale_view(tight=tight, scalex=scalex, scaley=scaley,
-                            scalez=scalez)
+        self._request_autoscale_view(tight=tight, scalex=scalex, scaley=scaley,
+                                     scalez=scalez)
 
     def auto_scale_xyz(self, X, Y, Z=None, had_data=None):
         # This updates the bounding boxes as to keep a record as to what the
@@ -656,6 +715,19 @@ class Axes3D(Axes):
                 np.column_stack([Z, Z]), not had_data)
         # Let autoscale_view figure out how to use this data.
         self.autoscale_view()
+
+    # API could be better, right now this is just to match the old calls to
+    # autoscale_view() after each plotting method.
+    def _request_autoscale_view(self, tight=None, scalex=True, scaley=True,
+                                scalez=True):
+        if tight is not None:
+            self._tight = tight
+        if scalex:
+            self._stale_viewlim_x = True  # Else keep old state.
+        if scaley:
+            self._stale_viewlim_y = True
+        if scalez:
+            self._stale_viewlim_z = True
 
     def autoscale_view(self, tight=None, scalex=True, scaley=True,
                        scalez=True):
@@ -757,7 +829,7 @@ class Axes3D(Axes):
             right = old_right
 
         if left == right:
-            cbook._warn_external(
+            _api.warn_external(
                 f"Attempting to set identical left == right == {left} results "
                 f"in singular transformations; automatically expanding.")
         reverse = left > right
@@ -767,6 +839,9 @@ class Axes3D(Axes):
         left, right = sorted([left, right], reverse=bool(reverse))
         self.xy_viewLim.intervalx = (left, right)
 
+        # Mark viewlims as no longer stale without triggering an autoscale.
+        for ax in self._shared_x_axes.get_siblings(self):
+            ax._stale_viewlim_x = False
         if auto is not None:
             self._autoscaleXon = bool(auto)
 
@@ -811,7 +886,7 @@ class Axes3D(Axes):
             top = old_top
 
         if bottom == top:
-            cbook._warn_external(
+            _api.warn_external(
                 f"Attempting to set identical bottom == top == {bottom} "
                 f"results in singular transformations; automatically "
                 f"expanding.")
@@ -822,6 +897,9 @@ class Axes3D(Axes):
             bottom, top = top, bottom
         self.xy_viewLim.intervaly = (bottom, top)
 
+        # Mark viewlims as no longer stale without triggering an autoscale.
+        for ax in self._shared_y_axes.get_siblings(self):
+            ax._stale_viewlim_y = False
         if auto is not None:
             self._autoscaleYon = bool(auto)
 
@@ -866,7 +944,7 @@ class Axes3D(Axes):
             top = old_top
 
         if bottom == top:
-            cbook._warn_external(
+            _api.warn_external(
                 f"Attempting to set identical bottom == top == {bottom} "
                 f"results in singular transformations; automatically "
                 f"expanding.")
@@ -877,6 +955,9 @@ class Axes3D(Axes):
             bottom, top = top, bottom
         self.zz_viewLim.intervalx = (bottom, top)
 
+        # Mark viewlims as no longer stale without triggering an autoscale.
+        for ax in self._shared_z_axes.get_siblings(self):
+            ax._stale_viewlim_z = False
         if auto is not None:
             self._autoscaleZon = bool(auto)
 
@@ -1122,7 +1203,10 @@ class Axes3D(Axes):
                 pass
 
         self._autoscaleZon = True
-        self._zmargin = 0
+        if self._projection is proj3d.ortho_transformation:
+            self._zmargin = rcParams['axes.zmargin']
+        else:
+            self._zmargin = 0.
 
         self.grid(rcParams['axes3d.grid'])
 
@@ -1347,7 +1431,8 @@ class Axes3D(Axes):
             self.yaxis.get_major_locator().set_params(**kwargs)
         if _z:
             self.zaxis.get_major_locator().set_params(**kwargs)
-        self.autoscale_view(tight=tight, scalex=_x, scaley=_y, scalez=_z)
+        self._request_autoscale_view(tight=tight, scalex=_x, scaley=_y,
+                                     scalez=_z)
 
     def tick_params(self, axis='both', **kwargs):
         """
@@ -1494,6 +1579,7 @@ class Axes3D(Axes):
 
     plot3D = plot
 
+    @_api.delete_parameter("3.4", "args", alternative="kwargs")
     def plot_surface(self, X, Y, Z, *args, norm=None, vmin=None,
                      vmax=None, lightsource=None, **kwargs):
         """
@@ -1571,7 +1657,7 @@ class Axes3D(Axes):
         if Z.ndim != 2:
             raise ValueError("Argument Z must be 2-dimensional.")
         if np.any(np.isnan(Z)):
-            cbook._warn_external(
+            _api.warn_external(
                 "Z contains NaN values. This may result in rendering "
                 "artifacts.")
 
@@ -1616,7 +1702,7 @@ class Axes3D(Axes):
         cmap = kwargs.get('cmap', None)
         shade = kwargs.pop('shade', cmap is None)
         if shade is None:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.1",
                 message="Passing shade=None to Axes3D.plot_surface() is "
                         "deprecated since matplotlib 3.1 and will change its "
@@ -1707,9 +1793,8 @@ class Axes3D(Axes):
 
         Returns
         -------
-        normals : (..., 3) array-like
+        normals : (..., 3) array
             A normal vector estimated for the polygon.
-
         """
         if isinstance(polygons, np.ndarray):
             # optimization: polygons all have the same number of points, so can
@@ -1765,6 +1850,7 @@ class Axes3D(Axes):
 
         return colors
 
+    @_api.delete_parameter("3.4", "args", alternative="kwargs")
     def plot_wireframe(self, X, Y, Z, *args, **kwargs):
         """
         Plot a 3D wireframe.
@@ -2648,7 +2734,7 @@ pivot='tail', normalize=False, **kwargs)
         masks = bcast[argi:]
         if masks:
             # combine the masks into one
-            mask = reduce(np.logical_or, masks)
+            mask = functools.reduce(np.logical_or, masks)
             # put mask on and compress
             input_args = [np.ma.array(k, mask=mask).compressed()
                           for k in input_args]
@@ -2935,7 +3021,7 @@ pivot='tail', normalize=False, **kwargs)
                  barsabove=False, errorevery=1, ecolor=None, elinewidth=None,
                  capsize=None, capthick=None, xlolims=False, xuplims=False,
                  ylolims=False, yuplims=False, zlolims=False, zuplims=False,
-                 arrow_length_ratio=.4, **kwargs):
+                 **kwargs):
         """
         Plot lines and/or markers with errorbars around them.
 
@@ -3012,10 +3098,6 @@ pivot='tail', normalize=False, **kwargs)
             Used to avoid overlapping error bars when two series share x-axis
             values.
 
-        arrow_length_ratio : float, default: 0.4
-            Passed to :meth:`quiver`, the ratio of the arrow head with respect
-            to the quiver.
-
         Returns
         -------
         errlines : list
@@ -3040,34 +3122,14 @@ pivot='tail', normalize=False, **kwargs)
         """
         had_data = self.has_data()
 
-        plot_line = (fmt.lower() != 'none')
-        label = kwargs.pop("label", None)
+        kwargs = cbook.normalize_kwargs(kwargs, mlines.Line2D)
+        # anything that comes in as 'None', drop so the default thing
+        # happens down stream
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        kwargs.setdefault('zorder', 2)
 
-        if fmt == '':
-            fmt_style_kwargs = {}
-        else:
-            fmt_style_kwargs = {k: v for k, v in
-                                zip(('linestyle', 'marker', 'color'),
-                                    _process_plot_format(fmt))
-                                if v is not None}
-
-        if fmt == 'none':
-            # Remove alpha=0 color that _process_plot_format returns
-            fmt_style_kwargs.pop('color')
-
-        if ('color' in kwargs or 'color' in fmt_style_kwargs):
-            base_style = {}
-            if 'color' in kwargs:
-                base_style['color'] = kwargs.pop('color')
-        else:
-            base_style = next(self._get_lines.prop_cycler)
-
-        base_style['label'] = '_nolegend_'
-        base_style.update(fmt_style_kwargs)
-        if 'color' not in base_style:
-            base_style['color'] = 'C0'
-        if ecolor is None:
-            ecolor = base_style['color']
+        self._process_unit_info([("x", x), ("y", y), ("z", z)], kwargs,
+                                convert=False)
 
         # make sure all the args are iterable; use lists not arrays to
         # preserve units
@@ -3078,24 +3140,75 @@ pivot='tail', normalize=False, **kwargs)
         if not len(x) == len(y) == len(z):
             raise ValueError("'x', 'y', and 'z' must have the same size")
 
-        # make the style dict for the 'normal' plot line
-        if 'zorder' not in kwargs:
-            kwargs['zorder'] = 2
-        plot_line_style = {
-            **base_style,
-            **kwargs,
-            'zorder': (kwargs['zorder'] - .1 if barsabove else
-                       kwargs['zorder'] + .1),
-        }
+        if isinstance(errorevery, Integral):
+            errorevery = (0, errorevery)
+        if isinstance(errorevery, tuple):
+            if (len(errorevery) == 2 and
+                    isinstance(errorevery[0], Integral) and
+                    isinstance(errorevery[1], Integral)):
+                errorevery = slice(errorevery[0], None, errorevery[1])
+            else:
+                raise ValueError(
+                    f'errorevery={errorevery!r} is a not a tuple of two '
+                    f'integers')
 
-        # make the style dict for the line collections (the bars)
-        eb_lines_style = dict(base_style)
-        eb_lines_style.pop('marker', None)
-        eb_lines_style.pop('markerfacecolor', None)
-        eb_lines_style.pop('markeredgewidth', None)
-        eb_lines_style.pop('markeredgecolor', None)
-        eb_lines_style.pop('linestyle', None)
-        eb_lines_style['color'] = ecolor
+        elif isinstance(errorevery, slice):
+            pass
+
+        elif not isinstance(errorevery, str) and np.iterable(errorevery):
+            # fancy indexing
+            try:
+                x[errorevery]
+            except (ValueError, IndexError) as err:
+                raise ValueError(
+                    f"errorevery={errorevery!r} is iterable but not a valid "
+                    f"NumPy fancy index to match "
+                    f"'xerr'/'yerr'/'zerr'") from err
+        else:
+            raise ValueError(
+                f"errorevery={errorevery!r} is not a recognized value")
+
+        label = kwargs.pop("label", None)
+        kwargs['label'] = '_nolegend_'
+
+        # Create the main line and determine overall kwargs for child artists.
+        # We avoid calling self.plot() directly, or self._get_lines(), because
+        # that would call self._process_unit_info again, and do other indirect
+        # data processing.
+        (data_line, base_style), = self._get_lines._plot_args(
+            (x, y) if fmt == '' else (x, y, fmt), kwargs, return_kwargs=True)
+        art3d.line_2d_to_3d(data_line, zs=z)
+
+        # Do this after creating `data_line` to avoid modifying `base_style`.
+        if barsabove:
+            data_line.set_zorder(kwargs['zorder'] - .1)
+        else:
+            data_line.set_zorder(kwargs['zorder'] + .1)
+
+        # Add line to plot, or throw it away and use it to determine kwargs.
+        if fmt.lower() != 'none':
+            self.add_line(data_line)
+        else:
+            data_line = None
+            # Remove alpha=0 color that _process_plot_format returns.
+            base_style.pop('color')
+
+        if 'color' not in base_style:
+            base_style['color'] = 'C0'
+        if ecolor is None:
+            ecolor = base_style['color']
+
+        # Eject any marker information from line format string, as it's not
+        # needed for bars or caps.
+        base_style.pop('marker', None)
+        base_style.pop('markersize', None)
+        base_style.pop('markerfacecolor', None)
+        base_style.pop('markeredgewidth', None)
+        base_style.pop('markeredgecolor', None)
+        base_style.pop('linestyle', None)
+
+        # Make the style dict for the line collections (the bars).
+        eb_lines_style = {**base_style, 'color': ecolor}
 
         if elinewidth:
             eb_lines_style['linewidth'] = elinewidth
@@ -3106,42 +3219,23 @@ pivot='tail', normalize=False, **kwargs)
             if key in kwargs:
                 eb_lines_style[key] = kwargs[key]
 
-        # make the style dict for cap collections (the "hats")
-        eb_cap_style = dict(base_style)
-        # eject any marker information from format string
-        eb_cap_style.pop('marker', None)
-        eb_cap_style.pop('ls', None)
-        eb_cap_style['linestyle'] = 'none'
+        # Make the style dict for caps (the "hats").
+        eb_cap_style = {**base_style, 'linestyle': 'None'}
         if capsize is None:
-            capsize = kwargs.pop('capsize', rcParams["errorbar.capsize"])
+            capsize = rcParams["errorbar.capsize"]
         if capsize > 0:
             eb_cap_style['markersize'] = 2. * capsize
         if capthick is not None:
             eb_cap_style['markeredgewidth'] = capthick
         eb_cap_style['color'] = ecolor
 
-        if plot_line:
-            data_line = art3d.Line3D(x, y, z, **plot_line_style)
-            self.add_line(data_line)
-
-        try:
-            offset, errorevery = errorevery
-        except TypeError:
-            offset = 0
-
-        if errorevery < 1 or int(errorevery) != errorevery:
-            raise ValueError(
-                'errorevery must be positive integer or tuple of integers')
-        if int(offset) != offset:
-            raise ValueError("errorevery's starting index must be an integer")
-
         everymask = np.zeros(len(x), bool)
-        everymask[offset::errorevery] = True
+        everymask[errorevery] = True
 
         def _apply_mask(arrays, mask):
             # Return, for each array in *arrays*, the elements for which *mask*
             # is True, without using fancy indexing.
-            return [[*compress(array, mask)] for array in arrays]
+            return [[*itertools.compress(array, mask)] for array in arrays]
 
         def _extract_errs(err, data, lomask, himask):
             # For separate +/- error values we need to unpack err
@@ -3150,14 +3244,8 @@ pivot='tail', normalize=False, **kwargs)
             else:
                 low_err, high_err = err, err
 
-            # for compatibility with the 2d errorbar function, when both upper
-            # and lower limits specified, we need to draw the markers / line
-            common_mask = (lomask == himask) & everymask
-            _lomask = lomask | common_mask
-            _himask = himask | common_mask
-
-            lows = np.where(_lomask, data - low_err, data)
-            highs = np.where(_himask, data + high_err, data)
+            lows = np.where(lomask | ~everymask, data, data - low_err)
+            highs = np.where(himask | ~everymask, data, data + high_err)
 
             return lows, highs
 
@@ -3171,6 +3259,33 @@ pivot='tail', normalize=False, **kwargs)
         # the dictionary key is mapped by the `i_xyz` helper dictionary
         capmarker = {0: '|', 1: '|', 2: '_'}
         i_xyz = {'x': 0, 'y': 1, 'z': 2}
+
+        # Calculate marker size from points to quiver length. Because these are
+        # not markers, and 3D Axes do not use the normal transform stack, this
+        # is a bit involved. Since the quiver arrows will change size as the
+        # scene is rotated, they are given a standard size based on viewing
+        # them directly in planar form.
+        quiversize = eb_cap_style.get('markersize',
+                                      rcParams['lines.markersize']) ** 2
+        quiversize *= self.figure.dpi / 72
+        quiversize = self.transAxes.inverted().transform([
+            (0, 0), (quiversize, quiversize)])
+        quiversize = np.mean(np.diff(quiversize, axis=0))
+        # quiversize is now in Axes coordinates, and to convert back to data
+        # coordinates, we need to run it through the inverse 3D transform. For
+        # consistency, this uses a fixed azimuth and elevation.
+        with cbook._setattr_cm(self, azim=0, elev=0):
+            invM = np.linalg.inv(self.get_proj())
+        # azim=elev=0 produces the Y-Z plane, so quiversize in 2D 'x' is 'y' in
+        # 3D, hence the 1 index.
+        quiversize = np.dot(invM, np.array([quiversize, 0, 0, 0]))[1]
+        # Quivers use a fixed 15-degree arrow head, so scale up the length so
+        # that the size corresponds to the base. In other words, this constant
+        # corresponds to the equation tan(15) = (base / 2) / (arrow length).
+        quiversize *= 1.8660254037844388
+        eb_quiver_style = {**eb_cap_style,
+                           'length': quiversize, 'arrow_length_ratio': 1}
+        eb_quiver_style.pop('markersize', None)
 
         # loop over x-, y-, and z-direction and draw relevant elements
         for zdir, data, err, lolims, uplims in zip(
@@ -3192,18 +3307,16 @@ pivot='tail', normalize=False, **kwargs)
             lolims = np.broadcast_to(lolims, len(data)).astype(bool)
             uplims = np.broadcast_to(uplims, len(data)).astype(bool)
 
-            nolims = ~(lolims | uplims)
-
             # a nested list structure that expands to (xl,xh),(yl,yh),(zl,zh),
             # where x/y/z and l/h correspond to dimensions and low/high
             # positions of errorbars in a dimension we're looping over
             coorderr = [
-                _extract_errs(err * dir_vector[i], coord,
-                              ~lolims & everymask, ~uplims & everymask)
+                _extract_errs(err * dir_vector[i], coord, lolims, uplims)
                 for i, coord in enumerate([x, y, z])]
             (xl, xh), (yl, yh), (zl, zh) = coorderr
 
             # draws capmarkers - flat caps orthogonal to the error bars
+            nolims = ~(lolims | uplims)
             if nolims.any() and capsize > 0:
                 lo_caps_xyz = _apply_mask([xl, yl, zl], nolims & everymask)
                 hi_caps_xyz = _apply_mask([xh, yh, zh], nolims & everymask)
@@ -3221,24 +3334,12 @@ pivot='tail', normalize=False, **kwargs)
                 caplines.append(cap_lo)
                 caplines.append(cap_hi)
 
-            if (lolims | uplims).any():
-                limits = [
-                    _extract_errs(err*dir_vector[i], coord, uplims, lolims)
-                    for i, coord in enumerate([x, y, z])]
-
-                (xlo, xup), (ylo, yup), (zlo, zup) = limits
-                lomask = lolims & everymask
-                upmask = uplims & everymask
-                lolims_xyz = np.array(_apply_mask([xlo, ylo, zlo], upmask))
-                uplims_xyz = np.array(_apply_mask([xup, yup, zup], lomask))
-                lo_xyz = np.array(_apply_mask([x, y, z], upmask))
-                up_xyz = np.array(_apply_mask([x, y, z], lomask))
-                x0, y0, z0 = np.concatenate([lo_xyz, up_xyz], axis=-1)
-                dx, dy, dz = np.concatenate([lolims_xyz - lo_xyz,
-                                             uplims_xyz - up_xyz], axis=-1)
-                self.quiver(x0, y0, z0, dx, dy, dz,
-                            arrow_length_ratio=arrow_length_ratio,
-                            **eb_lines_style)
+            if lolims.any():
+                xh0, yh0, zh0 = _apply_mask([xh, yh, zh], lolims & everymask)
+                self.quiver(xh0, yh0, zh0, *dir_vector, **eb_quiver_style)
+            if uplims.any():
+                xl0, yl0, zl0 = _apply_mask([xl, yl, zl], uplims & everymask)
+                self.quiver(xl0, yl0, zl0, *-dir_vector, **eb_quiver_style)
 
             errline = art3d.Line3DCollection(np.array(coorderr).T,
                                              **eb_lines_style)
@@ -3289,7 +3390,122 @@ pivot='tail', normalize=False, **kwargs)
                     batch.append(axis_bb)
         return mtransforms.Bbox.union(batch)
 
-docstring.interpd.update(Axes3D=artist.kwdoc(Axes3D))
+    def stem(self, x, y, z, *, linefmt='C0-', markerfmt='C0o', basefmt='C3-',
+             bottom=0, label=None, orientation='z'):
+        """
+        Create a 3D stem plot.
+
+        A stem plot draws lines perpendicular to a baseline, and places markers
+        at the heads. By default, the baseline is defined by *x* and *y*, and
+        stems are drawn vertically from *bottom* to *z*.
+
+        Parameters
+        ----------
+        x, y, z : array-like
+            The positions of the heads of the stems. The stems are drawn along
+            the *orientation*-direction from the baseline at *bottom* (in the
+            *orientation*-coordinate) to the heads. By default, the *x* and *y*
+            positions are used for the baseline and *z* for the head position,
+            but this can be changed by *orientation*.
+
+        linefmt : str, default: 'C0-'
+            A string defining the properties of the vertical lines. Usually,
+            this will be a color or a color and a linestyle:
+
+            =========  =============
+            Character  Line Style
+            =========  =============
+            ``'-'``    solid line
+            ``'--'``   dashed line
+            ``'-.'``   dash-dot line
+            ``':'``    dotted line
+            =========  =============
+
+            Note: While it is technically possible to specify valid formats
+            other than color or color and linestyle (e.g. 'rx' or '-.'), this
+            is beyond the intention of the method and will most likely not
+            result in a reasonable plot.
+
+        markerfmt : str, default: 'C0o'
+            A string defining the properties of the markers at the stem heads.
+
+        basefmt : str, default: 'C3-'
+            A format string defining the properties of the baseline.
+
+        bottom : float, default: 0
+            The position of the baseline, in *orientation*-coordinates.
+
+        label : str, default: None
+            The label to use for the stems in legends.
+
+        orientation : {'x', 'y', 'z'}, default: 'z'
+            The direction along which stems are drawn.
+
+        Returns
+        -------
+        `.StemContainer`
+            The container may be treated like a tuple
+            (*markerline*, *stemlines*, *baseline*)
+
+        Examples
+        --------
+        .. plot:: gallery/mplot3d/stem3d_demo.py
+        """
+
+        from matplotlib.container import StemContainer
+
+        had_data = self.has_data()
+
+        _api.check_in_list(['x', 'y', 'z'], orientation=orientation)
+
+        xlim = (np.min(x), np.max(x))
+        ylim = (np.min(y), np.max(y))
+        zlim = (np.min(z), np.max(z))
+
+        # Determine the appropriate plane for the baseline and the direction of
+        # stemlines based on the value of orientation.
+        if orientation == 'x':
+            basex, basexlim = y, ylim
+            basey, baseylim = z, zlim
+            lines = [[(bottom, thisy, thisz), (thisx, thisy, thisz)]
+                     for thisx, thisy, thisz in zip(x, y, z)]
+        elif orientation == 'y':
+            basex, basexlim = x, xlim
+            basey, baseylim = z, zlim
+            lines = [[(thisx, bottom, thisz), (thisx, thisy, thisz)]
+                     for thisx, thisy, thisz in zip(x, y, z)]
+        else:
+            basex, basexlim = x, xlim
+            basey, baseylim = y, ylim
+            lines = [[(thisx, thisy, bottom), (thisx, thisy, thisz)]
+                     for thisx, thisy, thisz in zip(x, y, z)]
+
+        # Determine style for stem lines.
+        linestyle, linemarker, linecolor = _process_plot_format(linefmt)
+        if linestyle is None:
+            linestyle = rcParams['lines.linestyle']
+
+        # Plot everything in required order.
+        baseline, = self.plot(basex, basey, basefmt, zs=bottom,
+                              zdir=orientation, label='_nolegend_')
+        stemlines = art3d.Line3DCollection(
+            lines, linestyles=linestyle, colors=linecolor, label='_nolegend_')
+        self.add_collection(stemlines)
+        markerline, = self.plot(x, y, z, markerfmt, label='_nolegend_')
+
+        stem_container = StemContainer((markerline, stemlines, baseline),
+                                       label=label)
+        self.add_container(stem_container)
+
+        jx, jy, jz = art3d.juggle_axes(basexlim, baseylim, [bottom, bottom],
+                                       orientation)
+        self.auto_scale_xyz([*jx, *xlim], [*jy, *ylim], [*jz, *zlim], had_data)
+
+        return stem_container
+
+    stem3D = stem
+
+docstring.interpd.update(Axes3D_kwdoc=artist.kwdoc(Axes3D))
 docstring.dedent_interpd(Axes3D.__init__)
 
 

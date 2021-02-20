@@ -10,7 +10,7 @@ and for mapping numbers to colors in a 1-D array of colors called a colormap.
 Mapping data onto colors using a colormap typically involves two steps: a data
 array is first mapped onto the range 0-1 using a subclass of `Normalize`,
 then this number is mapped to a color using a subclass of `Colormap`.  Two
-sublasses of `Colormap` provided here:  `LinearSegmentedColormap`, which uses
+subclasses of `Colormap` provided here:  `LinearSegmentedColormap`, which uses
 piecewise-linear interpolation to define colormaps, and `ListedColormap`, which
 makes a colormap from a list of colors.
 
@@ -361,11 +361,20 @@ def to_rgba_array(c, alpha=None):
 
     if len(c) == 0:
         return np.zeros((0, 4), float)
+
+    # Quick path if the whole sequence can be directly converted to a numpy
+    # array in one shot.
+    lens = {len(cc) if isinstance(cc, (list, tuple)) else -1 for cc in c}
+    if lens == {3}:
+        rgba = np.column_stack([c, np.ones(len(c))])
+    elif lens == {4}:
+        rgba = np.array(c)
     else:
-        if np.iterable(alpha):
-            return np.array([to_rgba(cc, aa) for cc, aa in zip(c, alpha)])
-        else:
-            return np.array([to_rgba(cc, alpha) for cc in c])
+        rgba = np.array([to_rgba(cc) for cc in c])
+
+    if alpha is not None:
+        rgba[:, 3] = alpha
+    return rgba
 
 
 def to_rgb(c):
@@ -431,12 +440,12 @@ def _create_lookup_table(N, data, gamma=1.0):
     N : int
         The number of elements of the created lookup table; at least 1.
 
-    data : Mx3 array-like or callable
+    data : (M, 3) array-like or callable
         Defines the mapping :math:`f`.
 
-        If a Mx3 array-like, the rows define values (x, y0, y1). The x values
-        must start with x=0, end with x=1, and all x values be in increasing
-        order.
+        If a (M, 3) array-like, the rows define values (x, y0, y1).  The x
+        values must start with x=0, end with x=1, and all x values be in
+        increasing order.
 
         A value between :math:`x_i` and :math:`x_{i+1}` is mapped to the range
         :math:`y^1_{i-1} \ldots y^0_i` by linear interpolation.
@@ -516,7 +525,7 @@ def _create_lookup_table(N, data, gamma=1.0):
 
 def _warn_if_global_cmap_modified(cmap):
     if getattr(cmap, '_global', False):
-        cbook.warn_deprecated(
+        _api.warn_deprecated(
             "3.3",
             message="You are modifying the state of a globally registered "
                     "colormap. In future versions, you will not be able to "
@@ -572,7 +581,7 @@ class Colormap:
             return the RGBA values ``X*100`` percent along the Colormap line.
             For integers, X should be in the interval ``[0, Colormap.N)`` to
             return RGBA values *indexed* from the Colormap with index ``X``.
-        alpha : float, array-like, None
+        alpha : float or array-like or None
             Alpha must be a scalar between 0 and 1, a sequence of such
             floats with shape matching X, or None.
         bytes : bool
@@ -914,13 +923,13 @@ class LinearSegmentedColormap(Colormap):
         else:
             vals = np.linspace(0, 1, len(colors))
 
-        cdict = dict(red=[], green=[], blue=[], alpha=[])
-        for val, color in zip(vals, colors):
-            r, g, b, a = to_rgba(color)
-            cdict['red'].append((val, r, r))
-            cdict['green'].append((val, g, g))
-            cdict['blue'].append((val, b, b))
-            cdict['alpha'].append((val, a, a))
+        r, g, b, a = to_rgba_array(colors).T
+        cdict = {
+            "red": np.column_stack([vals, r, r]),
+            "green": np.column_stack([vals, g, g]),
+            "blue": np.column_stack([vals, b, b]),
+            "alpha": np.column_stack([vals, a, a]),
+        }
 
         return LinearSegmentedColormap(name, cdict, N, gamma)
 
@@ -1096,6 +1105,7 @@ class Normalize:
         self.vmin = _sanitize_extrema(vmin)
         self.vmax = _sanitize_extrema(vmax)
         self.clip = clip
+        self._scale = scale.LinearScale(axis=None)
 
     @staticmethod
     def process_value(value):
@@ -1448,12 +1458,14 @@ def _make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
             t_vmin, t_vmax = self._trf.transform([self.vmin, self.vmax])
             if not np.isfinite([t_vmin, t_vmax]).all():
                 raise ValueError("Invalid vmin or vmax")
+            value, is_scalar = self.process_value(value)
             rescaled = value * (t_vmax - t_vmin)
             rescaled += t_vmin
-            return (self._trf
-                    .inverted()
-                    .transform(rescaled)
-                    .reshape(np.shape(value)))
+            value = (self._trf
+                     .inverted()
+                     .transform(rescaled)
+                     .reshape(np.shape(value)))
+            return value[0] if is_scalar else value
 
     Norm.__name__ = base_norm_cls.__name__
     Norm.__qualname__ = base_norm_cls.__qualname__
@@ -1462,6 +1474,39 @@ def _make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
         inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
         *bound_init_signature.parameters.values()])
     return Norm
+
+
+@_make_norm_from_scale(
+    scale.FuncScale,
+    init=lambda functions, vmin=None, vmax=None, clip=False: None)
+class FuncNorm(Normalize):
+    """
+    Arbitrary normalization using functions for the forward and inverse.
+
+    Parameters
+    ----------
+    functions : (callable, callable)
+        two-tuple of the forward and inverse functions for the normalization.
+        The forward function must be monotonic.
+
+        Both functions must have the signature ::
+
+           def forward(values: array-like) -> array-like
+
+    vmin, vmax : float or None
+        If *vmin* and/or *vmax* is not given, they are initialized from the
+        minimum and maximum value, respectively, of the first input
+        processed; i.e., ``__call__(A)`` calls ``autoscale_None(A)``.
+
+    clip : bool, default: False
+        If ``True`` values falling outside the range ``[vmin, vmax]``,
+        are mapped to 0 or 1, whichever is closer, and masked values are
+        set to 1.  If ``False`` masked values remain masked.
+
+        Clipping silently defeats the purpose of setting the over, under,
+        and masked colors in a colormap, so it is likely to lead to
+        surprises; therefore the default is ``clip=False``.
+    """
 
 
 @_make_norm_from_scale(functools.partial(scale.LogScale, nonpositive="mask"))
@@ -1628,6 +1673,8 @@ class BoundaryNorm(Normalize):
                              f"(1 region) but you passed in {boundaries!r}")
         self.Ncmap = ncolors
         self.extend = extend
+
+        self._scale = None  # don't use the default scale.
 
         self._n_regions = self.N - 1  # number of colors needed
         self._offset = 0
@@ -1912,9 +1959,8 @@ class LightSource:
 
         Parameters
         ----------
-        elevation : array-like
-            A 2D array (or equivalent) of the height values used to generate an
-            illumination map
+        elevation : 2D array-like
+            The height values used to generate an illumination map
         vert_exag : number, optional
             The amount to exaggerate the elevation values by when calculating
             illumination. This can be used either to correct for differences in
@@ -2010,9 +2056,8 @@ class LightSource:
 
         Parameters
         ----------
-        data : array-like
-            A 2D array (or equivalent) of the height values used to generate a
-            shaded map.
+        data : 2D array-like
+            The height values used to generate a shaded map.
         cmap : `~matplotlib.colors.Colormap`
             The colormap used to color the *data* array. Note that this must be
             a `~matplotlib.colors.Colormap` instance.  For example, rather than

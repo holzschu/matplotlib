@@ -29,6 +29,7 @@ from matplotlib.artist import (
     Artist, allow_rasterization, _finalize_rasterization)
 from matplotlib.backend_bases import (
     FigureCanvasBase, NonGuiException, MouseButton)
+import matplotlib._api as _api
 import matplotlib.cbook as cbook
 import matplotlib.colorbar as cbar
 import matplotlib.image as mimage
@@ -49,113 +50,6 @@ _log = logging.getLogger(__name__)
 def _stale_figure_callback(self, val):
     if self.figure:
         self.figure.stale = val
-
-
-class _AxesStack(cbook.Stack):
-    """
-    Specialization of `.Stack`, to handle all tracking of `~.axes.Axes` in a
-    `.Figure`.
-
-    This stack stores ``key, (ind, axes)`` pairs, where:
-
-    * **key** is a hash of the args and kwargs used in generating the Axes.
-    * **ind** is a serial index tracking the order in which Axes were added.
-
-    AxesStack is a callable; calling it returns the current Axes.
-    The `current_key_axes` method returns the current key and associated Axes.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._ind = 0
-
-    def as_list(self):
-        """
-        Return a list of the Axes instances that have been added to the figure.
-        """
-        ia_list = [a for k, a in self._elements]
-        ia_list.sort()
-        return [a for i, a in ia_list]
-
-    def get(self, key):
-        """
-        Return the Axes instance that was added with *key*.
-        If it is not present, return *None*.
-        """
-        item = dict(self._elements).get(key)
-        if item is None:
-            return None
-        cbook.warn_deprecated(
-            "2.1",
-            message="Adding an axes using the same arguments as a previous "
-            "axes currently reuses the earlier instance.  In a future "
-            "version, a new instance will always be created and returned.  "
-            "Meanwhile, this warning can be suppressed, and the future "
-            "behavior ensured, by passing a unique label to each axes "
-            "instance.")
-        return item[1]
-
-    def _entry_from_axes(self, e):
-        ind, k = {a: (ind, k) for k, (ind, a) in self._elements}[e]
-        return (k, (ind, e))
-
-    def remove(self, a):
-        """Remove the Axes from the stack."""
-        super().remove(self._entry_from_axes(a))
-
-    def bubble(self, a):
-        """
-        Move the given Axes, which must already exist in the
-        stack, to the top.
-        """
-        return super().bubble(self._entry_from_axes(a))
-
-    def add(self, key, a):
-        """
-        Add Axes *a*, with key *key*, to the stack, and return the stack.
-
-        If *key* is unhashable, replace it by a unique, arbitrary object.
-
-        If *a* is already on the stack, don't add it again, but
-        return *None*.
-        """
-        # All the error checking may be unnecessary; but this method
-        # is called so seldom that the overhead is negligible.
-        cbook._check_isinstance(Axes, a=a)
-        try:
-            hash(key)
-        except TypeError:
-            key = object()
-
-        a_existing = self.get(key)
-        if a_existing is not None:
-            super().remove((key, a_existing))
-            cbook._warn_external(
-                "key {!r} already existed; Axes is being replaced".format(key))
-            # I don't think the above should ever happen.
-
-        if a in self:
-            return None
-        self._ind += 1
-        return super().push((key, (self._ind, a)))
-
-    def current_key_axes(self):
-        """
-        Return a tuple of ``(key, axes)`` for the active Axes.
-
-        If no Axes exists on the stack, then returns ``(None, None)``.
-        """
-        if not len(self._elements):
-            return self._default, self._default
-        else:
-            key, (index, axes) = self._elements[self._pos]
-            return key, axes
-
-    def __call__(self):
-        return self.current_key_axes()[1]
-
-    def __contains__(self, a):
-        return a in self.as_list()
 
 
 class SubplotParams:
@@ -233,6 +127,8 @@ class FigureBase(Artist):
         del self._axes
 
         self._suptitle = None
+        self._supxlabel = None
+        self._supylabel = None
 
         # constrained_layout:
         self._layoutgrid = None
@@ -240,13 +136,12 @@ class FigureBase(Artist):
         # groupers to keep track of x and y labels we want to align.
         # see self.align_xlabels and self.align_ylabels and
         # axis._get_tick_boxes_siblings
-        self._align_xlabel_grp = cbook.Grouper()
-        self._align_ylabel_grp = cbook.Grouper()
+        self._align_label_groups = {"x": cbook.Grouper(), "y": cbook.Grouper()}
 
         self.figure = self
         # list of child gridspecs for this figure
         self._gridspecs = []
-        self._localaxes = _AxesStack()  # keep track of axes at this level
+        self._localaxes = cbook.Stack()  # keep track of axes at this level
         self.artists = []
         self.lines = []
         self.patches = []
@@ -254,7 +149,6 @@ class FigureBase(Artist):
         self.images = []
         self.legends = []
         self.subfigs = []
-        self._suptitle = None
         self.stale = True
         self.suppressComposite = None
 
@@ -312,7 +206,7 @@ class FigureBase(Artist):
             Selects which ticklabels to rotate.
         """
         if which is None:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.3", message="Support for passing which=None to mean "
                 "which='major' is deprecated since %(since)s and will be "
                 "removed %(removal)s.")
@@ -369,40 +263,34 @@ class FigureBase(Artist):
         """
         return self.bbox
 
-    def suptitle(self, t, **kwargs):
+    def _suplabels(self, t, info, **kwargs):
         """
-        Add a centered title to the figure.
+        Add a centered %(name)s to the figure.
 
         Parameters
         ----------
         t : str
-            The title text.
-
-        x : float, default: 0.5
+            The %(name)s text.
+        x : float, default: %(x0)s
             The x location of the text in figure coordinates.
-
-        y : float, default: 0.98
+        y : float, default: %(y0)s
             The y location of the text in figure coordinates.
-
-        horizontalalignment, ha : {'center', 'left', right'}, default: 'center'
+        horizontalalignment, ha : {'center', 'left', 'right'}, default: %(ha)s
             The horizontal alignment of the text relative to (*x*, *y*).
-
         verticalalignment, va : {'top', 'center', 'bottom', 'baseline'}, \
-default: 'top'
+default: %(va)s
             The vertical alignment of the text relative to (*x*, *y*).
-
         fontsize, size : default: :rc:`figure.titlesize`
             The font size of the text. See `.Text.set_size` for possible
             values.
-
         fontweight, weight : default: :rc:`figure.titleweight`
             The font weight of the text. See `.Text.set_weight` for possible
             values.
 
         Returns
         -------
-        `.Text`
-            The instance of the title.
+        text
+            The `.Text` instance of the %(name)s.
 
         Other Parameters
         ----------------
@@ -414,20 +302,20 @@ default: 'top'
 
         **kwargs
             Additional kwargs are `matplotlib.text.Text` properties.
-
-        Examples
-        --------
-        >>> fig.suptitle('This is the figure title', fontsize=12)
         """
-        manual_position = ('x' in kwargs or 'y' in kwargs)
 
-        x = kwargs.pop('x', 0.5)
-        y = kwargs.pop('y', 0.98)
+        manual_position = ('x' in kwargs or 'y' in kwargs)
+        suplab = getattr(self, info['name'])
+
+        x = kwargs.pop('x', info['x0'])
+        y = kwargs.pop('y', info['y0'])
 
         if 'horizontalalignment' not in kwargs and 'ha' not in kwargs:
-            kwargs['horizontalalignment'] = 'center'
+            kwargs['horizontalalignment'] = info['ha']
         if 'verticalalignment' not in kwargs and 'va' not in kwargs:
-            kwargs['verticalalignment'] = 'top'
+            kwargs['verticalalignment'] = info['va']
+        if 'rotation' not in kwargs:
+            kwargs['rotation'] = info['rotation']
 
         if 'fontproperties' not in kwargs:
             if 'fontsize' not in kwargs and 'size' not in kwargs:
@@ -436,19 +324,46 @@ default: 'top'
                 kwargs['weight'] = mpl.rcParams['figure.titleweight']
 
         sup = self.text(x, y, t, **kwargs)
-        if self._suptitle is not None:
-            self._suptitle.set_text(t)
-            self._suptitle.set_position((x, y))
-            self._suptitle.update_from(sup)
+        if suplab is not None:
+            suplab.set_text(t)
+            suplab.set_position((x, y))
+            suplab.update_from(sup)
             sup.remove()
         else:
-            self._suptitle = sup
-
+            suplab = sup
         if manual_position:
-            self._suptitle.set_in_layout(False)
-
+            suplab.set_in_layout(False)
+        setattr(self, info['name'], suplab)
         self.stale = True
-        return self._suptitle
+        return suplab
+
+    @docstring.Substitution(x0=0.5, y0=0.98, name='suptitle', ha='center',
+                            va='top')
+    @docstring.copy(_suplabels)
+    def suptitle(self, t, **kwargs):
+        # docstring from _suplabels...
+        info = {'name': '_suptitle', 'x0': 0.5, 'y0': 0.98,
+                'ha': 'center', 'va': 'top', 'rotation': 0}
+        return self._suplabels(t, info, **kwargs)
+
+    @docstring.Substitution(x0=0.5, y0=0.01, name='supxlabel', ha='center',
+                            va='bottom')
+    @docstring.copy(_suplabels)
+    def supxlabel(self, t, **kwargs):
+        # docstring from _suplabels...
+        info = {'name': '_supxlabel', 'x0': 0.5, 'y0': 0.01,
+                'ha': 'center', 'va': 'bottom', 'rotation': 0}
+        return self._suplabels(t, info, **kwargs)
+
+    @docstring.Substitution(x0=0.02, y0=0.5, name='supylabel', ha='left',
+                            va='center')
+    @docstring.copy(_suplabels)
+    def supylabel(self, t, **kwargs):
+        # docstring from _suplabels...
+        info = {'name': '_supylabel', 'x0': 0.02, 'y0': 0.5,
+                'ha': 'left', 'va': 'center', 'rotation': 'vertical',
+                'rotation_mode': 'anchor'}
+        return self._suplabels(t, info, **kwargs)
 
     def get_edgecolor(self):
         """Get the edge color of the Figure rectangle."""
@@ -607,19 +522,10 @@ default: 'top'
             arguments if another projection is used, see the actual Axes
             class.
 
-            %(Axes)s
+            %(Axes_kwdoc)s
 
         Notes
         -----
-        If the figure already has an Axes with key (*args*,
-        *kwargs*) then it will simply make that Axes current and
-        return it.  This behavior is deprecated. Meanwhile, if you do
-        not want this behavior (i.e., you want to force the creation of a
-        new Axes), you must use a unique set of args and kwargs.  The Axes
-        *label* attribute has been exposed for this purpose: if you want
-        two Axes that are otherwise identical to be added to the figure,
-        make sure you give them unique labels.
-
         In rare circumstances, `.add_axes` may be called with a single
         argument, an Axes instance already created in the present figure but
         not in the figure's list of Axes.
@@ -638,8 +544,7 @@ default: 'top'
 
             rect = l, b, w, h
             fig = plt.figure()
-            fig.add_axes(rect, label=label1)
-            fig.add_axes(rect, label=label2)
+            fig.add_axes(rect)
             fig.add_axes(rect, frameon=False, facecolor='g')
             fig.add_axes(rect, polar=True)
             ax = fig.add_axes(rect, projection='polar')
@@ -648,7 +553,7 @@ default: 'top'
         """
 
         if not len(args) and 'rect' not in kwargs:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.3",
                 message="Calling add_axes() without argument is "
                 "deprecated since %(since)s and will be removed %(removal)s. "
@@ -660,16 +565,9 @@ default: 'top'
                     "add_axes() got multiple values for argument 'rect'")
             args = (kwargs.pop('rect'), )
 
-        # shortcut the projection "key" modifications later on, if an axes
-        # with the exact args/kwargs exists, return it immediately.
-        key = self._make_key(*args, **kwargs)
-        ax = self._axstack.get(key)
-        if ax is not None:
-            self.sca(ax)
-            return ax
-
         if isinstance(args[0], Axes):
             a = args[0]
+            key = a._projection_init
             if a.get_figure() is not self:
                 raise ValueError(
                     "The Axes must have been created in the present figure")
@@ -678,19 +576,13 @@ default: 'top'
             if not np.isfinite(rect).all():
                 raise ValueError('all entries in rect must be finite '
                                  'not {}'.format(rect))
-            projection_class, kwargs, key = \
-                self._process_projection_requirements(*args, **kwargs)
-
-            # check that an axes of this type doesn't already exist, if it
-            # does, set it as active and return it
-            ax = self._axstack.get(key)
-            if isinstance(ax, projection_class):
-                self.sca(ax)
-                return ax
+            projection_class, pkw = self._process_projection_requirements(
+                *args, **kwargs)
 
             # create the new axes using the axes class given
-            a = projection_class(self, rect, **kwargs)
-        return self._add_axes_internal(key, a)
+            a = projection_class(self, rect, **pkw)
+            key = (projection_class, pkw)
+        return self._add_axes_internal(a, key)
 
     @docstring.dedent_interpd
     def add_subplot(self, *args, **kwargs):
@@ -768,18 +660,7 @@ default: 'top'
             the following table but there might also be other keyword
             arguments if another projection is used.
 
-            %(Axes)s
-
-        Notes
-        -----
-        If the figure already has a subplot with key (*args*,
-        *kwargs*) then it will simply make that subplot current and
-        return it.  This behavior is deprecated. Meanwhile, if you do
-        not want this behavior (i.e., you want to force the creation of a
-        new subplot), you must use a unique set of args and kwargs.  The Axes
-        *label* attribute has been exposed for this purpose: if you want
-        two subplots that are otherwise identical to be added to the figure,
-        make sure you give them unique labels.
+            %(Axes_kwdoc)s
 
         See Also
         --------
@@ -814,13 +695,10 @@ default: 'top'
 
         if len(args) == 1 and isinstance(args[0], SubplotBase):
             ax = args[0]
+            key = ax._projection_init
             if ax.get_figure() is not self:
                 raise ValueError("The Subplot must have been created in "
                                  "the present figure")
-            # make a key for the subplot (which includes the axes object id
-            # in the hash)
-            key = self._make_key(*args, **kwargs)
-
         else:
             if not args:
                 args = (1, 1, 1)
@@ -830,35 +708,25 @@ default: 'top'
             if (len(args) == 1 and isinstance(args[0], Integral)
                     and 100 <= args[0] <= 999):
                 args = tuple(map(int, str(args[0])))
-            projection_class, kwargs, key = \
-                self._process_projection_requirements(*args, **kwargs)
-            ax = self._axstack.get(key)  # search axes with this key in stack
-            if ax is not None:
-                if isinstance(ax, projection_class):
-                    # the axes already existed, so set it as active & return
-                    self.sca(ax)
-                    return ax
-                else:
-                    # Undocumented convenience behavior:
-                    # subplot(111); subplot(111, projection='polar')
-                    # will replace the first with the second.
-                    # Without this, add_subplot would be simpler and
-                    # more similar to add_axes.
-                    self._axstack.remove(ax)
-            ax = subplot_class_factory(projection_class)(self, *args, **kwargs)
-        return self._add_axes_internal(key, ax)
+            projection_class, pkw = self._process_projection_requirements(
+                *args, **kwargs)
+            ax = subplot_class_factory(projection_class)(self, *args, **pkw)
+            key = (projection_class, pkw)
+        return self._add_axes_internal(ax, key)
 
-    def _add_axes_internal(self, key, ax):
+    def _add_axes_internal(self, ax, key):
         """Private helper for `add_axes` and `add_subplot`."""
-        self._axstack.add(key, ax)
-        self._localaxes.add(key, ax)
+        self._axstack.push(ax)
+        self._localaxes.push(ax)
         self.sca(ax)
         ax._remove_method = self.delaxes
+        # this is to support plt.subplot's re-selection logic
+        ax._projection_init = key
         self.stale = True
         ax.stale_callback = _stale_figure_callback
         return ax
 
-    @cbook._make_keyword_only("3.3", "sharex")
+    @_api.make_keyword_only("3.3", "sharex")
     def subplots(self, nrows=1, ncols=1, sharex=False, sharey=False,
                  squeeze=True, subplot_kw=None, gridspec_kw=None):
         """
@@ -886,6 +754,9 @@ default: 'top'
             have a shared y-axis along a row, only the y tick labels of the
             first column subplot are created. To later turn other subplots'
             ticklabels on, use `~matplotlib.axes.Axes.tick_params`.
+
+            When subplots have a shared axis that has units, calling
+            `.Axis.set_units` will update each axis with the new units.
 
         squeeze : bool, default: True
             - If True, extra dimensions are squeezed out from the returned
@@ -947,7 +818,7 @@ default: 'top'
             ax2.scatter(x, y)
 
             # Create four polar Axes and access them through the returned array
-            axes = fig.subplots(2, 2, subplot_kw=dict(polar=True))
+            axes = fig.subplots(2, 2, subplot_kw=dict(projection='polar'))
             axes[0, 0].plot(x, y)
             axes[1, 1].scatter(x, y)
 
@@ -1136,7 +1007,7 @@ default: 'top'
                 **kwargs)
         # check for third arg
         if len(extra_args):
-            # cbook.warn_deprecated(
+            # _api.warn_deprecated(
             #     "2.1",
             #     message="Figure.legend will accept no more than two "
             #     "positional arguments in the future.  Use "
@@ -1183,7 +1054,7 @@ default: 'top'
         **kwargs : `~matplotlib.text.Text` properties
             Other miscellaneous text parameters.
 
-            %(Text)s
+            %(Text_kwdoc)s
 
         See Also
         --------
@@ -1211,7 +1082,7 @@ default: 'top'
             ax = self.gca()
             if (hasattr(mappable, "axes") and ax is not mappable.axes
                     and cax is None):
-                cbook.warn_deprecated(
+                _api.warn_deprecated(
                     "3.4", message="Starting from Matplotlib 3.6, colorbar() "
                     "will steal space from the mappable's axes, rather than "
                     "from the current axes, to place the colorbar.  To "
@@ -1268,7 +1139,7 @@ default: 'top'
         """
         if self.get_constrained_layout():
             self.set_constrained_layout(False)
-            cbook._warn_external(
+            _api.warn_external(
                 "This figure was using constrained_layout, but that is "
                 "incompatible with subplots_adjust and/or tight_layout; "
                 "disabling constrained_layout.")
@@ -1337,7 +1208,7 @@ default: 'top'
                     if (pos == 'top' and rowspan.start == rowspanc.start or
                             pos == 'bottom' and rowspan.stop == rowspanc.stop):
                         # grouper for groups of xlabels to align
-                        self._align_xlabel_grp.join(ax, axc)
+                        self._align_label_groups['x'].join(ax, axc)
 
     def align_ylabels(self, axs=None):
         """
@@ -1397,7 +1268,7 @@ default: 'top'
                     if (pos == 'left' and colspan.start == colspanc.start or
                             pos == 'right' and colspan.stop == colspanc.stop):
                         # grouper for groups of ylabels to align
-                        self._align_ylabel_grp.join(ax, axc)
+                        self._align_label_groups['y'].join(ax, axc)
 
     def align_labels(self, axs=None):
         """
@@ -1566,42 +1437,23 @@ default: 'top'
         adheres to the given projection etc., and for Axes creation if
         the active Axes does not exist:
 
-        %(Axes)s
+        %(Axes_kwdoc)s
 
         """
-        ckey, cax = self._axstack.current_key_axes()
-        # if there exists an axes on the stack see if it matches
-        # the desired axes configuration
-        if cax is not None:
-
-            # if no kwargs are given just return the current axes
-            # this is a convenience for gca() on axes such as polar etc.
-            if not kwargs:
-                return cax
-
-            # if the user has specified particular projection detail
-            # then build up a key which can represent this
-            else:
-                projection_class, _, key = \
-                    self._process_projection_requirements(**kwargs)
-
-                # let the returned axes have any gridspec by removing it from
-                # the key
-                ckey = ckey[1:]
-                key = key[1:]
-
-                # if the cax matches this key then return the axes, otherwise
-                # continue and a new axes will be created
-                if key == ckey and isinstance(cax, projection_class):
-                    return cax
-                else:
-                    cbook._warn_external('Requested projection is different '
-                                         'from current axis projection, '
-                                         'creating new axis with requested '
-                                         'projection.')
-
-        # no axes found, so create one which spans the figure
-        return self.add_subplot(1, 1, 1, **kwargs)
+        if kwargs:
+            _api.warn_deprecated(
+                "3.4",
+                message="Calling gca() with keyword arguments was deprecated "
+                "in Matplotlib %(since)s. Starting %(removal)s, gca() will "
+                "take no keyword arguments. The gca() function should only be "
+                "used to get the current axes, or if no axes exist, create "
+                "new axes with default keyword arguments. To create a new "
+                "axes with non-default arguments, use plt.axes() or "
+                "plt.subplot().")
+        if self._axstack.empty():
+            return self.add_subplot(1, 1, 1, **kwargs)
+        else:
+            return self._axstack()
 
     def _gci(self):
         # Helper for `~matplotlib.pyplot.gci`.  Do not use elsewhere.
@@ -1621,10 +1473,9 @@ default: 'top'
         ``gci`` (get current image).
         """
         # Look first for an image in the current Axes:
-        cax = self._axstack.current_key_axes()[1]
-        if cax is None:
+        if self._axstack.empty():
             return None
-        im = cax._gci()
+        im = self._axstack()._gci()
         if im is not None:
             return im
 
@@ -1643,7 +1494,7 @@ default: 'top'
         """
         Handle the args/kwargs to add_axes/add_subplot/gca, returning::
 
-            (axes_proj_class, proj_class_kwargs, proj_stack_key)
+            (axes_proj_class, proj_class_kwargs)
 
         which can be used for new Axes initialization/identification.
         """
@@ -1657,9 +1508,9 @@ default: 'top'
             if polar:
                 if projection is not None and projection != 'polar':
                     raise ValueError(
-                        "polar=True, yet projection=%r. "
-                        "Only one of these arguments should be supplied." %
-                        projection)
+                        f"polar={polar}, yet projection={projection!r}. "
+                        "Only one of these arguments should be supplied."
+                    )
                 projection = 'polar'
 
             if isinstance(projection, str) or projection is None:
@@ -1671,42 +1522,9 @@ default: 'top'
                 raise TypeError(
                     f"projection must be a string, None or implement a "
                     f"_as_mpl_axes method, not {projection!r}")
-
-        # Make the key without projection kwargs, this is used as a unique
-        # lookup for axes instances
-        key = self._make_key(*args, **kwargs)
-
-        return projection_class, kwargs, key
-
-    def _make_key(self, *args, **kwargs):
-        """Make a hashable key out of args and kwargs."""
-
-        def fixitems(items):
-            # items may have arrays and lists in them, so convert them
-            # to tuples for the key
-            ret = []
-            for k, v in items:
-                # some objects can define __getitem__ without being
-                # iterable and in those cases the conversion to tuples
-                # will fail. So instead of using the np.iterable(v) function
-                # we simply try and convert to a tuple, and proceed if not.
-                try:
-                    v = tuple(v)
-                except Exception:
-                    pass
-                ret.append((k, v))
-            return tuple(ret)
-
-        def fixlist(args):
-            ret = []
-            for a in args:
-                if np.iterable(a):
-                    a = tuple(a)
-                ret.append(a)
-            return tuple(ret)
-
-        key = fixlist(args), fixitems(kwargs.items())
-        return key
+        if projection_class.__name__ == 'Axes3D':
+            kwargs.setdefault('auto_add_to_figure', False)
+        return projection_class, kwargs
 
     def get_default_bbox_extra_artists(self):
         bbox_artists = [artist for artist in self.get_children()
@@ -1776,8 +1594,13 @@ default: 'top'
 
     @staticmethod
     def _normalize_grid_string(layout):
-        layout = inspect.cleandoc(layout)
-        return [list(ln) for ln in layout.strip('\n').split('\n')]
+        if '\n' not in layout:
+            # single-line string
+            return [list(ln) for ln in layout.split(';')]
+        else:
+            # multi-line string
+            layout = inspect.cleandoc(layout)
+            return [list(ln) for ln in layout.strip('\n').split('\n')]
 
     def subplot_mosaic(self, layout, *, subplot_kw=None, gridspec_kw=None,
                        empty_sentinel='.'):
@@ -1812,16 +1635,21 @@ default: 'top'
             Any of the entries in the layout can be a list of lists
             of the same form to create nested layouts.
 
-            If input is a str, then it must be of the form ::
+            If input is a str, then it can either be a multi-line string of
+            the form ::
 
               '''
               AAE
               C.E
               '''
 
-            where each character is a column and each line is a row.
-            This only allows only single character Axes labels and does
-            not allow nesting but is very terse.
+            where each character is a column and each line is a row. Or it
+            can be a single-line string where rows are separated by ``;``::
+
+              'AB;CC'
+
+            The string notation allows only single character Axes labels and
+            does not support nesting but is very terse.
 
         subplot_kw : dict, optional
             Dictionary with keywords passed to the `.Figure.add_subplot` call
@@ -1889,9 +1717,9 @@ default: 'top'
 
             Returns
             -------
-            unique_ids : Set[object]
+            unique_ids : set
                 The unique non-sub layout entries in this layout
-            nested : Dict[Tuple[int, int]], 2D object array
+            nested : dict[tuple[int, int]], 2D object array
             """
             unique_ids = set()
             nested = {}
@@ -1913,19 +1741,16 @@ default: 'top'
             Parameters
             ----------
             gs : GridSpec
-
             layout : 2D object array
                 The input converted to a 2D numpy array for this level.
-
-            unique_ids : Set[object]
+            unique_ids : set
                 The identified scalar labels at this level of nesting.
-
-            nested : Dict[Tuple[int, int]], 2D object array
-                The identified nested layouts if any.
+            nested : dict[tuple[int, int]], 2D object array
+                The identified nested layouts, if any.
 
             Returns
             -------
-            Dict[label, Axes]
+            dict[label, Axes]
                 A flat dict of all of the Axes created.
             """
             rows, cols = layout.shape
@@ -2280,6 +2105,10 @@ class Figure(FigureBase):
         super().__init__()
 
         self.callbacks = cbook.CallbackRegistry()
+        # Callbacks traditionally associated with the canvas (and exposed with
+        # a proxy property), but that actually need to be on the figure for
+        # pickling.
+        self._canvas_callbacks = cbook.CallbackRegistry()
 
         if figsize is None:
             figsize = mpl.rcParams['figure.figsize']
@@ -2326,17 +2155,11 @@ class Figure(FigureBase):
 
         self.set_tight_layout(tight_layout)
 
-        self._axstack = _AxesStack()  # track all figure axes and current axes
+        self._axstack = cbook.Stack()  # track all figure axes and current axes
         self.clf()
         self._cachedRenderer = None
 
         self.set_constrained_layout(constrained_layout)
-
-        # groupers to keep track of x and y labels we want to align.
-        # see self.align_xlabels and self.align_ylabels and
-        # axis._get_tick_boxes_siblings
-        self._align_xlabel_grp = cbook.Grouper()
-        self._align_ylabel_grp = cbook.Grouper()
 
         # list of child gridspecs for this figure
         self._gridspecs = []
@@ -2386,7 +2209,7 @@ class Figure(FigureBase):
         try:
             self.canvas.manager.show()
         except NonGuiException as exc:
-            cbook._warn_external(str(exc))
+            _api.warn_external(str(exc))
 
     def get_axes(self):
         """
@@ -2801,6 +2624,9 @@ class Figure(FigureBase):
         if not keep_observers:
             self._axobservers = cbook.CallbackRegistry()
         self._suptitle = None
+        self._supxlabel = None
+        self._supylabel = None
+
         if self.get_constrained_layout():
             self.init_layoutgrid()
         self.stale = True
@@ -2847,9 +2673,10 @@ class Figure(FigureBase):
 
     def draw_artist(self, a):
         """
-        Draw `.Artist` instance *a* only.
+        Draw `.Artist` *a* only.
 
-        This can only be called after the figure has been drawn.
+        This method can only be used after an initial draw of the figure,
+        because that creates and caches the renderer needed here.
         """
         if self._cachedRenderer is None:
             raise AttributeError("draw_artist can only be used after an "
@@ -2887,7 +2714,7 @@ class Figure(FigureBase):
         restore_to_pylab = state.pop('_restore_to_pylab', False)
 
         if version != _mpl_version:
-            cbook._warn_external(
+            _api.warn_external(
                 f"This figure was saved with matplotlib version {version} and "
                 f"is unlikely to function correctly.")
 
@@ -2930,7 +2757,7 @@ class Figure(FigureBase):
 
         Parameters
         ----------
-        fname : str or path-like or file-like
+        fname : str or path-like or binary file-like
             A path, or a Python file-like object, or
             possibly some backend-dependent object such as
             `matplotlib.backends.backend_pdf.PdfPages`.
@@ -3149,12 +2976,12 @@ class Figure(FigureBase):
 
         _log.debug('Executing constrainedlayout')
         if self._layoutgrid is None:
-            cbook._warn_external("Calling figure.constrained_layout, but "
-                                 "figure not setup to do constrained layout. "
-                                 " You either called GridSpec without the "
-                                 "figure keyword, you are using plt.subplot, "
-                                 "or you need to call figure or subplots "
-                                 "with the constrained_layout=True kwarg.")
+            _api.warn_external("Calling figure.constrained_layout, but "
+                               "figure not setup to do constrained layout. "
+                               "You either called GridSpec without the "
+                               "figure keyword, you are using plt.subplot, "
+                               "or you need to call figure or subplots "
+                               "with the constrained_layout=True kwarg.")
             return
         w_pad, h_pad, wspace, hspace = self.get_constrained_layout_pads()
         # convert to unit-relative lengths
@@ -3166,9 +2993,7 @@ class Figure(FigureBase):
             renderer = get_renderer(fig)
         do_constrained_layout(fig, renderer, h_pad, w_pad, hspace, wspace)
 
-    @cbook._delete_parameter("3.2", "renderer")
-    def tight_layout(self, renderer=None, pad=1.08, h_pad=None, w_pad=None,
-                     rect=None):
+    def tight_layout(self, *, pad=1.08, h_pad=None, w_pad=None, rect=None):
         """
         Adjust the padding between and around subplots.
 
@@ -3178,8 +3003,6 @@ class Figure(FigureBase):
 
         Parameters
         ----------
-        renderer : subclass of `~.backend_bases.RendererBase`, optional
-            Defaults to the renderer for the figure.  Deprecated.
         pad : float, default: 1.08
             Padding between the figure edge and the edges of subplots,
             as a fraction of the font size.
@@ -3201,12 +3024,11 @@ class Figure(FigureBase):
         from contextlib import suppress
         subplotspec_list = get_subplotspec_list(self.axes)
         if None in subplotspec_list:
-            cbook._warn_external("This figure includes Axes that are not "
-                                 "compatible with tight_layout, so results "
-                                 "might be incorrect.")
+            _api.warn_external("This figure includes Axes that are not "
+                               "compatible with tight_layout, so results "
+                               "might be incorrect.")
 
-        if renderer is None:
-            renderer = get_renderer(self)
+        renderer = get_renderer(self)
         ctx = (renderer._draw_disabled()
                if hasattr(renderer, '_draw_disabled')
                else suppress())
@@ -3297,4 +3119,5 @@ def figaspect(arg):
     newsize = np.clip(newsize, figsize_min, figsize_max)
     return newsize
 
-docstring.interpd.update(Figure=martist.kwdoc(Figure))
+
+docstring.interpd.update(Figure_kwdoc=martist.kwdoc(Figure))

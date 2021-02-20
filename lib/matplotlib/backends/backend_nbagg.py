@@ -17,7 +17,7 @@ except ImportError:
     # Jupyter/IPython 3.x or earlier
     from IPython.kernel.comm import Comm
 
-from matplotlib import cbook, is_interactive
+from matplotlib import is_interactive
 from matplotlib._pylab_helpers import Gcf
 from matplotlib.backend_bases import _Backend, NavigationToolbar2
 from matplotlib.backends.backend_webagg_core import (
@@ -142,7 +142,7 @@ class FigureManagerNbAgg(FigureManagerWebAgg):
 
 
 class FigureCanvasNbAgg(FigureCanvasWebAggCore):
-    _timer_cls = TimerTornado
+    pass
 
 
 class CommSocket:
@@ -241,10 +241,6 @@ class _BackendNbAgg(_Backend):
 
         cid = canvas.mpl_connect('close_event', destroy)
         return manager
-
-    @staticmethod
-    def trigger_manager_draw(manager):
-        manager.show()
 
     @staticmethod
     def show(block=None):

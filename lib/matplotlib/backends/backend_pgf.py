@@ -10,17 +10,17 @@ import pathlib
 import re
 import shutil
 import subprocess
-import sys
 from tempfile import TemporaryDirectory
 import weakref
 
 from PIL import Image
 
 import matplotlib as mpl
-from matplotlib import cbook, font_manager as fm
+from matplotlib import _api, cbook, font_manager as fm
 from matplotlib.backend_bases import (
     _Backend, _check_savefig_extra_args, FigureCanvasBase, FigureManagerBase,
-    GraphicsContextBase, RendererBase)
+    GraphicsContextBase, RendererBase, _no_output_draw
+)
 from matplotlib.backends.backend_mixed import MixedModeRenderer
 from matplotlib.backends.backend_pdf import (
     _create_pdf_info_dict, _datetime_to_pdf)
@@ -51,7 +51,7 @@ def get_fontspec():
             # 1) Forward slashes also work on Windows, so don't mess with
             # backslashes.  2) The dirname needs to include a separator.
             path = pathlib.Path(fm.findfont(family))
-            latex_fontspec.append(r"\%s{%s}[Path=%s]" % (
+            latex_fontspec.append(r"\%s{%s}[Path=\detokenize{%s}]" % (
                 command, path.name, path.parent.as_posix() + "/"))
 
     return "\n".join(latex_fontspec)
@@ -101,6 +101,7 @@ def common_texification(text):
     # Sometimes, matplotlib adds the unknown command \mathdefault.
     # Not using \mathnormal instead since this looks odd for the latex cm font.
     text = _replace_mathdefault(text)
+    text = text.replace("\N{MINUS SIGN}", r"\ensuremath{-}")
     # split text into normaltext and inline math parts
     parts = re_mathsep.split(text)
     for i, s in enumerate(parts):
@@ -191,6 +192,12 @@ class LatexError(Exception):
     def __init__(self, message, latex_output=""):
         super().__init__(message)
         self.latex_output = latex_output
+
+    def __str__(self):
+        s, = self.args
+        if self.latex_output:
+            s += "\n" + self.latex_output
+        return s
 
 
 class LatexManager:
@@ -286,7 +293,7 @@ class LatexManager:
         stdout, stderr = latex.communicate(test_input)
         if latex.returncode != 0:
             raise LatexError("LaTeX returned an error, probably missing font "
-                             "or error in preamble:\n%s" % stdout)
+                             "or error in preamble.", stdout)
 
         self.latex = None  # Will be set up on first use.
         self.str_cache = {}  # cache for strings already processed
@@ -313,7 +320,7 @@ class LatexManager:
         self._expect("*pgf_backend_query_start")
         self._expect_prompt()
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def latex_stdin_utf8(self):
         return self.latex.stdin
 
@@ -380,7 +387,7 @@ def _get_image_inclusion_command():
 
 class RendererPgf(RendererBase):
 
-    @cbook._delete_parameter("3.3", "dummy")
+    @_api.delete_parameter("3.3", "dummy")
     def __init__(self, figure, fh, dummy=False):
         """
         Create a new PGF renderer that translates any drawing instruction
@@ -628,7 +635,7 @@ class RendererPgf(RendererBase):
             return
 
         if not os.path.exists(getattr(self.fh, "name", "")):
-            cbook._warn_external(
+            _api.warn_external(
                 "streamed pgf-code does not support raster graphics, consider "
                 "using the pgf-to-pdf option.")
 
@@ -743,27 +750,27 @@ class RendererPgf(RendererBase):
         return points * mpl_pt_to_in * self.dpi
 
 
-@cbook.deprecated("3.3", alternative="GraphicsContextBase")
+@_api.deprecated("3.3", alternative="GraphicsContextBase")
 class GraphicsContextPgf(GraphicsContextBase):
     pass
 
 
-@cbook.deprecated("3.4")
+@_api.deprecated("3.4")
 class TmpDirCleaner:
     _remaining_tmpdirs = set()
 
-    @cbook._classproperty
-    @cbook.deprecated("3.4")
+    @_api.classproperty
+    @_api.deprecated("3.4")
     def remaining_tmpdirs(cls):
         return cls._remaining_tmpdirs
 
     @staticmethod
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     def add(tmpdir):
         TmpDirCleaner._remaining_tmpdirs.add(tmpdir)
 
     @staticmethod
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     @atexit.register
     def cleanup_remaining_tmpdirs():
         for tmpdir in TmpDirCleaner._remaining_tmpdirs:
@@ -791,12 +798,6 @@ class FigureCanvasPgf(FigureCanvasBase):
 %%
 %% Make sure the required packages are loaded in your preamble
 %%   \\usepackage{pgf}
-%%
-%% and, on pdftex
-%%   \\usepackage[utf8]{inputenc}\\DeclareUnicodeCharacter{2212}{-}
-%%
-%% or, on luatex and xetex
-%%   \\usepackage{unicode-math}
 %%
 %% Figures using additional raster images can only be included by \\input if
 %% they are in the same directory as the main LaTeX file. For loading figures
@@ -852,7 +853,8 @@ class FigureCanvasPgf(FigureCanvasBase):
                 file = codecs.getwriter("utf-8")(file)
             self._print_pgf_to_fh(file, *args, **kwargs)
 
-    def _print_pdf_to_fh(self, fh, *args, metadata=None, **kwargs):
+    def print_pdf(self, fname_or_fh, *args, metadata=None, **kwargs):
+        """Use LaTeX to compile a pgf generated figure to pdf."""
         w, h = self.figure.get_figwidth(), self.figure.get_figheight()
 
         info_dict = _create_pdf_info_dict('pgf', metadata or {})
@@ -885,15 +887,12 @@ class FigureCanvasPgf(FigureCanvasBase):
                 [texcommand, "-interaction=nonstopmode", "-halt-on-error",
                  "figure.tex"], _log, cwd=tmpdir)
 
-            with (tmppath / "figure.pdf").open("rb") as fh_src:
-                shutil.copyfileobj(fh_src, fh)  # copy file contents to target
+            with (tmppath / "figure.pdf").open("rb") as orig, \
+                 cbook.open_file_cm(fname_or_fh, "wb") as dest:
+                shutil.copyfileobj(orig, dest)  # copy file contents to target
 
-    def print_pdf(self, fname_or_fh, *args, **kwargs):
-        """Use LaTeX to compile a Pgf generated figure to PDF."""
-        with cbook.open_file_cm(fname_or_fh, "wb") as file:
-            self._print_pdf_to_fh(file, *args, **kwargs)
-
-    def _print_png_to_fh(self, fh, *args, **kwargs):
+    def print_png(self, fname_or_fh, *args, **kwargs):
+        """Use LaTeX to compile a pgf figure to pdf and convert it to png."""
         converter = make_pdf_to_png_converter()
         with TemporaryDirectory() as tmpdir:
             tmppath = pathlib.Path(tmpdir)
@@ -901,16 +900,16 @@ class FigureCanvasPgf(FigureCanvasBase):
             png_path = tmppath / "figure.png"
             self.print_pdf(pdf_path, *args, **kwargs)
             converter(pdf_path, png_path, dpi=self.figure.dpi)
-            with png_path.open("rb") as fh_src:
-                shutil.copyfileobj(fh_src, fh)  # copy file contents to target
-
-    def print_png(self, fname_or_fh, *args, **kwargs):
-        """Use LaTeX to compile a pgf figure to pdf and convert it to png."""
-        with cbook.open_file_cm(fname_or_fh, "wb") as file:
-            self._print_png_to_fh(file, *args, **kwargs)
+            with png_path.open("rb") as orig, \
+                 cbook.open_file_cm(fname_or_fh, "wb") as dest:
+                shutil.copyfileobj(orig, dest)  # copy file contents to target
 
     def get_renderer(self):
         return RendererPgf(self.figure, None)
+
+    def draw(self):
+        _no_output_draw(self.figure)
+        return super().draw()
 
 
 FigureManagerPgf = FigureManagerBase
@@ -944,7 +943,7 @@ class PdfPages:
         '_info_dict',
         '_metadata',
     )
-    metadata = cbook.deprecated('3.3')(property(lambda self: self._metadata))
+    metadata = _api.deprecated('3.3')(property(lambda self: self._metadata))
 
     def __init__(self, filename, *, keep_empty=True, metadata=None):
         """
@@ -981,7 +980,7 @@ class PdfPages:
                     'moddate': 'ModDate',
                 }.get(key.lower(), key.lower().title())
                 if canonical != key:
-                    cbook.warn_deprecated(
+                    _api.warn_deprecated(
                         '3.3', message='Support for setting PDF metadata keys '
                         'case-insensitively is deprecated since %(since)s and '
                         'will be removed %(removal)s; '

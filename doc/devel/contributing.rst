@@ -5,12 +5,39 @@ Contributing
 ============
 
 This project is a community effort, and everyone is welcome to
-contribute.  We follow the `Python Software Foundation Code of Conduct
-<coc_>`_ in everything we do.
+contribute. Everyone within the community
+is expected to abide by our `code of conduct <../../CODE_OF_CONDUCT.md>`_.
 
-The project is hosted on https://github.com/matplotlib/matplotlib
+The project is hosted on
+https://github.com/matplotlib/matplotlib
 
-.. _coc: http://www.python.org/psf/codeofconduct/
+Contributor Incubator
+=====================
+
+If you are interested in becoming a regular contributor to Matplotlib, but 
+don't know where to start or feel insecure about it, you can join our non-public 
+communication channel for new contributors. To do so, please go to `gitter
+<https://gitter.im/matplotlib/matplotlib>`_ and ask to be added to '#incubator'.
+This is a private gitter room moderated by core Matplotlib developers where you can 
+get guidance and support for your first few PRs.  This is a place you can ask questions
+about anything: how to use git, github, how our PR review process works, technical questions
+about the code, what makes for good documentation or a blog post, how to get involved involved
+in community work, or get "pre-review" on your PR.
+
+
+.. _new_contributors:
+
+Issues for New Contributors
+---------------------------
+
+While any contributions are welcome, we have marked some issues as
+particularly suited for new contributors by the label
+`good first issue <https://github.com/matplotlib/matplotlib/labels/good%20first%20issue>`_
+These are well documented issues, that do not require a deep understanding of
+the internals of Matplotlib. The issues may additionally be tagged with a
+difficulty. ``Difficulty: Easy`` is suited for people with little Python experience.
+``Difficulty: Medium`` and ``Difficulty: Hard`` are not trivial to solve and
+require more thought and programming experience.
 
 .. _submitting-a-bug-report:
 
@@ -40,10 +67,10 @@ If you are reporting a bug, please do your best to include the following:
 
       >>> import matplotlib
       >>> matplotlib.__version__
-      '1.5.3'
+      '3.4.1'
       >>> import platform
       >>> platform.python_version()
-      '2.7.12'
+      '3.9.2'
 
 We have preloaded the issue creation page with a Markdown template that you can
 use to organize this information.
@@ -61,81 +88,6 @@ Matplotlib is an open source project with limited resources, we encourage
 users to then also
 :ref:`participate in the implementation <contributing-code>`.
 
-.. _installing_for_devs:
-
-Retrieving and installing the latest version of the code
-========================================================
-
-When developing Matplotlib, sources must be downloaded, built, and installed
-into a local environment on your machine.
-
-We use `Git <https://git-scm.com/>`_ for version control and
-`GitHub <https://github.com/>`_ for hosting our main repository.
-
-You can check out the latest sources with the command (see
-:ref:`set-up-fork` for more details)::
-
-    git clone https://github.com/matplotlib/matplotlib.git
-
-and navigate to the :file:`matplotlib` directory. If you have the proper privileges,
-you can use ``git@`` instead of  ``https://``, which works through the ssh protocol
-and might be easier to use if you are using 2-factor authentication.
-
-Installing Matplotlib in developer mode
----------------------------------------
-
-It is strongly recommended to set up a clean `virtual environment`_.  Do not
-use on a preexisting environment!
-
-A new environment can be set up with ::
-
-   python3 -mvenv <file folder location>
-
-and activated with one of the following::
-
-   source <file folder location>/bin/activate  # Linux/macOS
-   <file folder location>\Scripts\activate.bat  # Windows cmd.exe
-   <file folder location>\Scripts\Activate.ps1  # Windows PowerShell
-
-Whenever you plan to work on Matplotlib, remember to activate the development
-environment in your shell!
-
-To install Matplotlib (and compile the C-extensions) run the following
-command from the top-level directory ::
-
-   python -mpip install -ve .
-
-This installs Matplotlib in 'editable/develop mode', i.e., builds
-everything and places the correct link entries in the install
-directory so that python will be able to import Matplotlib from the
-source directory.  Thus, any changes to the ``*.py`` files will be
-reflected the next time you import the library.  If you change the
-C-extension source (which might happen if you change branches) you
-will need to run ::
-
-   python setup.py build_ext --inplace
-
-or re-run ``python -mpip install -ve .``.
-
-You can then run the tests to check your work environment is set up properly::
-
-   python -mpytest
-
-.. _virtual environment: https://docs.python.org/3/library/venv.html
-.. _pytest: http://doc.pytest.org/en/latest/
-.. _pep8: https://pep8.readthedocs.io/en/latest/
-.. _Ghostscript: https://www.ghostscript.com/
-.. _Inkscape: https://inkscape.org/
-
-.. note::
-
-  **Additional dependencies for testing**: pytest_ (version 3.6 or later),
-  Ghostscript_, Inkscape_
-
-.. seealso::
-
-  * :ref:`testing`
-
 .. _contributing-code:
 
 Contributing code
@@ -150,9 +102,6 @@ The preferred way to contribute to Matplotlib is to fork the `main
 repository <https://github.com/matplotlib/matplotlib/>`__ on GitHub,
 then submit a "pull request" (PR).
 
-The best practices for using GitHub to make PRs to Matplotlib are
-documented in the :ref:`development-workflow` section.
-
 A brief overview is:
 
 1. `Create an account <https://github.com/join>`_ on GitHub if you do not
@@ -164,34 +113,36 @@ A brief overview is:
 
 3. Clone this copy to your local disk::
 
-      $ git clone https://github.com/YourLogin/matplotlib.git
+      git clone https://github.com/<YOUR GITHUB USERNAME>/matplotlib.git
 
-4. Create a branch to hold your changes::
+4. Enter the directory and install the local version of Matplotlib. 
+   See ref`<installing_for_devs>` for instructions
 
-      $ git checkout -b my-feature origin/master
+5. Create a branch to hold your changes::
+
+      git checkout -b my-feature origin/master
 
    and start making changes. Never work in the ``master`` branch!
 
-5. Work on this copy, on your computer, using Git to do the version control.
+6. Work on this copy, on your computer, using Git to do the version control.
    When you're done editing e.g., ``lib/matplotlib/collections.py``, do::
 
-      $ git add lib/matplotlib/collections.py
-      $ git commit
+      git add lib/matplotlib/collections.py
+      git commit
 
    to record your changes in Git, then push them to GitHub with::
 
-      $ git push -u origin my-feature
+      git push -u origin my-feature
 
 Finally, go to the web page of your fork of the Matplotlib repo, and click
-'Pull request' to send your changes to the maintainers for review.  You may
-want to consider sending an email to the mailing list for more visibility.
+'Pull request' to send your changes to the maintainers for review.
 
 .. seealso::
 
   * `Git documentation <https://git-scm.com/documentation>`_
   * `Git-Contributing to a Project <https://git-scm.com/book/en/v2/GitHub-Contributing-to-a-Project>`_
   * `Introduction to GitHub  <https://lab.github.com/githubtraining/introduction-to-github>`_
-  * :ref:`development-workflow`
+  * :ref:`development-workflow` for best practices for Matplotlib
   * :ref:`using-git`
 
 Contributing pull requests
@@ -277,20 +228,6 @@ tools:
   * :ref:`documenting-matplotlib`
 
 
-
-.. _new_contributors:
-
-Issues for New Contributors
----------------------------
-
-New contributors should look for the following tags when looking for issues.
-We strongly recommend that new contributors tackle issues labeled
-`good first issue <https://github.com/matplotlib/matplotlib/labels/good%20first%20issue>`_
-as they are easy, well documented issues, that do not require an understanding of
-the different submodules of Matplotlib.
-This helps the contributor become familiar with the contribution
-workflow, and for the core devs to become acquainted with the contributor;
-besides which, we frequently underestimate how easy an issue is to solve!
 
 
 .. _contributing_documentation:

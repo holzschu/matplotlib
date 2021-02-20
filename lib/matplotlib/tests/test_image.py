@@ -12,11 +12,12 @@ from numpy.testing import assert_array_equal
 from PIL import Image
 
 from matplotlib import (
-    colors, image as mimage, patches, pyplot as plt, style, rcParams)
+    _api, colors, image as mimage, patches, pyplot as plt, style, rcParams)
 from matplotlib.image import (AxesImage, BboxImage, FigureImage,
                               NonUniformImage, PcolorImage)
 from matplotlib.testing.decorators import check_figures_equal, image_comparison
 from matplotlib.transforms import Bbox, Affine2D, TransformedBbox
+import matplotlib.ticker as mticker
 
 import pytest
 
@@ -324,6 +325,15 @@ def test_cursor_data():
     event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
     assert im.get_cursor_data(event) is None
 
+    # Now try with additional transform applied to the image artist
+    trans = Affine2D().scale(2).rotate(0.5)
+    im = ax.imshow(np.arange(100).reshape(10, 10),
+                   transform=trans + ax.transData)
+    x, y = 3, 10
+    xdisp, ydisp = ax.transData.transform([x, y])
+    event = MouseEvent('motion_notify_event', fig.canvas, xdisp, ydisp)
+    assert im.get_cursor_data(event) == 44
+
 
 @pytest.mark.parametrize(
     "data, text_without_colorbar, text_with_colorbar", [
@@ -522,8 +532,7 @@ def test_rasterize_dpi():
     for ax in axs:
         ax.set_xticks([])
         ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(False)
+        ax.spines[:].set_visible(False)
 
     rcParams['savefig.dpi'] = 10
 
@@ -705,8 +714,10 @@ def test_load_from_url():
     url = ('file:'
            + ('///' if sys.platform == 'win32' else '')
            + path.resolve().as_posix())
-    plt.imread(url)
-    plt.imread(urllib.request.urlopen(url))
+    with _api.suppress_matplotlib_deprecation_warning():
+        plt.imread(url)
+    with urllib.request.urlopen(url) as file:
+        plt.imread(file)
 
 
 @image_comparison(['log_scale_image'], remove_text=True)
@@ -1118,7 +1129,8 @@ def test_exact_vmin():
 @pytest.mark.network
 @pytest.mark.flaky
 def test_https_imread_smoketest():
-    v = mimage.imread('https://matplotlib.org/1.5.0/_static/logo2.png')
+    with _api.suppress_matplotlib_deprecation_warning():
+        v = mimage.imread('https://matplotlib.org/1.5.0/_static/logo2.png')
 
 
 # A basic ndarray subclass that implements a quantity
@@ -1218,3 +1230,36 @@ def test_huge_range_log(fig_test, fig_ref):
     ax = fig_ref.subplots()
     im = ax.imshow(data, norm=colors.Normalize(vmin=100, vmax=data.max()),
                    interpolation='nearest', cmap=cmap)
+
+
+@check_figures_equal()
+def test_spy_box(fig_test, fig_ref):
+    # setting up reference and test
+    ax_test = fig_test.subplots(1, 3)
+    ax_ref = fig_ref.subplots(1, 3)
+
+    plot_data = (
+        [[1, 1], [1, 1]],
+        [[0, 0], [0, 0]],
+        [[0, 1], [1, 0]],
+    )
+    plot_titles = ["ones", "zeros", "mixed"]
+
+    for i, (z, title) in enumerate(zip(plot_data, plot_titles)):
+        ax_test[i].set_title(title)
+        ax_test[i].spy(z)
+        ax_ref[i].set_title(title)
+        ax_ref[i].imshow(z, interpolation='nearest',
+                            aspect='equal', origin='upper', cmap='Greys',
+                            vmin=0, vmax=1)
+        ax_ref[i].set_xlim(-0.5, 1.5)
+        ax_ref[i].set_ylim(1.5, -0.5)
+        ax_ref[i].xaxis.tick_top()
+        ax_ref[i].title.set_y(1.05)
+        ax_ref[i].xaxis.set_ticks_position('both')
+        ax_ref[i].xaxis.set_major_locator(
+            mticker.MaxNLocator(nbins=9, steps=[1, 2, 5, 10], integer=True)
+        )
+        ax_ref[i].yaxis.set_major_locator(
+            mticker.MaxNLocator(nbins=9, steps=[1, 2, 5, 10], integer=True)
+        )

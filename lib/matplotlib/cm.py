@@ -82,7 +82,7 @@ class _DeprecatedCmapDictWrapper(MutableMapping):
         return self._cmap_registry.get(key, default)
 
     def _warn_deprecated(self):
-        cbook.warn_deprecated(
+        _api.warn_deprecated(
             "3.3",
             message="The global colormaps dictionary is no longer "
                     "considered public API.",
@@ -131,12 +131,12 @@ def register_cmap(name=None, cmap=None, *, override_builtin=False):
     Notes
     -----
     Registering a colormap stores a reference to the colormap object
-    which can currently be modified and inadvertantly change the global
+    which can currently be modified and inadvertently change the global
     colormap state. This behavior is deprecated and in Matplotlib 3.5
     the registered colormap will be immutable.
 
     """
-    cbook._check_isinstance((str, None), name=name)
+    _api.check_isinstance((str, None), name=name)
     if name is None:
         try:
             name = cmap.name
@@ -279,7 +279,7 @@ class ScalarMappable:
         if vmin is not None or vmax is not None:
             self.set_clim(vmin, vmax)
             if norm is not None:
-                cbook.warn_deprecated(
+                _api.warn_deprecated(
                     "3.3",
                     message="Passing parameters norm and vmin/vmax "
                             "simultaneously is deprecated since %(since)s and "
@@ -366,7 +366,7 @@ class ScalarMappable:
 
         Parameters
         ----------
-        A : ndarray
+        A : ndarray or None
         """
         self._A = A
         self._update_dict['array'] = True
@@ -448,7 +448,7 @@ class ScalarMappable:
         the norm of the mappable will reset the norm, locator, and formatters
         on the colorbar to default.
         """
-        cbook._check_isinstance((colors.Normalize, None), norm=norm)
+        _api.check_isinstance((colors.Normalize, None), norm=norm)
         in_init = self.norm is None
         if norm is None:
             norm = colors.Normalize()
@@ -500,12 +500,12 @@ class ScalarMappable:
             self._update_dict[key] = True
         self.stale = True
 
-    update_dict = cbook._deprecate_privatize_attribute("3.3")
+    update_dict = _api.deprecate_privatize_attribute("3.3")
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def add_checker(self, checker):
         return self._add_checker(checker)
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def check_update(self, checker):
         return self._check_update(checker)

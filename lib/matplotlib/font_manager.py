@@ -147,8 +147,8 @@ X11FontDirectories = [
     # common application, not really useful
     "/usr/lib/openoffice/share/fonts/truetype/",
     # user fonts
-    str(Path(os.environ.get('XDG_DATA_HOME',
-                            Path.home() / ".local/share")) / "fonts"),
+    str((Path(os.environ.get('XDG_DATA_HOME') or Path.home() / ".local/share"))
+        / "fonts"),
     str(Path.home() / ".fonts"),
 ]
 OSXFontDirectories = [
@@ -590,38 +590,32 @@ class FontProperties:
 
     - family: A list of font names in decreasing order of priority.
       The items may include a generic font family name, either
-      'serif', 'sans-serif', 'cursive', 'fantasy', or 'monospace'.
+      'sans-serif' (default), 'serif', 'cursive', 'fantasy', or 'monospace'.
       In that case, the actual font to be used will be looked up
       from the associated rcParam.
 
-    - style: Either 'normal', 'italic' or 'oblique'.
+    - style: Either 'normal' (default), 'italic' or 'oblique'.
 
-    - variant: Either 'normal' or 'small-caps'.
+    - variant: Either 'normal' (default) or 'small-caps'.
 
     - stretch: A numeric value in the range 0-1000 or one of
       'ultra-condensed', 'extra-condensed', 'condensed',
-      'semi-condensed', 'normal', 'semi-expanded', 'expanded',
+      'semi-condensed', 'normal' (default), 'semi-expanded', 'expanded',
       'extra-expanded' or 'ultra-expanded'.
 
     - weight: A numeric value in the range 0-1000 or one of
-      'ultralight', 'light', 'normal', 'regular', 'book', 'medium',
+      'ultralight', 'light', 'normal' (default), 'regular', 'book', 'medium',
       'roman', 'semibold', 'demibold', 'demi', 'bold', 'heavy',
       'extra bold', 'black'.
 
     - size: Either an relative value of 'xx-small', 'x-small',
       'small', 'medium', 'large', 'x-large', 'xx-large' or an
-      absolute font size, e.g., 12.
+      absolute font size, e.g., 10 (default).
 
     - math_fontfamily: The family of fonts used to render math text; overrides
       :rc:`mathtext.fontset`. Supported values are the same as the ones
-      supported by :rc:`mathtext.fontset` ::
-
-        'dejavusans', 'dejavuserif', 'cm', 'stix', 'stixsans' and 'custom'.
-
-    The default font property for TrueType fonts (as specified in the
-    default rcParams) is ::
-
-      sans-serif, normal, normal, normal, normal, scalable.
+      supported by :rc:`mathtext.fontset`: 'dejavusans', 'dejavuserif', 'cm',
+      'stix', 'stixsans' and 'custom'.
 
     Alternatively, a font may be specified using the absolute path to a font
     file, by using the *fname* kwarg.  However, in this case, it is typically
@@ -909,8 +903,6 @@ class FontProperties:
 
         The default font is :rc:`mathtext.fontset`.
         """
-        if self._math_fontfamily is None:
-            return rcParams['mathtext.fontset']
         return self._math_fontfamily
 
     def set_math_fontfamily(self, fontfamily):
@@ -933,13 +925,12 @@ class FontProperties:
         .text.Text.get_math_fontfamily
         """
         if fontfamily is None:
-            self._math_fontfamily = None
-            return
-
-        valid_fonts = _validators['mathtext.fontset'].valid.values()
-        # _check_in_list() Validates the parameter math_fontfamily as
-        # if it were passed to rcParams['mathtext.fontset']
-        _api.check_in_list(valid_fonts, math_fontfamily=fontfamily)
+            fontfamily = rcParams['mathtext.fontset']
+        else:
+            valid_fonts = _validators['mathtext.fontset'].valid.values()
+            # _check_in_list() Validates the parameter math_fontfamily as
+            # if it were passed to rcParams['mathtext.fontset']
+            _api.check_in_list(valid_fonts, math_fontfamily=fontfamily)
         self._math_fontfamily = fontfamily
 
     def copy(self):
@@ -1058,7 +1049,7 @@ class FontManager:
                     paths.extend(ttfpath.split(':'))
                 else:
                     paths.append(ttfpath)
-                cbook.warn_deprecated(
+                _api.warn_deprecated(
                     "3.3", name=pathname, obj_type="environment variable",
                     alternative="FontManager.addfont()")
         _log.debug('font search path %s', str(paths))
@@ -1134,6 +1125,12 @@ class FontManager:
         """
         self.__default_weight = weight
 
+    @staticmethod
+    def _expand_aliases(family):
+        if family in ('sans', 'sans serif'):
+            family = 'sans-serif'
+        return rcParams['font.' + family]
+
     # Each of the scoring functions below should return a value between
     # 0.0 (perfect match) and 1.0 (terrible match)
     def score_family(self, families, family2):
@@ -1156,10 +1153,7 @@ class FontManager:
         for i, family1 in enumerate(families):
             family1 = family1.lower()
             if family1 in font_family_aliases:
-                if family1 in ('sans', 'sans serif'):
-                    family1 = 'sans-serif'
-                options = rcParams['font.' + family1]
-                options = [x.lower() for x in options]
+                options = [*map(str.lower, self._expand_aliases(family1))]
                 if family2 in options:
                     idx = options.index(family2)
                     return (i + (idx / len(options))) * step
@@ -1362,6 +1356,12 @@ class FontManager:
                 _log.warning(
                     'findfont: Font family %s not found. Falling back to %s.',
                     prop.get_family(), self.defaultFamily[fontext])
+                for family in map(str.lower, prop.get_family()):
+                    if family in font_family_aliases:
+                        _log.warning(
+                            "findfont: Generic family %r not found because "
+                            "none of the following families were found: %s",
+                            family, ", ".join(self._expand_aliases(family)))
                 default_prop = prop.copy()
                 default_prop.set_family(self.defaultFamily[fontext])
                 return self.findfont(default_prop, fontext, directory,

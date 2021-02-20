@@ -14,7 +14,6 @@ Writing documentation
 Getting started
 ===============
 
-
 General file structure
 ----------------------
 
@@ -51,54 +50,12 @@ Setting up the doc build
 ------------------------
 
 The documentation for Matplotlib is generated from reStructuredText (ReST_)
-using the Sphinx_ documentation generation tool. To build the documentation
-you will need to
+using the Sphinx_ documentation generation tool.
 
-1. set up an appropriate Python environment
-2. install additional external dependencies
-
-Setting up a dedicated Python environment
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-*  create a clean virtual environment with no existing Matplotlib installation
-*  install the Python packages required for Matplotlib
-*  install the additional Python packages required to build the documentation.
-   They are listed in :file:`doc-requirements.txt`, which is shown below:
-
-   .. include:: ../../requirements/doc/doc-requirements.txt
-      :literal:
-
-.. note::
-
-  If you've already set up an
-  :ref:`environment for Matplotlib development <installing_for_devs>`, you
-  can reuse that and skip the first two steps.
-
-Install additional external dependencies
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Required:
-
-*  a minimal working LaTeX distribution
-*  `Graphviz <http://www.graphviz.org/download>`_
-*  the LaTeX packages *cm-super* and *dvipng*. If your OS bundles ``TexLive``,
-   then often the "complete" version of the installer will automatically include
-   these packages (e.g. "texlive-full" or "texlive-all").
-
-Optional, but recommended:
-
-*  `Inkscape <https://inkscape.org>`_
-*  `optipng <http://optipng.sourceforge.net>`_
-*  the font "Humor Sans" (aka the "XKCD" font), or the free alternative
-   `Comic Neue <http://comicneue.com/>`_.
-
-.. note::
-
-  The documentation will not build without LaTeX and Graphviz.  These are not
-  Python packages and must be installed separately. The documentation can be
-  built without Inkscape and optipng, but the build process will raise various
-  warnings. If the build process warns that you are missing fonts, make sure
-  your LaTeX distribution bundles cm-super or install it separately.
+To build the documentation you will need to
+:ref:`set up Matplotlib for development <installing_for_devs>`. Note in
+particular the :ref:`additional dependencies <doc-dependencies>` required to
+build the documentation.
 
 Building the docs
 -----------------
@@ -505,8 +462,9 @@ Use ``array-like`` for homogeneous numeric sequences, which could
 typically be a numpy.array. Dimensionality may be specified using ``2D``,
 ``3D``, ``n-dimensional``. If you need to have variables denoting the
 sizes of the dimensions, use capital letters in brackets
-(``array-like (M, N)``). When referring to them in the text they are easier
-read and no special formatting is needed.
+(``(M, N) array-like``). When referring to them in the text they are easier
+read and no special formatting is needed. Use ``array`` instead of
+``array-like`` for return types if the returned object is indeed a numpy array.
 
 ``float`` is the implicit default dtype for array-likes. For other dtypes
 use ``array-like of int``.
@@ -514,9 +472,9 @@ use ``array-like of int``.
 Some possible uses::
 
   2D array-like
-  array-like (N)
-  array-like (M, N)
-  array-like (M, N, 3)
+  (N,) array-like
+  (M, N) array-like
+  (M, N, 3) array-like
   array-like of int
 
 Non-numeric homogeneous sequences are described as lists, e.g.::
@@ -716,7 +674,7 @@ this example from `matplotlib.lines`:
 .. code-block:: python
 
   # in lines.py
-  docstring.interpd.update(Line2D=artist.kwdoc(Line2D))
+  docstring.interpd.update(Line2D_kwdoc=artist.kwdoc(Line2D))
 
 Then in any function accepting `~.Line2D` pass-through ``kwargs``, e.g.,
 `matplotlib.axes.Axes.plot`:
@@ -729,13 +687,28 @@ Then in any function accepting `~.Line2D` pass-through ``kwargs``, e.g.,
       """
       Some stuff omitted
 
-      The kwargs are Line2D properties:
-      %(_Line2D_docstr)s
+      Other Parameters
+      ----------------
+      scalex, scaley : bool, default: True
+          These parameters determine if the view limits are adapted to the
+          data limits. The values are passed on to `autoscale_view`.
 
-      kwargs scalex and scaley, if defined, are passed on
-      to autoscale_view to determine whether the x and y axes are
-      autoscaled; default True.  See Axes.autoscale_view for more
-      information
+      **kwargs : `.Line2D` properties, optional
+          *kwargs* are used to specify properties like a line label (for
+          auto legends), linewidth, antialiasing, marker face color.
+          Example::
+
+          >>> plot([1, 2, 3], [1, 2, 3], 'go-', label='line 1', linewidth=2)
+          >>> plot([1, 2, 3], [1, 4, 9], 'rs', label='line 2')
+
+          If you specify multiple lines with one plot call, the kwargs apply
+          to all those lines. In case the label object is iterable, each
+          element is used as labels for each set of data.
+
+          Here is a list of available `.Line2D` properties:
+
+          %(Line2D_kwdoc)s
+
       """
 
 Note there is a problem for `~matplotlib.artist.Artist` ``__init__`` methods,

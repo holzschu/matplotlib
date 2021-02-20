@@ -30,6 +30,7 @@ class MatplotlibDeprecationWarning(UserWarning):
 
 
 # mplDeprecation is deprecated. Use MatplotlibDeprecationWarning instead.
+# remove when removing the re-import from cbook
 mplDeprecation = MatplotlibDeprecationWarning
 
 
@@ -41,11 +42,7 @@ def _generate_deprecation_warning(
             raise ValueError(
                 "A pending deprecation cannot have a scheduled removal")
     else:
-        if removal:
-            removal = "in {}".format(removal)
-        else:
-            removal = {"2.2": "in 3.1", "3.0": "in 3.2", "3.1": "in 3.3"}.get(
-                since, "two minor releases later")
+        removal = f"in {removal}" if removal else "two minor releases later"
     if not message:
         message = (
             "\nThe %(name)s %(obj_type)s"
@@ -185,6 +182,7 @@ def deprecated(since, *, message='', name='', alternative='', pending=False,
 
     def deprecate(obj, message=message, name=name, alternative=alternative,
                   pending=pending, obj_type=obj_type, addendum=addendum):
+        from matplotlib._api import classproperty
 
         if isinstance(obj, type):
             if obj_type is None:
@@ -201,15 +199,16 @@ def deprecated(since, *, message='', name='', alternative='', pending=False,
                 obj.__init__ = functools.wraps(obj.__init__)(wrapper)
                 return obj
 
-        elif isinstance(obj, property):
+        elif isinstance(obj, (property, classproperty)):
             obj_type = "attribute"
             func = None
             name = name or obj.fget.__name__
             old_doc = obj.__doc__
 
-            class _deprecated_property(property):
+            class _deprecated_property(type(obj)):
                 def __get__(self, instance, owner):
-                    if instance is not None:
+                    if instance is not None or owner is not None \
+                            and isinstance(self, classproperty):
                         emit_warning()
                     return super().__get__(instance, owner)
 
@@ -272,7 +271,7 @@ def deprecated(since, *, message='', name='', alternative='', pending=False,
     return deprecate
 
 
-class _deprecate_privatize_attribute:
+class deprecate_privatize_attribute:
     """
     Helper to deprecate public access to an attribute.
 
@@ -295,7 +294,7 @@ class _deprecate_privatize_attribute:
             property(lambda self: getattr(self, f"_{name}")), name=name))
 
 
-def _rename_parameter(since, old, new, func=None):
+def rename_parameter(since, old, new, func=None):
     """
     Decorator indicating that parameter *old* of *func* is renamed to *new*.
 
@@ -310,12 +309,12 @@ def _rename_parameter(since, old, new, func=None):
     --------
     ::
 
-        @_rename_parameter("3.1", "bad_name", "good_name")
+        @_api.rename_parameter("3.1", "bad_name", "good_name")
         def func(good_name): ...
     """
 
     if func is None:
-        return functools.partial(_rename_parameter, since, old, new)
+        return functools.partial(rename_parameter, since, old, new)
 
     signature = inspect.signature(func)
     assert old not in signature.parameters, (
@@ -351,7 +350,7 @@ class _deprecated_parameter_class:
 _deprecated_parameter = _deprecated_parameter_class()
 
 
-def _delete_parameter(since, name, func=None, **kwargs):
+def delete_parameter(since, name, func=None, **kwargs):
     """
     Decorator indicating that parameter *name* of *func* is being deprecated.
 
@@ -372,12 +371,12 @@ def _delete_parameter(since, name, func=None, **kwargs):
     --------
     ::
 
-        @_delete_parameter("3.1", "unused")
+        @_api.delete_parameter("3.1", "unused")
         def func(used_arg, other_arg, unused, more_args): ...
     """
 
     if func is None:
-        return functools.partial(_delete_parameter, since, name, **kwargs)
+        return functools.partial(delete_parameter, since, name, **kwargs)
 
     signature = inspect.signature(func)
     # Name of `**kwargs` parameter of the decorated function, typically
@@ -434,14 +433,14 @@ def _delete_parameter(since, name, func=None, **kwargs):
     return wrapper
 
 
-def _make_keyword_only(since, name, func=None):
+def make_keyword_only(since, name, func=None):
     """
     Decorator indicating that passing parameter *name* (or any of the following
     ones) positionally to *func* is being deprecated.
     """
 
     if func is None:
-        return functools.partial(_make_keyword_only, since, name)
+        return functools.partial(make_keyword_only, since, name)
 
     signature = inspect.signature(func)
     POK = inspect.Parameter.POSITIONAL_OR_KEYWORD
@@ -460,7 +459,7 @@ def _make_keyword_only(since, name, func=None):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # Don't use signature.bind here, as it would fail when stacked with
-        # _rename_parameter and an "old" argument name is passed in
+        # rename_parameter and an "old" argument name is passed in
         # (signature.bind would fail, but the actual call would succeed).
         idx = [*func.__signature__.parameters].index(name)
         if len(args) > idx:
@@ -474,7 +473,7 @@ def _make_keyword_only(since, name, func=None):
     return wrapper
 
 
-def _deprecate_method_override(method, obj, *, allow_empty=False, **kwargs):
+def deprecate_method_override(method, obj, *, allow_empty=False, **kwargs):
     """
     Return ``obj.method`` with a deprecation if it was overridden, else None.
 
@@ -517,7 +516,7 @@ def _deprecate_method_override(method, obj, *, allow_empty=False, **kwargs):
 
 
 @contextlib.contextmanager
-def _suppress_matplotlib_deprecation_warning():
+def suppress_matplotlib_deprecation_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", MatplotlibDeprecationWarning)
         yield

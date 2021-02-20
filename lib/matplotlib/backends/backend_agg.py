@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image
 
 import matplotlib as mpl
-from matplotlib import cbook
+from matplotlib import _api, cbook
 from matplotlib import colors as mcolors
 from matplotlib.backend_bases import (
     _Backend, _check_savefig_extra_args, FigureCanvasBase, FigureManagerBase,
@@ -115,14 +115,14 @@ class RendererAgg(RendererBase):
         self.draw_quad_mesh = self._renderer.draw_quad_mesh
         self.copy_from_bbox = self._renderer.copy_from_bbox
 
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     def get_content_extents(self):
         orig_img = np.asarray(self.buffer_rgba())
         slice_y, slice_x = cbook._get_nonzero_slices(orig_img[..., 3])
         return (slice_x.start, slice_y.start,
                 slice_x.stop - slice_x.start, slice_y.stop - slice_y.start)
 
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     def tostring_rgba_minimized(self):
         extents = self.get_content_extents()
         bbox = [[extents[0], self.height - (extents[1] + extents[3])],
@@ -168,7 +168,7 @@ class RendererAgg(RendererBase):
                              linewidths, linestyles, antialiaseds, urls,
                              offset_position):
         if offset_position == "data":
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.3", message="Support for offset_position='data' is "
                 "deprecated since %(since)s and will be removed %(removal)s.")
         return self._renderer.draw_path_collection(
@@ -219,7 +219,7 @@ class RendererAgg(RendererBase):
 
         if ismath in ["TeX", "TeX!"]:
             if ismath == "TeX!":
-                cbook._warn_deprecated(
+                _api.warn_deprecated(
                     "3.3", message="Support for ismath='TeX!' is deprecated "
                     "since %(since)s and will be removed %(removal)s; use "
                     "ismath='TeX' instead.")
@@ -522,12 +522,12 @@ class FigureCanvasAgg(FigureCanvasBase):
 
     @_check_savefig_extra_args(
         extra_kwargs=["quality", "optimize", "progressive"])
-    @cbook._delete_parameter("3.3", "quality",
-                             alternative="pil_kwargs={'quality': ...}")
-    @cbook._delete_parameter("3.3", "optimize",
-                             alternative="pil_kwargs={'optimize': ...}")
-    @cbook._delete_parameter("3.3", "progressive",
-                             alternative="pil_kwargs={'progressive': ...}")
+    @_api.delete_parameter("3.3", "quality",
+                           alternative="pil_kwargs={'quality': ...}")
+    @_api.delete_parameter("3.3", "optimize",
+                           alternative="pil_kwargs={'optimize': ...}")
+    @_api.delete_parameter("3.3", "progressive",
+                           alternative="pil_kwargs={'progressive': ...}")
     def print_jpg(self, filename_or_obj, *args, pil_kwargs=None, **kwargs):
         """
         Write the figure to a JPEG file.
@@ -573,7 +573,7 @@ class FigureCanvasAgg(FigureCanvasBase):
             quality = pil_kwargs["quality"] = \
                 dict.__getitem__(mpl.rcParams, "savefig.jpeg_quality")
             if quality not in [0, 75, 95]:  # default qualities.
-                cbook.warn_deprecated(
+                _api.warn_deprecated(
                     "3.3", name="savefig.jpeg_quality", obj_type="rcParam",
                     addendum="Set the quality using "
                     "`pil_kwargs={'quality': ...}`; the future default "

@@ -6,7 +6,7 @@ Streamline plotting for 2D vector fields.
 import numpy as np
 
 import matplotlib
-from matplotlib import _api, cbook, cm
+from matplotlib import _api, cm
 import matplotlib.colors as mcolors
 import matplotlib.collections as mcollections
 import matplotlib.lines as mlines
@@ -25,8 +25,8 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
 
     Parameters
     ----------
-    x, y : 1D arrays
-        An evenly spaced grid.
+    x, y : 1D/2D arrays
+        Evenly spaced strictly increasing arrays to make a grid.
     u, v : 2D arrays
         *x* and *y*-velocities. The number of rows and columns must match
         the length of *y* and *x*, respectively.
@@ -233,7 +233,7 @@ class StreamplotSet:
 
     def __init__(self, lines, arrows, **kwargs):
         if kwargs:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.3",
                 message="Passing arbitrary keyword arguments to StreamplotSet "
                         "is deprecated since %(since) and will become an "
@@ -332,6 +332,11 @@ class Grid:
             y = y_col
         else:
             raise ValueError("'y' can have at maximum 2 dimensions")
+
+        if not (np.diff(x) > 0).all():
+            raise ValueError("'x' must be strictly increasing")
+        if not (np.diff(y) > 0).all():
+            raise ValueError("'y' must be strictly increasing")
 
         self.nx = len(x)
         self.ny = len(y)

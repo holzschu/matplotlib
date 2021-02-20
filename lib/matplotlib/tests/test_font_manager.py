@@ -9,7 +9,6 @@ import warnings
 import numpy as np
 import pytest
 
-from matplotlib import font_manager as fm
 from matplotlib.font_manager import (
     findfont, findSystemFonts, FontProperties, fontManager, json_dump,
     json_load, get_font, get_fontconfig_fonts, is_opentype_cff_font,
@@ -111,12 +110,7 @@ def test_utf16m_sfnt():
 def test_find_ttc():
     fp = FontProperties(family=["WenQuanYi Zen Hei"])
     if Path(findfont(fp)).name != "wqy-zenhei.ttc":
-        if not os.environ.get("TRAVIS") or sys.platform != "linux":
-            pytest.skip("Font may be missing")
-        # Travis appears to fail to pick up the ttc file sometimes.  Try to
-        # rebuild the cache and try again.
-        fm._rebuild()
-        assert Path(findfont(fp)).name == "wqy-zenhei.ttc"
+        pytest.skip("Font may be missing")
 
     fig, ax = plt.subplots()
     ax.text(.5, .5, "\N{KANGXI RADICAL DRAGON}", fontproperties=fp)
@@ -170,8 +164,7 @@ def test_user_fonts_linux(tmpdir, monkeypatch):
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows only')
 def test_user_fonts_win32():
-    if not (os.environ.get('APPVEYOR', False) or
-            os.environ.get('TF_BUILD', False)):
+    if not (os.environ.get('APPVEYOR') or os.environ.get('TF_BUILD')):
         pytest.xfail("This test should only run on CI (appveyor or azure) "
                      "as the developer's font directory should remain "
                      "unchanged.")
@@ -210,3 +203,15 @@ def test_fork():
     ctx = multiprocessing.get_context("fork")
     with ctx.Pool(processes=2) as pool:
         pool.map(_model_handler, range(2))
+
+
+def test_missing_family(caplog):
+    plt.rcParams["font.sans-serif"] = ["this-font-does-not-exist"]
+    with caplog.at_level("WARNING"):
+        findfont("sans")
+    assert [rec.getMessage() for rec in caplog.records] == [
+        "findfont: Font family ['sans'] not found. "
+        "Falling back to DejaVu Sans.",
+        "findfont: Generic family 'sans' not found because none of the "
+        "following families were found: this-font-does-not-exist",
+    ]

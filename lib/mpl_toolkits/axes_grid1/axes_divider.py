@@ -4,7 +4,7 @@ Helper classes to adjust the positions of multiple axes at drawing time.
 
 import numpy as np
 
-from matplotlib import _api, cbook
+from matplotlib import _api
 from matplotlib.axes import SubplotBase
 from matplotlib.gridspec import SubplotSpec, GridSpec
 import matplotlib.transforms as mtransforms
@@ -356,16 +356,16 @@ class SubplotDivider(Divider):
         """Return the bounds of the subplot box."""
         return self.get_subplotspec().get_position(self.figure).bounds
 
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     @property
     def figbox(self):
         return self.get_subplotspec().get_position(self.figure)
 
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     def update_params(self):
         pass
 
-    @cbook.deprecated(
+    @_api.deprecated(
         "3.4", alternative="get_subplotspec",
         addendum="(get_subplotspec returns a SubplotSpec instance.)")
     def get_geometry(self):
@@ -373,7 +373,7 @@ class SubplotDivider(Divider):
         rows, cols, num1, num2 = self.get_subplotspec().get_geometry()
         return rows, cols, num1 + 1  # for compatibility
 
-    @cbook.deprecated("3.4", alternative="set_subplotspec")
+    @_api.deprecated("3.4", alternative="set_subplotspec")
     def change_geometry(self, numrows, numcols, num):
         """Change subplot geometry, e.g., from (1, 1, 1) to (2, 2, 3)."""
         self._subplotspec = GridSpec(numrows, numcols)[num-1]
@@ -450,7 +450,7 @@ class AxesDivider(Divider):
             main axes will be used.
         """
         if pad is None:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.2", message="In a future version, 'pad' will default to "
                 "rcParams['figure.subplot.wspace'].  Set pad=0 to keep the "
                 "old behavior.")
@@ -499,7 +499,7 @@ class AxesDivider(Divider):
             main axes will be used.
         """
         if pad is None:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.2", message="In a future version, 'pad' will default to "
                 "rcParams['figure.subplot.hspace'].  Set pad=0 to keep the "
                 "old behavior.")

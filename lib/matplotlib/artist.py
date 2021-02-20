@@ -9,7 +9,7 @@ import warnings
 import numpy as np
 
 import matplotlib as mpl
-from . import cbook, docstring
+from . import _api, cbook, docstring
 from .path import Path
 from .transforms import (Bbox, IdentityTransform, Transform, TransformedBbox,
                          TransformedPatchPath, TransformedPath)
@@ -28,7 +28,7 @@ def allow_rasterization(draw):
 
     # Axes has a second (deprecated) argument inframe for its draw method.
     # args and kwargs are deprecated, but we don't wrap this in
-    # cbook._delete_parameter for performance; the relevant deprecation
+    # _api.delete_parameter for performance; the relevant deprecation
     # warning will be emitted by the inner draw() call.
     @wraps(draw)
     def draw_wrapper(artist, renderer, *args, **kwargs):
@@ -113,14 +113,12 @@ class Artist:
         self._label = ''
         self._picker = None
         self._contains = None
-        self._rasterized = None
+        self._rasterized = False
         self._agg_filter = None
         # Normally, artist classes need to be queried for mouseover info if and
         # only if they override get_cursor_data.
         self._mouseover = type(self).get_cursor_data != Artist.get_cursor_data
-        self.eventson = False  # fire events only if eventson
-        self._oid = 0  # an observer id
-        self._propobservers = {}  # a dict from oids to funcs
+        self._callbacks = cbook.CallbackRegistry()
         try:
             self.axes = None
         except AttributeError:
@@ -341,10 +339,9 @@ class Artist:
         --------
         remove_callback
         """
-        oid = self._oid
-        self._propobservers[oid] = func
-        self._oid += 1
-        return oid
+        # Wrapping func in a lambda ensures it can be connected multiple times
+        # and never gets weakref-gc'ed.
+        return self._callbacks.connect("pchanged", lambda: func(self))
 
     def remove_callback(self, oid):
         """
@@ -354,10 +351,7 @@ class Artist:
         --------
         add_callback
         """
-        try:
-            del self._propobservers[oid]
-        except KeyError:
-            pass
+        self._callbacks.disconnect(oid)
 
     def pchanged(self):
         """
@@ -370,8 +364,7 @@ class Artist:
         add_callback
         remove_callback
         """
-        for oid, func in self._propobservers.items():
-            func(self)
+        self._callbacks.process("pchanged")
 
     def is_transform_set(self):
         """
@@ -456,7 +449,7 @@ class Artist:
         _log.warning("%r needs 'contains' method", self.__class__.__name__)
         return False, {}
 
-    @cbook.deprecated("3.3", alternative="set_picker")
+    @_api.deprecated("3.3", alternative="set_picker")
     def set_contains(self, picker):
         """
         Define a custom contains test for the artist.
@@ -484,7 +477,7 @@ class Artist:
             raise TypeError("picker is not a callable")
         self._contains = picker
 
-    @cbook.deprecated("3.3", alternative="get_picker")
+    @_api.deprecated("3.3", alternative="get_picker")
     def get_contains(self):
         """
         Return the custom contains function of the artist if set, or *None*.
@@ -546,7 +539,7 @@ class Artist:
 
         Parameters
         ----------
-        picker : None or bool or callable
+        picker : None or bool or float or callable
             This can be one of the following:
 
             - *None*: Picking is disabled for this artist (default).
@@ -554,6 +547,14 @@ class Artist:
             - A boolean: If *True* then picking will be enabled and the
               artist will fire a pick event if the mouse event is over
               the artist.
+
+            - A float: If picker is a number it is interpreted as an
+              epsilon tolerance in points and the artist will fire
+              off an event if its data is within epsilon of the mouse
+              event.  For some artists like lines and patch collections,
+              the artist may provide additional data to the pick event
+              that is generated, e.g., the indices of the data within
+              epsilon of the pick event
 
             - A function: If picker is callable, it is a user supplied
               function which determines whether the artist is hit by the
@@ -564,11 +565,6 @@ class Artist:
               to determine the hit test.  if the mouse event is over the
               artist, return *hit=True* and props is a dictionary of
               properties you want added to the PickEvent attributes.
-
-            - *deprecated*: For `.Line2D` only, *picker* can also be a float
-              that sets the tolerance for checking whether an event occurred
-              "on" the line; this is deprecated.  Use `.Line2D.set_pickradius`
-              instead.
         """
         self._picker = picker
 
@@ -893,17 +889,22 @@ class Artist:
 
     def set_rasterized(self, rasterized):
         """
-        Force rasterized (bitmap) drawing in vector backend output.
+        Force rasterized (bitmap) drawing for vector graphics output.
 
-        Defaults to None, which implies the backend's default behavior.
+        Rasterized drawing is not supported by all artists. If you try to
+        enable this on an artist that does not support it, the command has no
+        effect and a warning will be issued.
+
+        This setting is ignored for pixel-based output.
+
+        See also :doc:`/gallery/misc/rasterization_demo`.
 
         Parameters
         ----------
-        rasterized : bool or None
+        rasterized : bool
         """
         if rasterized and not hasattr(self.draw, "_supports_rasterization"):
-            cbook._warn_external(
-                "Rasterization of '%s' will be ignored" % self)
+            _api.warn_external(f"Rasterization of '{self}' will be ignored")
 
         self._rasterized = rasterized
 
@@ -927,8 +928,8 @@ class Artist:
         self._agg_filter = filter_func
         self.stale = True
 
-    @cbook._delete_parameter("3.3", "args")
-    @cbook._delete_parameter("3.3", "kwargs")
+    @_api.delete_parameter("3.3", "args")
+    @_api.delete_parameter("3.3", "kwargs")
     def draw(self, renderer, *args, **kwargs):
         """
         Draw the Artist (and its children) using the given renderer.
@@ -1003,7 +1004,15 @@ class Artist:
 
     def set_animated(self, b):
         """
-        Set the artist's animation state.
+        Set whether the artist is intended to be used in an animation.
+
+        If True, the artist is excluded from regular drawing of the figure.
+        You have to call `.Figure.draw_artist` / `.Axes.draw_artist`
+        explicitly on the artist. This appoach is used to speed up animations
+        using blitting.
+
+        See also `matplotlib.animation` and
+        :doc:`/tutorials/advanced/blitting`.
 
         Parameters
         ----------
@@ -1038,7 +1047,7 @@ class Artist:
         with cbook._setattr_cm(self, eventson=False):
             for k, v in props.items():
                 if k != k.lower():
-                    cbook.warn_deprecated(
+                    _api.warn_deprecated(
                         "3.3", message="Case-insensitive properties were "
                         "deprecated in %(since)s and support will be removed "
                         "%(removal)s")
@@ -1158,7 +1167,7 @@ class Artist:
                 i_other = keys.index(other)
                 if i_other < i_color:
                     move_color_to_start = True
-                    cbook.warn_deprecated(
+                    _api.warn_deprecated(
                         "3.3", message=f"You have passed the {other!r} kwarg "
                         "before the 'color' kwarg.  Artist.set() currently "
                         "reorders the properties to apply 'color' first, but "
@@ -1702,4 +1711,4 @@ def kwdoc(artist):
             'Properties:\n' + '\n'.join(ai.pprint_setters(leadingspace=4)))
 
 
-docstring.interpd.update(Artist=kwdoc(Artist))
+docstring.interpd.update(Artist_kwdoc=kwdoc(Artist))

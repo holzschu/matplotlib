@@ -16,6 +16,7 @@ import matplotlib.cm as cm
 import matplotlib.colorbar as mcolorbar
 import matplotlib.cbook as cbook
 import matplotlib.pyplot as plt
+import matplotlib.scale as mscale
 from matplotlib.testing.decorators import image_comparison
 
 
@@ -460,6 +461,17 @@ def test_LogNorm():
     assert_array_equal(ln([1, 6]), [0, 1.0])
 
 
+def test_LogNorm_inverse():
+    """
+    Test that lists work, and that the inverse works
+    """
+    norm = mcolors.LogNorm(vmin=0.1, vmax=10)
+    assert_array_almost_equal(norm([0.5, 0.4]), [0.349485, 0.30103])
+    assert_array_almost_equal([0.5, 0.4], norm.inverse([0.349485, 0.30103]))
+    assert_array_almost_equal(norm(0.4), [0.30103])
+    assert_array_almost_equal([0.4], norm.inverse([0.30103]))
+
+
 def test_PowerNorm():
     a = np.array([0, 0.5, 1, 1.5], dtype=float)
     pnorm = mcolors.PowerNorm(1)
@@ -524,6 +536,29 @@ def test_Normalize():
     # This returns exactly 0.5 when longdouble is extended precision (80-bit),
     # but only a value close to it when it is quadruple precision (128-bit).
     assert 0 < norm(1 + 50 * eps) < 1
+
+
+def test_FuncNorm():
+    def forward(x):
+        return (x**2)
+    def inverse(x):
+        return np.sqrt(x)
+
+    norm = mcolors.FuncNorm((forward, inverse), vmin=0, vmax=10)
+    expected = np.array([0, 0.25, 1])
+    input = np.array([0, 5, 10])
+    assert_array_almost_equal(norm(input), expected)
+    assert_array_almost_equal(norm.inverse(expected), input)
+
+    def forward(x):
+        return np.log10(x)
+    def inverse(x):
+        return 10**x
+    norm = mcolors.FuncNorm((forward, inverse), vmin=0.1, vmax=10)
+    lognorm = mcolors.LogNorm(vmin=0.1, vmax=10)
+    assert_array_almost_equal(norm([0.2, 5, 10]), lognorm([0.2, 5, 10]))
+    assert_array_almost_equal(norm.inverse([0.2, 5, 10]),
+                              lognorm.inverse([0.2, 5, 10]))
 
 
 def test_TwoSlopeNorm_autoscale():
@@ -1309,3 +1344,17 @@ def test_2d_to_rgba():
     rgba_1d = mcolors.to_rgba(color.reshape(-1))
     rgba_2d = mcolors.to_rgba(color.reshape((1, -1)))
     assert rgba_1d == rgba_2d
+
+
+def test_norm_deepcopy():
+    norm = mcolors.LogNorm()
+    norm.vmin = 0.0002
+    norm2 = copy.deepcopy(norm)
+    assert norm2.vmin == norm.vmin
+    assert isinstance(norm2._scale, mscale.LogScale)
+    norm = mcolors.Normalize()
+    norm.vmin = 0.0002
+    norm2 = copy.deepcopy(norm)
+    assert isinstance(norm2._scale, mscale.LinearScale)
+    assert norm2.vmin == norm.vmin
+    assert norm2._scale is not norm._scale

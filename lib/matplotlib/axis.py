@@ -54,7 +54,7 @@ class Tick(martist.Artist):
         The right/top tick label.
 
     """
-    @cbook._delete_parameter("3.3", "label")
+    @_api.delete_parameter("3.3", "label")
     def __init__(self, axes, loc, label=None,
                  size=None,  # points
                  width=None,
@@ -98,11 +98,10 @@ class Tick(martist.Artist):
         self.set_figure(axes.figure)
         self.axes = axes
 
-        name = self.__name__.lower()
-
         self._loc = loc
         self._major = major
 
+        name = self.__name__
         major_minor = "major" if major else "minor"
 
         if size is None:
@@ -180,7 +179,7 @@ class Tick(martist.Artist):
                            ("_get_gridline", "gridline"),
                            ("_get_text1", "label1"),
                            ("_get_text2", "label2")]:
-            overridden_method = cbook._deprecate_method_override(
+            overridden_method = _api.deprecate_method_override(
                 getattr(__class__, meth), self, since="3.3", message="Relying "
                 f"on {meth} to initialize Tick.{attr} is deprecated since "
                 f"%(since)s and will not work %(removal)s; please directly "
@@ -194,7 +193,7 @@ class Tick(martist.Artist):
         self.update_position(loc)
 
     @property
-    @cbook.deprecated("3.1", alternative="Tick.label1", pending=True)
+    @_api.deprecated("3.1", alternative="Tick.label1", pending=True)
     def label(self):
         return self.label1
 
@@ -211,7 +210,14 @@ class Tick(martist.Artist):
         self._labelrotation = (mode, angle)
 
     def apply_tickdir(self, tickdir):
-        """Calculate ``self._pad`` and ``self._tickmarkers``."""
+        """Set tick direction.  Valid values are 'out', 'in', 'inout'."""
+        if tickdir is None:
+            tickdir = mpl.rcParams[f'{self.__name__}.direction']
+        _api.check_in_list(['in', 'out', 'inout'], tickdir=tickdir)
+        self._tickdir = tickdir
+        self._pad = self._base_pad + self.get_tick_padding()
+        self.stale = True
+        # Subclass overrides should compute _tickmarkers as appropriate here.
 
     def get_tickdir(self):
         return self._tickdir
@@ -446,19 +452,13 @@ class XTick(Tick):
         return self.axes.get_xaxis_text2_transform(self._pad)
 
     def apply_tickdir(self, tickdir):
-        """Set tick direction. Valid values are 'in', 'out', 'inout'."""
-        if tickdir is None:
-            tickdir = mpl.rcParams['%s.direction' % self.__name__.lower()]
-        _api.check_in_list(['in', 'out', 'inout'], tickdir=tickdir)
-        self._tickdir = tickdir
-
-        if self._tickdir == 'in':
-            self._tickmarkers = (mlines.TICKUP, mlines.TICKDOWN)
-        elif self._tickdir == 'inout':
-            self._tickmarkers = ('|', '|')
-        else:
-            self._tickmarkers = (mlines.TICKDOWN, mlines.TICKUP)
-        self._pad = self._base_pad + self.get_tick_padding()
+        # docstring inherited
+        super().apply_tickdir(tickdir)
+        self._tickmarkers = {
+            'out': (mlines.TICKDOWN, mlines.TICKUP),
+            'in': (mlines.TICKUP, mlines.TICKDOWN),
+            'inout': ('|', '|'),
+        }[self._tickdir]
         self.stale = True
 
     def update_position(self, loc):
@@ -519,17 +519,13 @@ class YTick(Tick):
         return self.axes.get_yaxis_text2_transform(self._pad)
 
     def apply_tickdir(self, tickdir):
-        if tickdir is None:
-            tickdir = mpl.rcParams['%s.direction' % self.__name__.lower()]
-        self._tickdir = tickdir
-
-        if self._tickdir == 'in':
-            self._tickmarkers = (mlines.TICKRIGHT, mlines.TICKLEFT)
-        elif self._tickdir == 'inout':
-            self._tickmarkers = ('_', '_')
-        else:
-            self._tickmarkers = (mlines.TICKLEFT, mlines.TICKRIGHT)
-        self._pad = self._base_pad + self.get_tick_padding()
+        # docstring inherited
+        super().apply_tickdir(tickdir)
+        self._tickmarkers = {
+            'out': (mlines.TICKLEFT, mlines.TICKRIGHT),
+            'in': (mlines.TICKRIGHT, mlines.TICKLEFT),
+            'inout': ('_', '_'),
+        }[self._tickdir]
         self.stale = True
 
     def update_position(self, loc):
@@ -677,7 +673,6 @@ class Axis(martist.Artist):
         self.callbacks = cbook.CallbackRegistry()
 
         self._autolabelpos = True
-        self._smart_bounds = False  # Deprecated in 3.2
 
         self.label = mtext.Text(
             np.nan, np.nan,
@@ -745,7 +740,10 @@ class Axis(martist.Artist):
         return self._scale.name
 
     def _set_scale(self, value, **kwargs):
-        self._scale = mscale.scale_factory(value, self, **kwargs)
+        if not isinstance(value, mscale.ScaleBase):
+            self._scale = mscale.scale_factory(value, self, **kwargs)
+        else:
+            self._scale = value
         self._scale.set_default_locators_and_formatters(self)
 
         self.isDefault_majloc = True
@@ -796,7 +794,7 @@ class Axis(martist.Artist):
         self.set_units(None)
         self.stale = True
 
-    @cbook.deprecated("3.4", alternative="Axis.clear()")
+    @_api.deprecated("3.4", alternative="Axis.clear()")
     def cla(self):
         """Clear this axis."""
         return self.clear()
@@ -1011,17 +1009,6 @@ class Axis(martist.Artist):
             bbox2 = mtransforms.Bbox.from_extents(0, 0, 0, 0)
         return bbox, bbox2
 
-    @cbook.deprecated("3.2")
-    def set_smart_bounds(self, value):
-        """Set the axis to have smart bounds."""
-        self._smart_bounds = value
-        self.stale = True
-
-    @cbook.deprecated("3.2")
-    def get_smart_bounds(self):
-        """Return whether the axis has smart bounds."""
-        return self._smart_bounds
-
     def _update_ticks(self):
         """
         Update ticks (position and labels) using the current data interval of
@@ -1048,36 +1035,6 @@ class Axis(martist.Artist):
         view_low, view_high = self.get_view_interval()
         if view_low > view_high:
             view_low, view_high = view_high, view_low
-
-        if self._smart_bounds and ticks:  # _smart_bounds is deprecated in 3.2
-            # handle inverted limits
-            data_low, data_high = sorted(self.get_data_interval())
-            locs = np.sort([tick.get_loc() for tick in ticks])
-            if data_low <= view_low:
-                # data extends beyond view, take view as limit
-                ilow = view_low
-            else:
-                # data stops within view, take best tick
-                good_locs = locs[locs <= data_low]
-                if len(good_locs):
-                    # last tick prior or equal to first data point
-                    ilow = good_locs[-1]
-                else:
-                    # No ticks (why not?), take first tick
-                    ilow = locs[0]
-            if data_high >= view_high:
-                # data extends beyond view, take view as limit
-                ihigh = view_high
-            else:
-                # data stops within view, take best tick
-                good_locs = locs[locs >= data_high]
-                if len(good_locs):
-                    # first tick after or equal to last data point
-                    ihigh = good_locs[0]
-                else:
-                    # No ticks (why not?), take last tick
-                    ihigh = locs[-1]
-            ticks = [tick for tick in ticks if ilow <= tick.get_loc() <= ihigh]
 
         interval_t = self.get_transform().transform([view_low, view_high])
 
@@ -1309,7 +1266,7 @@ class Axis(martist.Artist):
                 if ~np.isclose(tr_loc, tr_major_locs, atol=tol, rtol=0).any()]
         return minor_locs
 
-    @cbook._make_keyword_only("3.3", "minor")
+    @_api.make_keyword_only("3.3", "minor")
     def get_ticklocs(self, minor=False):
         """Return this Axis' tick locations in data coordinates."""
         return self.get_minorticklocs() if minor else self.get_majorticklocs()
@@ -1433,9 +1390,9 @@ class Axis(martist.Artist):
                 raise ValueError(
                     "'b' and 'visible' specify inconsistent grid visibilities")
             if kwargs and not b:  # something false-like but not None
-                cbook._warn_external('First parameter to grid() is false, '
-                                     'but line properties are supplied. The '
-                                     'grid will be enabled.')
+                _api.warn_external('First parameter to grid() is false, '
+                                   'but line properties are supplied. The '
+                                   'grid will be enabled.')
                 b = True
         which = which.lower()
         _api.check_in_list(['major', 'minor', 'both'], which=which)
@@ -1642,13 +1599,13 @@ class Axis(martist.Artist):
               not isinstance(formatter, mticker.TickHelper)):
             formatter = mticker.FuncFormatter(formatter)
         else:
-            cbook._check_isinstance(mticker.Formatter, formatter=formatter)
+            _api.check_isinstance(mticker.Formatter, formatter=formatter)
 
         if (isinstance(formatter, mticker.FixedFormatter)
                 and len(formatter.seq) > 0
                 and not isinstance(level.locator, mticker.FixedLocator)):
-            cbook._warn_external('FixedFormatter should only be used together '
-                                 'with FixedLocator')
+            _api.warn_external('FixedFormatter should only be used together '
+                               'with FixedLocator')
 
         if level == self.major:
             self.isDefault_majfmt = False
@@ -1667,7 +1624,7 @@ class Axis(martist.Artist):
         ----------
         locator : `~matplotlib.ticker.Locator`
         """
-        cbook._check_isinstance(mticker.Locator, locator=locator)
+        _api.check_isinstance(mticker.Locator, locator=locator)
         self.isDefault_majloc = False
         self.major.locator = locator
         if self.major.formatter:
@@ -1683,7 +1640,7 @@ class Axis(martist.Artist):
         ----------
         locator : `~matplotlib.ticker.Locator`
         """
-        cbook._check_isinstance(mticker.Locator, locator=locator)
+        _api.check_isinstance(mticker.Locator, locator=locator)
         self.isDefault_minloc = False
         self.minor.locator = locator
         if self.minor.formatter:
@@ -1781,7 +1738,7 @@ class Axis(martist.Artist):
 
     # Wrapper around set_ticklabels used to generate Axes.set_x/ytickabels; can
     # go away once the API of Axes.set_x/yticklabels becomes consistent.
-    @cbook._make_keyword_only("3.3", "fontdict")
+    @_api.make_keyword_only("3.3", "fontdict")
     def _set_ticklabels(self, labels, fontdict=None, minor=False, **kwargs):
         """
         Set this Axis' labels with list of string labels.
@@ -1821,8 +1778,7 @@ class Axis(martist.Artist):
             kwargs.update(fontdict)
         return self.set_ticklabels(labels, minor=minor, **kwargs)
 
-    @cbook._make_keyword_only("3.2", "minor")
-    def set_ticks(self, ticks, minor=False):
+    def set_ticks(self, ticks, *, minor=False):
         """
         Set this Axis' tick locations.
 
@@ -1877,14 +1833,31 @@ class Axis(martist.Artist):
             self.set_major_locator(mticker.FixedLocator(ticks))
             return self.get_major_ticks(len(ticks))
 
-    def _get_tick_boxes_siblings(self, xdir, renderer):
+    def _get_tick_boxes_siblings(self, renderer):
         """
         Get the bounding boxes for this `.axis` and its siblings
-        as set by `.Figure.align_xlabels` or  `.Figure.align_ylablels`.
+        as set by `.Figure.align_xlabels` or  `.Figure.align_ylabels`.
 
         By default it just gets bboxes for self.
         """
-        raise NotImplementedError('Derived must override')
+        # Get the Grouper keeping track of x or y label groups for this figure.
+        axis_names = [
+            name for name, axis in self.axes._get_axis_map().items()
+            if name in self.figure._align_label_groups and axis is self]
+        if len(axis_names) != 1:
+            return [], []
+        axis_name, = axis_names
+        grouper = self.figure._align_label_groups[axis_name]
+        bboxes = []
+        bboxes2 = []
+        # If we want to align labels from other axes:
+        for ax in grouper.get_siblings(self.axes):
+            axis = ax._get_axis_map()[axis_name]
+            ticks_to_draw = axis._update_ticks()
+            tlb, tlb2 = axis._get_tick_bboxes(ticks_to_draw, renderer)
+            bboxes.extend(tlb)
+            bboxes2.extend(tlb2)
+        return bboxes, bboxes2
 
     def _update_label_position(self, renderer):
         """
@@ -1900,12 +1873,12 @@ class Axis(martist.Artist):
         """
         raise NotImplementedError('Derived must override')
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def pan(self, numsteps):
         """Pan by *numsteps* (can be positive or negative)."""
         self.major.locator.pan(numsteps)
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def zoom(self, direction):
         """Zoom in/out on axis; if *direction* is >0 zoom in, else zoom out."""
         self.major.locator.zoom(direction)
@@ -2082,25 +2055,6 @@ class XAxis(Axis):
         }, position=position))
         self.label_position = position
         self.stale = True
-
-    def _get_tick_boxes_siblings(self, renderer):
-        """
-        Get the bounding boxes for this `.axis` and its siblings
-        as set by `.Figure.align_xlabels` or  `.Figure.align_ylablels`.
-
-        By default it just gets bboxes for self.
-        """
-        bboxes = []
-        bboxes2 = []
-        # get the Grouper that keeps track of x-label groups for this figure
-        grp = self.figure._align_xlabel_grp
-        # if we want to align labels from other axes:
-        for nn, axx in enumerate(grp.get_siblings(self.axes)):
-            ticks_to_draw = axx.xaxis._update_ticks()
-            tlb, tlb2 = axx.xaxis._get_tick_bboxes(ticks_to_draw, renderer)
-            bboxes.extend(tlb)
-            bboxes2.extend(tlb2)
-        return bboxes, bboxes2
 
     def _update_label_position(self, renderer):
         """
@@ -2373,25 +2327,6 @@ class YAxis(Axis):
         }, position=position))
         self.label_position = position
         self.stale = True
-
-    def _get_tick_boxes_siblings(self, renderer):
-        """
-        Get the bounding boxes for this `.axis` and its siblings
-        as set by `.Figure.align_xlabels` or  `.Figure.align_ylablels`.
-
-        By default it just gets bboxes for self.
-        """
-        bboxes = []
-        bboxes2 = []
-        # get the Grouper that keeps track of y-label groups for this figure
-        grp = self.figure._align_ylabel_grp
-        # if we want to align labels from other axes:
-        for axx in grp.get_siblings(self.axes):
-            ticks_to_draw = axx.yaxis._update_ticks()
-            tlb, tlb2 = axx.yaxis._get_tick_bboxes(ticks_to_draw, renderer)
-            bboxes.extend(tlb)
-            bboxes2.extend(tlb2)
-        return bboxes, bboxes2
 
     def _update_label_position(self, renderer):
         """

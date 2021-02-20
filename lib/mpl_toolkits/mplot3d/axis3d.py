@@ -260,8 +260,8 @@ class Axis(maxis.XAxis):
         lxyz = 0.5 * (edgep1 + edgep2)
 
         # A rough estimate; points are ambiguous since 3D plots rotate
-        ax_scale = self.axes.bbox.size / self.figure.bbox.size
-        ax_inches = np.multiply(ax_scale, self.figure.get_size_inches())
+        reltoinches = self.figure.dpi_scale_trans.inverted()
+        ax_inches = reltoinches.transform(self.axes.bbox.size)
         ax_points_estimate = sum(72. * ax_inches)
         deltas_per_point = 48 / ax_points_estimate
         default_offset = 21.
@@ -357,7 +357,8 @@ class Axis(maxis.XAxis):
             self.gridlines.set_color(info['grid']['color'])
             self.gridlines.set_linewidth(info['grid']['linewidth'])
             self.gridlines.set_linestyle(info['grid']['linestyle'])
-            self.gridlines.draw(renderer, project=True)
+            self.gridlines.do_3d_projection()
+            self.gridlines.draw(renderer)
 
         # Draw ticks
         tickdir = info['tickdir']

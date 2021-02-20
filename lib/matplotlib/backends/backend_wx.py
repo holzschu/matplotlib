@@ -22,7 +22,7 @@ from matplotlib.backend_bases import (
     GraphicsContextBase, MouseButton, NavigationToolbar2, RendererBase,
     StatusbarBase, TimerBase, ToolContainerBase, cursors)
 
-from matplotlib import cbook, backend_tools
+from matplotlib import _api, cbook, backend_tools
 from matplotlib._pylab_helpers import Gcf
 from matplotlib.backend_managers import ToolManager
 from matplotlib.figure import Figure
@@ -43,7 +43,7 @@ _DEBUG = 5
 _DEBUG_lvls = {1: 'Low ', 2: 'Med ', 3: 'High', 4: 'Error'}
 
 
-@cbook.deprecated("3.3")
+@_api.deprecated("3.3")
 def DEBUG_MSG(string, lvl=3, o=None):
     if lvl >= _DEBUG:
         print(f"{_DEBUG_lvls[lvl]}- {string} in {type(o)}")
@@ -142,7 +142,7 @@ class RendererWx(RendererBase):
 
     def __init__(self, bitmap, dpi):
         """Initialise a wxWindows renderer instance."""
-        cbook.warn_deprecated(
+        _api.warn_deprecated(
             "2.0", name="wx", obj_type="backend", removal="the future",
             alternative="wxagg", addendum="See the Matplotlib usage FAQ for "
             "more info on backends.")
@@ -280,7 +280,7 @@ class RendererWx(RendererBase):
         self.gc.unselect()
         return self.gc
 
-    @cbook.deprecated("3.3", alternative=".gc")
+    @_api.deprecated("3.3", alternative=".gc")
     def get_gc(self):
         """
         Fetch the locally cached gc.
@@ -297,10 +297,11 @@ class RendererWx(RendererBase):
         font = self.fontd.get(key)
         if font is not None:
             return font
+        size = self.points_to_pixels(prop.get_size_in_points())
         # Font colour is determined by the active wx.Pen
         # TODO: It may be wise to cache font information
         self.fontd[key] = font = wx.Font(  # Cache the font and gc.
-            pointSize=self.points_to_pixels(prop.get_size_in_points()),
+            pointSize=int(size + 0.5),
             family=self.fontnames.get(prop.get_name(), wx.ROMAN),
             style=self.fontangles[prop.get_style()],
             weight=self.fontweights[prop.get_weight()])
@@ -438,6 +439,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         wx.WXK_CONTROL: 'control',
         wx.WXK_SHIFT: 'shift',
         wx.WXK_ALT: 'alt',
+        wx.WXK_CAPITAL: 'caps_lock',
         wx.WXK_LEFT: 'left',
         wx.WXK_UP: 'up',
         wx.WXK_RIGHT: 'right',
@@ -493,7 +495,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         wx.WXK_NUMPAD_DELETE: 'delete',
     }
 
-    def __init__(self, parent, id, figure):
+    def __init__(self, parent, id, figure=None):
         """
         Initialize a FigureWx instance.
 
@@ -503,7 +505,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         """
 
         FigureCanvasBase.__init__(self, figure)
-        w, h = map(math.ceil, figure.bbox.size)
+        w, h = map(math.ceil, self.figure.bbox.size)
         # Set preferred window size hint - helps the sizer, if one is connected
         wx.Panel.__init__(self, parent, id, size=wx.Size(w, h))
         # Create the drawing bitmap
@@ -514,7 +516,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
 
         self.Bind(wx.EVT_SIZE, self._onSize)
         self.Bind(wx.EVT_PAINT, self._onPaint)
-        self.Bind(wx.EVT_KEY_DOWN, self._onKeyDown)
+        self.Bind(wx.EVT_CHAR_HOOK, self._onKeyDown)
         self.Bind(wx.EVT_KEY_UP, self._onKeyUp)
         self.Bind(wx.EVT_LEFT_DOWN, self._onMouseButton)
         self.Bind(wx.EVT_LEFT_DCLICK, self._onMouseButton)
@@ -567,7 +569,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
             raise RuntimeError("Event loop already running")
         timer = wx.Timer(self, id=wx.ID_ANY)
         if timeout > 0:
-            timer.Start(timeout * 1000, oneShot=True)
+            timer.Start(int(timeout * 1000), oneShot=True)
             self.Bind(wx.EVT_TIMER, self.stop_event_loop, id=timer.GetId())
         # Event loop handler for start/stop event loop
         self._event_loop = wx.GUIEventLoop()
@@ -599,7 +601,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         wildcards = '|'.join(wildcards)
         return wildcards, extensions, filter_index
 
-    @cbook._delete_parameter("3.4", "origin")
+    @_api.delete_parameter("3.4", "origin")
     def gui_repaint(self, drawDC=None, origin='WX'):
         """
         Performs update of the displayed image on the GUI canvas, using the
@@ -717,11 +719,13 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         else:
             key = None
 
-        for meth, prefix in (
-                [event.AltDown, 'alt'],
-                [event.ControlDown, 'ctrl'], ):
-            if meth():
-                key = '{0}+{1}'.format(prefix, key)
+        for meth, prefix, key_name in (
+                [event.ControlDown, 'ctrl', 'control'],
+                [event.AltDown, 'alt', 'alt'],
+                [event.ShiftDown, 'shift', 'shift'],):
+            if meth() and key_name != key:
+                if not (key_name == 'shift' and key.isupper()):
+                    key = '{0}+{1}'.format(prefix, key)
 
         return key
 
@@ -902,14 +906,15 @@ class FigureFrameWx(wx.Frame):
             pos = wx.DefaultPosition
         else:
             pos = wx.Point(20, 20)
-        super().__init__(parent=None, id=-1, pos=pos, title="Figure %d" % num)
+        super().__init__(parent=None, id=-1, pos=pos)
         # Frame will be sized later by the Fit method
         _log.debug("%s - __init__()", type(self))
         self.num = num
         _set_frame_icon(self)
 
         self.canvas = self.get_canvas(fig)
-        self.canvas.SetInitialSize(wx.Size(fig.bbox.width, fig.bbox.height))
+        w, h = map(math.ceil, fig.bbox.size)
+        self.canvas.SetInitialSize(wx.Size(w, h))
         self.canvas.SetFocus()
         self.sizer = wx.BoxSizer(wx.VERTICAL)
         self.sizer.Add(self.canvas, 1, wx.TOP | wx.LEFT | wx.EXPAND)
@@ -1010,9 +1015,10 @@ class FigureManagerWx(FigureManagerBase):
 
     def __init__(self, canvas, num, frame):
         _log.debug("%s - __init__()", type(self))
+        self.frame = self.window = frame
+        self._initializing = True
         super().__init__(canvas, num)
-        self.frame = frame
-        self.window = frame
+        self._initializing = False
 
     @property
     def toolbar(self):
@@ -1022,7 +1028,7 @@ class FigureManagerWx(FigureManagerBase):
     def toolbar(self, value):
         # Never allow this, except that base class inits this to None before
         # the frame is set up.
-        if value is not None or hasattr(self, "frame"):
+        if not self._initializing:
             raise AttributeError("can't set attribute")
 
     def show(self):
@@ -1056,7 +1062,8 @@ class FigureManagerWx(FigureManagerBase):
 
     def resize(self, width, height):
         # docstring inherited
-        self.canvas.SetInitialSize(wx.Size(width, height))
+        self.canvas.SetInitialSize(
+            wx.Size(math.ceil(width), math.ceil(height)))
         self.window.GetSizer().Fit(self.window)
 
 
@@ -1127,13 +1134,13 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
         # and/or dc.GetContentScaleFactor()
         self._retinaFix = 'wxMac' in wx.PlatformInfo
 
-    prevZoomRect = cbook._deprecate_privatize_attribute("3.3")
-    retinaFix = cbook._deprecate_privatize_attribute("3.3")
-    savedRetinaImage = cbook._deprecate_privatize_attribute("3.3")
-    wxoverlay = cbook._deprecate_privatize_attribute("3.3")
-    zoomAxes = cbook._deprecate_privatize_attribute("3.3")
-    zoomStartX = cbook._deprecate_privatize_attribute("3.3")
-    zoomStartY = cbook._deprecate_privatize_attribute("3.3")
+    prevZoomRect = _api.deprecate_privatize_attribute("3.3")
+    retinaFix = _api.deprecate_privatize_attribute("3.3")
+    savedRetinaImage = _api.deprecate_privatize_attribute("3.3")
+    wxoverlay = _api.deprecate_privatize_attribute("3.3")
+    zoomAxes = _api.deprecate_privatize_attribute("3.3")
+    zoomStartX = _api.deprecate_privatize_attribute("3.3")
+    zoomStartY = _api.deprecate_privatize_attribute("3.3")
 
     @staticmethod
     def _icon(name):
@@ -1160,7 +1167,7 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
         return wx.Bitmap.FromBufferRGBA(
             image.shape[1], image.shape[0], image.tobytes())
 
-    @cbook.deprecated("3.4")
+    @_api.deprecated("3.4")
     def get_canvas(self, frame, fig):
         return type(self.canvas)(frame, -1, fig)
 
@@ -1259,7 +1266,7 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
             self.EnableTool(self.wx_ids['Forward'], can_forward)
 
 
-@cbook.deprecated("3.3")
+@_api.deprecated("3.3")
 class StatusBarWx(wx.StatusBar):
     """
     A status bar is added to _FigureFrame to allow measurements and the
@@ -1361,7 +1368,7 @@ class ToolbarWx(ToolContainerBase, wx.ToolBar):
         self._label_text.SetLabel(s)
 
 
-@cbook.deprecated("3.3")
+@_api.deprecated("3.3")
 class StatusbarWx(StatusbarBase, wx.StatusBar):
     """For use with ToolManager."""
     def __init__(self, parent, *args, **kwargs):
@@ -1478,10 +1485,6 @@ class _BackendWx(_Backend):
     FigureCanvas = FigureCanvasWx
     FigureManager = FigureManagerWx
     _frame_class = FigureFrameWx
-
-    @staticmethod
-    def trigger_manager_draw(manager):
-        manager.canvas.draw_idle()
 
     @classmethod
     def new_figure_manager(cls, num, *args, **kwargs):

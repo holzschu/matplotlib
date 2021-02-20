@@ -1,6 +1,6 @@
 import functools
 
-from matplotlib import _api, cbook
+from matplotlib import _api
 import matplotlib.artist as martist
 import matplotlib.transforms as mtransforms
 from matplotlib.axes import subplot_class_factory
@@ -60,7 +60,7 @@ class ParasiteAxesBase:
     def get_viewlim_mode(self):
         return self._viewlim_mode
 
-    @cbook.deprecated("3.4", alternative="apply_aspect")
+    @_api.deprecated("3.4", alternative="apply_aspect")
     def update_viewlim(self):
         return self._update_viewlim
 
@@ -87,7 +87,7 @@ class ParasiteAxesBase:
 @functools.lru_cache(None)
 def parasite_axes_class_factory(axes_class=None):
     if axes_class is None:
-        cbook.warn_deprecated(
+        _api.warn_deprecated(
             "3.3", message="Support for passing None to "
             "parasite_axes_class_factory is deprecated since %(since)s and "
             "will be removed %(removal)s; explicitly pass the default Axes "
@@ -101,7 +101,7 @@ def parasite_axes_class_factory(axes_class=None):
 ParasiteAxes = parasite_axes_class_factory(Axes)
 
 
-@cbook.deprecated("3.4", alternative="ParasiteAxesBase")
+@_api.deprecated("3.4", alternative="ParasiteAxesBase")
 class ParasiteAxesAuxTransBase:
     def __init__(self, parent_axes, aux_transform, viewlim_mode=None,
                  **kwargs):
@@ -124,7 +124,7 @@ class ParasiteAxesAuxTransBase:
     def get_viewlim_mode(self):
         return self._viewlim_mode
 
-    @cbook.deprecated("3.4", alternative="apply_aspect")
+    @_api.deprecated("3.4", alternative="apply_aspect")
     def update_viewlim(self):
         return self._update_viewlim()
 
@@ -146,11 +146,11 @@ class ParasiteAxesAuxTransBase:
         super().apply_aspect()
 
 
-@cbook.deprecated("3.4", alternative="parasite_axes_class_factory")
+@_api.deprecated("3.4", alternative="parasite_axes_class_factory")
 @functools.lru_cache(None)
 def parasite_axes_auxtrans_class_factory(axes_class=None):
     if axes_class is None:
-        cbook.warn_deprecated(
+        _api.warn_deprecated(
             "3.3", message="Support for passing None to "
             "parasite_axes_auxtrans_class_factory is deprecated since "
             "%(since)s and will be removed %(removal)s; explicitly pass the "
@@ -166,7 +166,7 @@ def parasite_axes_auxtrans_class_factory(axes_class=None):
 
 
 # Also deprecated.
-with cbook._suppress_matplotlib_deprecation_warning():
+with _api.suppress_matplotlib_deprecation_warning():
     ParasiteAxesAuxTrans = parasite_axes_auxtrans_class_factory(ParasiteAxes)
 
 
@@ -248,21 +248,11 @@ class HostAxesBase:
         The y-axis of self will have ticks on the left and the returned axes
         will have ticks on the right.
         """
-        if axes_class is None:
-            axes_class = self._get_base_axes()
-
-        parasite_axes_class = parasite_axes_class_factory(axes_class)
-
-        ax2 = parasite_axes_class(self, sharex=self)
-        self.parasites.append(ax2)
-        ax2._remove_method = self._remove_any_twin
-
+        ax = self._add_twin_axes(axes_class, sharex=self)
         self.axis["right"].set_visible(False)
-
-        ax2.axis["right"].set_visible(True)
-        ax2.axis["left", "top", "bottom"].set_visible(False)
-
-        return ax2
+        ax.axis["right"].set_visible(True)
+        ax.axis["left", "top", "bottom"].set_visible(False)
+        return ax
 
     def twiny(self, axes_class=None):
         """
@@ -271,21 +261,11 @@ class HostAxesBase:
         The x-axis of self will have ticks on the bottom and the returned axes
         will have ticks on the top.
         """
-        if axes_class is None:
-            axes_class = self._get_base_axes()
-
-        parasite_axes_class = parasite_axes_class_factory(axes_class)
-
-        ax2 = parasite_axes_class(self, sharey=self)
-        self.parasites.append(ax2)
-        ax2._remove_method = self._remove_any_twin
-
+        ax = self._add_twin_axes(axes_class, sharey=self)
         self.axis["top"].set_visible(False)
-
-        ax2.axis["top"].set_visible(True)
-        ax2.axis["left", "right", "bottom"].set_visible(False)
-
-        return ax2
+        ax.axis["top"].set_visible(True)
+        ax.axis["left", "right", "bottom"].set_visible(False)
+        return ax
 
     def twin(self, aux_trans=None, axes_class=None):
         """
@@ -294,23 +274,27 @@ class HostAxesBase:
         While self will have ticks on the left and bottom axis, the returned
         axes will have ticks on the top and right axis.
         """
-        if axes_class is None:
-            axes_class = self._get_base_axes()
-
-        parasite_axes_class = parasite_axes_class_factory(axes_class)
-
         if aux_trans is None:
             aux_trans = mtransforms.IdentityTransform()
-        ax2 = parasite_axes_class(self, aux_trans, viewlim_mode="transform")
-        self.parasites.append(ax2)
-        ax2._remove_method = self._remove_any_twin
-
+        ax = self._add_twin_axes(
+            axes_class, aux_transform=aux_trans, viewlim_mode="transform")
         self.axis["top", "right"].set_visible(False)
+        ax.axis["top", "right"].set_visible(True)
+        ax.axis["left", "bottom"].set_visible(False)
+        return ax
 
-        ax2.axis["top", "right"].set_visible(True)
-        ax2.axis["left", "bottom"].set_visible(False)
+    def _add_twin_axes(self, axes_class, **kwargs):
+        """
+        Helper for `.twinx`/`.twiny`/`.twin`.
 
-        return ax2
+        *kwargs* are forwarded to the parasite axes constructor.
+        """
+        if axes_class is None:
+            axes_class = self._get_base_axes()
+        ax = parasite_axes_class_factory(axes_class)(self, **kwargs)
+        self.parasites.append(ax)
+        ax._remove_method = self._remove_any_twin
+        return ax
 
     def _remove_any_twin(self, ax):
         self.parasites.remove(ax)
@@ -336,7 +320,7 @@ class HostAxesBase:
 @functools.lru_cache(None)
 def host_axes_class_factory(axes_class=None):
     if axes_class is None:
-        cbook.warn_deprecated(
+        _api.warn_deprecated(
             "3.3", message="Support for passing None to host_axes_class is "
             "deprecated since %(since)s and will be removed %(removed)s; "
             "explicitly pass the default Axes class instead.")

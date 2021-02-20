@@ -163,13 +163,10 @@ import dateutil.tz
 import numpy as np
 
 import matplotlib as mpl
-import matplotlib.units as units
-import matplotlib.cbook as cbook
-import matplotlib.ticker as ticker
+from matplotlib import _api, cbook, ticker, units
 
 __all__ = ('datestr2num', 'date2num', 'num2date', 'num2timedelta', 'drange',
-           'epoch2num', 'num2epoch', 'mx2num', 'set_epoch',
-           'get_epoch', 'DateFormatter',
+           'epoch2num', 'num2epoch', 'set_epoch', 'get_epoch', 'DateFormatter',
            'ConciseDateFormatter', 'IndexDateFormatter', 'AutoDateFormatter',
            'DateLocator', 'RRuleLocator', 'AutoDateLocator', 'YearLocator',
            'MonthLocator', 'WeekdayLocator',
@@ -249,7 +246,7 @@ def set_epoch(epoch):
     If microsecond accuracy is desired, the date being plotted needs to be
     within approximately 70 years of the epoch. Matplotlib internally
     represents dates as days since the epoch, so floating point dynamic
-    range needs to be within a factor fo 2^52.
+    range needs to be within a factor of 2^52.
 
     `~.dates.set_epoch` must be called before any dates are converted
     (i.e. near the import section) or a RuntimeError will be raised.
@@ -588,7 +585,7 @@ class DateFormatter(ticker.Formatter):
     `~datetime.datetime.strftime` format string.
     """
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     @property
     def illegal_s(self):
         return re.compile(r"((^|[^%])(%%)*%s)")
@@ -620,7 +617,7 @@ class DateFormatter(ticker.Formatter):
         self.tz = tz
 
 
-@cbook.deprecated("3.3")
+@_api.deprecated("3.3")
 class IndexDateFormatter(ticker.Formatter):
     """Use with `.IndexLocator` to cycle format strings by index."""
 
@@ -804,6 +801,9 @@ class ConciseDateFormatter(ticker.Formatter):
         # 3: hours, 4: minutes, 5: seconds, 6: microseconds
         for level in range(5, -1, -1):
             if len(np.unique(tickdate[:, level])) > 1:
+                # level is less than 2 so a year is already present in the axis
+                if (level < 2):
+                    self.show_offset = False
                 break
             elif level == 0:
                 # all tickdate are the same, so only micros might be different
@@ -1412,7 +1412,7 @@ class AutoDateLocator(DateLocator):
                     break
             else:
                 if not (self.interval_multiples and freq == DAILY):
-                    cbook._warn_external(
+                    _api.warn_external(
                         f"AutoDateLocator was unable to pick an appropriate "
                         f"interval for this date range. It may be necessary "
                         f"to add an interval value to the AutoDateLocator's "
@@ -1451,7 +1451,7 @@ class AutoDateLocator(DateLocator):
         else:
             locator = MicrosecondLocator(interval, tz=self.tz)
             if date2num(dmin) > 70 * 365 and interval < 1000:
-                cbook._warn_external(
+                _api.warn_external(
                     'Plotting microsecond time intervals for dates far from '
                     f'the epoch (time origin: {get_epoch()}) is not well-'
                     'supported. See matplotlib.dates.set_epoch to change the '
@@ -1783,23 +1783,6 @@ def num2epoch(d):
           np.datetime64(get_epoch(), 's')).astype(float)
 
     return np.asarray(d) * SEC_PER_DAY - dt
-
-
-@cbook.deprecated("3.2")
-def mx2num(mxdates):
-    """
-    Convert mx :class:`datetime` instance (or sequence of mx
-    instances) to the new date format.
-    """
-    scalar = False
-    if not np.iterable(mxdates):
-        scalar = True
-        mxdates = [mxdates]
-    ret = epoch2num([m.ticks() for m in mxdates])
-    if scalar:
-        return ret[0]
-    else:
-        return ret
 
 
 def date_ticker_factory(span, tz=None, numticks=5):

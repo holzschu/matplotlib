@@ -146,7 +146,7 @@ class Text(Artist):
 
         Valid keyword arguments are:
 
-        %(Text)s
+        %(Text_kwdoc)s
         """
         super().__init__()
         self._x, self._y = x, y
@@ -544,6 +544,14 @@ class Text(Artist):
         Parameters
         ----------
         wrap : bool
+
+        Notes
+        -----
+        Wrapping does not work together with
+        ``savefig(..., bbox_inches='tight')`` (which is also used internally
+        by ``%matplotlib inline`` in IPython/Jupyter). The 'tight' setting
+        rescales the canvas to accommodate all content and happens before
+        wrapping.
         """
         self._wrap = wrap
 
@@ -849,7 +857,7 @@ class Text(Artist):
     def get_verticalalignment(self):
         """
         Return the vertical alignment as a string.  Will be one of
-        'top', 'center', 'bottom' or 'baseline'.
+        'top', 'center', 'bottom', 'baseline' or 'center_baseline'.
         """
         return self._verticalalignment
 
@@ -1276,7 +1284,7 @@ class Text(Artist):
         return self.set_family(fontname)
 
 
-docstring.interpd.update(Text=artist.kwdoc(Text))
+docstring.interpd.update(Text_kwdoc=artist.kwdoc(Text))
 docstring.dedent_interpd(Text.__init__)
 
 
@@ -1596,8 +1604,7 @@ class Annotation(Text, _AnnotationBase):
         Parameters
         ----------
         text : str
-            The text of the annotation.  *s* is a deprecated synonym for this
-            parameter.
+            The text of the annotation.
 
         xy : (float, float)
             The point *(x, y)* to annotate. The coordinate system is determined
@@ -1676,7 +1683,9 @@ class Annotation(Text, _AnnotationBase):
 
         arrowprops : dict, optional
             The properties used to draw a `.FancyArrowPatch` arrow between the
-            positions *xy* and *xytext*.
+            positions *xy* and *xytext*. Note that the edge of the arrow
+            pointing to *xytext* will be centered on the text itself and may
+            not point directly to the coordinates given in *xytext*.
 
             If *arrowprops* does not contain the key 'arrowstyle' the
             allowed keys are:
@@ -1761,9 +1770,9 @@ class Annotation(Text, _AnnotationBase):
         if (xytext is None and
                 textcoords is not None and
                 textcoords != xycoords):
-            cbook._warn_external("You have used the `textcoords` kwarg, but "
-                                 "not the `xytext` kwarg.  This can lead to "
-                                 "surprising results.")
+            _api.warn_external("You have used the `textcoords` kwarg, but "
+                               "not the `xytext` kwarg.  This can lead to "
+                               "surprising results.")
 
         # clean up textcoords and assign default
         if textcoords is None:
@@ -1880,7 +1889,7 @@ class Annotation(Text, _AnnotationBase):
             # Ignore frac--it is useless.
             frac = d.pop('frac', None)
             if frac is not None:
-                cbook._warn_external(
+                _api.warn_external(
                     "'frac' option in 'arrowprops' is no longer supported;"
                     " use 'headlength' to set the head length in points.")
             headlength = d.pop('headlength', 12)

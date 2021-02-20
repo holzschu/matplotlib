@@ -35,7 +35,7 @@ import textwrap
 import numpy as np
 
 import matplotlib as mpl
-from matplotlib import _api, cbook, collections, cm, colors, contour, ticker
+from matplotlib import _api, collections, cm, colors, contour, ticker
 import matplotlib.artist as martist
 import matplotlib.patches as mpatches
 import matplotlib.path as mpath
@@ -54,7 +54,7 @@ location : None or {'left', 'right', 'top', 'bottom'}
     *orientation* if it is set (vertical colorbars on the right, horizontal
     ones at the bottom), or default to 'right' if *orientation* is unset.
 orientation : None or {'vertical', 'horizontal'}
-    The orientation of the colorbar.  It is preferrable to set the *location*
+    The orientation of the colorbar.  It is preferable to set the *location*
     of the colorbar, as that also determines the *orientation*; passing
     incompatible values for *location* and *orientation* raises an exception.
 fraction : float, default: 0.15
@@ -219,7 +219,7 @@ make_axes_kw_doc = _make_axes_param_doc + _make_axes_other_param_doc
 def _set_ticks_on_axis_warn(*args, **kw):
     # a top level function which gets put in at the axes'
     # set_xticks and set_yticks by ColorbarBase.__init__.
-    cbook._warn_external("Use the colorbar set_ticks() method instead.")
+    _api.warn_external("Use the colorbar set_ticks() method instead.")
 
 
 class _ColorbarAutoLocator(ticker.MaxNLocator):
@@ -411,7 +411,7 @@ class ColorbarBase:
 
     n_rasterize = 50  # rasterize solids if number of colors >= n_rasterize
 
-    @cbook._make_keyword_only("3.3", "cmap")
+    @_api.make_keyword_only("3.3", "cmap")
     def __init__(self, ax, cmap=None,
                  norm=None,
                  alpha=None,
@@ -429,7 +429,7 @@ class ColorbarBase:
                  extendrect=False,
                  label='',
                  ):
-        cbook._check_isinstance([colors.Colormap, None], cmap=cmap)
+        _api.check_isinstance([colors.Colormap, None], cmap=cmap)
         _api.check_in_list(
             ['vertical', 'horizontal'], orientation=orientation)
         _api.check_in_list(
@@ -546,7 +546,7 @@ class ColorbarBase:
         if self.filled:
             self._add_solids(X, Y, self._values[:, np.newaxis])
 
-    @cbook.deprecated("3.3")
+    @_api.deprecated("3.3")
     def config_axis(self):
         self._config_axis()
 
@@ -721,7 +721,7 @@ class ColorbarBase:
             if update_ticks:
                 self.update_ticks()
         else:
-            cbook._warn_external("set_ticks() must have been called.")
+            _api.warn_external("set_ticks() must have been called.")
         self.stale = True
 
     def minorticks_on(self):
@@ -792,6 +792,9 @@ class ColorbarBase:
 
     def _add_solids_pcolormesh(self, X, Y, C):
         _log.debug('Setting pcolormesh')
+        if C.shape[0] == Y.shape[0]:
+            # trim the last one to be compatible with old behavior.
+            C = C[:-1]
         self.solids = self.ax.pcolormesh(
             X, Y, C, cmap=self.cmap, norm=self.norm, alpha=self.alpha,
             edgecolors='none', shading='flat')
@@ -1145,7 +1148,7 @@ def _add_disjoint_kwargs(d, **kwargs):
     """
     for k, v in kwargs.items():
         if k in d:
-            cbook.warn_deprecated(
+            _api.warn_deprecated(
                 "3.3", message=f"The {k!r} parameter to Colorbar has no "
                 "effect because it is overridden by the mappable; it is "
                 "deprecated since %(since)s and will be removed %(removal)s.")
@@ -1197,7 +1200,7 @@ class Colorbar(ColorbarBase):
         mappable.colorbar_cid = mappable.callbacksSM.connect(
             'changed', self.update_normal)
 
-    @cbook.deprecated("3.3", alternative="update_normal")
+    @_api.deprecated("3.3", alternative="update_normal")
     def on_mappable_changed(self, mappable):
         """
         Update this colorbar to match the mappable's properties.
@@ -1255,7 +1258,7 @@ class Colorbar(ColorbarBase):
                 self.add_lines(CS)
         self.stale = True
 
-    @cbook.deprecated("3.3", alternative="update_normal")
+    @_api.deprecated("3.3", alternative="update_normal")
     def update_bruteforce(self, mappable):
         """
         Destroy and rebuild the colorbar.  This is
@@ -1548,12 +1551,12 @@ def make_axes_gridspec(parent, *, location=None, orientation=None,
     return cax, kw
 
 
-@cbook.deprecated("3.4", alternative="Colorbar")
+@_api.deprecated("3.4", alternative="Colorbar")
 class ColorbarPatch(Colorbar):
     pass
 
 
-@cbook.deprecated("3.4", alternative="Colorbar")
+@_api.deprecated("3.4", alternative="Colorbar")
 def colorbar_factory(cax, mappable, **kwargs):
     """
     Create a colorbar on the given axes for the given mappable.
