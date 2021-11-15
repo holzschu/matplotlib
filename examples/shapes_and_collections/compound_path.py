@@ -23,7 +23,7 @@ vertices += [(4, 4), (5, 5), (5, 4), (0, 0)]
 
 path = Path(vertices, codes)
 
-pathpatch = PathPatch(path, facecolor='None', edgecolor='green')
+pathpatch = PathPatch(path, facecolor='none', edgecolor='green')
 
 fig, ax = plt.subplots()
 ax.add_patch(pathpatch)
@@ -35,18 +35,14 @@ plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions, methods, classes and modules is shown
-# in this example:
-
-import matplotlib
-matplotlib.path
-matplotlib.path.Path
-matplotlib.patches
-matplotlib.patches.PathPatch
-matplotlib.axes.Axes.add_patch
-matplotlib.axes.Axes.autoscale_view
+#    - `matplotlib.path`
+#    - `matplotlib.path.Path`
+#    - `matplotlib.patches`
+#    - `matplotlib.patches.PathPatch`
+#    - `matplotlib.axes.Axes.add_patch`
+#    - `matplotlib.axes.Axes.autoscale_view`

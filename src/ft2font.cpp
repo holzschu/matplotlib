@@ -20,7 +20,7 @@
  To improve the hinting of the fonts, this code uses a hack
  presented here:
 
- http://antigrain.com/research/font_rasterization/index.html
+ http://agg.sourceforge.net/antigrain.com/research/font_rasterization/index.html
 
  The idea is to limit the effect of hinting in the x-direction, while
  preserving hinting in the y-direction.  Since freetype does not
@@ -99,13 +99,13 @@ void FT2Image::draw_bitmap(FT_Bitmap *bitmap, FT_Int x, FT_Int y)
     FT_Int char_width = bitmap->width;
     FT_Int char_height = bitmap->rows;
 
-    FT_Int x1 = CLAMP(x, 0, image_width);
-    FT_Int y1 = CLAMP(y, 0, image_height);
-    FT_Int x2 = CLAMP(x + char_width, 0, image_width);
-    FT_Int y2 = CLAMP(y + char_height, 0, image_height);
+    FT_Int x1 = std::min(std::max(x, 0), image_width);
+    FT_Int y1 = std::min(std::max(y, 0), image_height);
+    FT_Int x2 = std::min(std::max(x + char_width, 0), image_width);
+    FT_Int y2 = std::min(std::max(y + char_height, 0), image_height);
 
-    FT_Int x_start = MAX(0, -x);
-    FT_Int y_offset = y1 - MAX(0, -y);
+    FT_Int x_start = std::max(0, -x);
+    FT_Int y_offset = y1 - std::max(0, -y);
 
     if (bitmap->pixel_mode == FT_PIXEL_MODE_GRAY) {
         for (FT_Int i = y1; i < y2; ++i) {
@@ -172,15 +172,21 @@ FT2Image::draw_rect_filled(unsigned long x0, unsigned long y0, unsigned long x1,
 static FT_UInt ft_get_char_index_or_warn(FT_Face face, FT_ULong charcode)
 {
     FT_UInt glyph_index = FT_Get_Char_Index(face, charcode);
-    if (!glyph_index) {
-        PyErr_WarnFormat(NULL, 1, "Glyph %lu missing from current font.", charcode);
-        // Apparently PyErr_WarnFormat returns 0 even if the exception propagates
-        // due to running with -Werror, so check the error flag directly instead.
-        if (PyErr_Occurred()) {
-            throw py::exception();
-        }
+    if (glyph_index) {
+        return glyph_index;
     }
-    return glyph_index;
+    PyObject *text_helpers = NULL, *tmp = NULL;
+    if (!(text_helpers = PyImport_ImportModule("matplotlib._text_helpers")) ||
+        !(tmp = PyObject_CallMethod(text_helpers, "warn_on_missing_glyph", "k", charcode))) {
+        goto exit;
+    }
+exit:
+    Py_XDECREF(text_helpers);
+    Py_XDECREF(tmp);
+    if (PyErr_Occurred()) {
+        throw py::exception();
+    }
+    return 0;
 }
 
 
@@ -203,10 +209,10 @@ ft_outline_move_to(FT_Vector const* to, void* user)
     ft_outline_decomposer* d = reinterpret_cast<ft_outline_decomposer*>(user);
     if (d->codes) {
         if (d->index) {
-            // Appending ENDPOLY is important to make patheffects work.
+            // Appending CLOSEPOLY is important to make patheffects work.
             *(d->vertices++) = 0;
             *(d->vertices++) = 0;
-            *(d->codes++) = ENDPOLY;
+            *(d->codes++) = CLOSEPOLY;
         }
         *(d->vertices++) = to->x / 64.;
         *(d->vertices++) = to->y / 64.;
@@ -286,7 +292,7 @@ FT2Font::get_path()
                      "FT_Outline_Decompose failed with error 0x%x", error);
         return NULL;
     }
-    if (!decomposer.index) {  // Don't append ENDPOLY to null glyphs.
+    if (!decomposer.index) {  // Don't append CLOSEPOLY to null glyphs.
       npy_intp vertices_dims[2] = { 0, 2 };
       numpy::array_view<double, 2> vertices(vertices_dims);
       npy_intp codes_dims[1] = { 0 };
@@ -309,7 +315,7 @@ FT2Font::get_path()
     }
     *(decomposer.vertices++) = 0;
     *(decomposer.vertices++) = 0;
-    *(decomposer.codes++) = ENDPOLY;
+    *(decomposer.codes++) = CLOSEPOLY;
     return Py_BuildValue("NN", vertices.pyobj(), codes.pyobj());
 }
 

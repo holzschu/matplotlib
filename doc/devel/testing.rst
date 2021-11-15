@@ -37,7 +37,7 @@ Running the tests
 
 In the root directory of your development repository run::
 
-   pytest
+   python -m pytest
 
 
 pytest can be configured via a lot of `command-line parameters`_. Some
@@ -55,14 +55,6 @@ optionally followed by the function separated by two colons, e.g., (tests do
 not need to be installed, but Matplotlib should be)::
 
   pytest lib/matplotlib/tests/test_simplification.py::test_clipping
-
-
-An alternative implementation that does not look at command line arguments
-and works from within Python is to run the tests from the Matplotlib library
-function :func:`matplotlib.test`::
-
-  import matplotlib
-  matplotlib.test()
 
 
 .. _command-line parameters: http://doc.pytest.org/en/latest/usage.html
@@ -252,16 +244,16 @@ The correct target folder can be found using::
     python -c "import matplotlib.tests; print(matplotlib.tests.__file__.rsplit('/', 1)[0])"
 
 An analogous copying of :file:`lib/mpl_toolkits/tests/baseline_images`
-is necessary for testing the :ref:`toolkits`.
+is necessary for testing ``mpl_toolkits``.
 
 Run the tests
 ^^^^^^^^^^^^^
 To run the all the tests on your installed version of Matplotlib::
 
-    pytest --pyargs matplotlib.tests
+    python -m pytest --pyargs matplotlib.tests
 
 The test discovery scope can be narrowed to single test modules or even single
 functions::
 
-    pytest --pyargs matplotlib.tests.test_simplification.py::test_clipping
+    python -m pytest --pyargs matplotlib.tests.test_simplification.py::test_clipping
 

@@ -3,7 +3,7 @@
 .. _release-guide:
 
 =============
-Release Guide
+Release guide
 =============
 
 
@@ -45,8 +45,8 @@ is currently broken::
 
 .. _release_ghstats:
 
-GitHub Stats
-============
+GitHub statistics
+=================
 
 
 We automatically extract GitHub issue, PRs, and authors from GitHub via the
@@ -85,7 +85,7 @@ most common issue is ``*`` which is interpreted as unclosed markup).
 
 .. _release_chkdocs:
 
-Update and Validate the Docs
+Update and validate the docs
 ============================
 
 Merge ``*-doc`` branch
@@ -101,27 +101,54 @@ When making major or minor releases, update the supported versions in the
 Security Policy in :file:`SECURITY.md`.  Commonly, this may be one or two
 previous minor releases, but is dependent on release managers.
 
-Update "What's New" and "API changes"
--------------------------------------
+Update release notes
+--------------------
 
-Before tagging major and minor releases, the "what's new" and "API changes"
-listings should be updated.  This is not needed for micro releases.
+What's new
+~~~~~~~~~~
 
-For the "what's new",
+*Only needed for major and minor releases. Bugfix releases should not have new
+features.*
 
- 1. copy the current content to a file in :file:`doc/users/prev_whats_new`
- 2. merge all of the files in :file:`doc/users/next_whats_new/` into
-    :file:`doc/users/whats_new.rst` and delete the individual files
- 3. comment out the next what's new glob at the top
+Merge the contents of all the files in :file:`doc/users/next_whats_new/`
+into a single file :file:`doc/users/prev_whats_new/whats_new_X.Y.0.rst`
+and delete the individual files.
 
-Similarly for the "API changes",
+API changes
+~~~~~~~~~~~
 
- 1. copy the current api changes to a file is :file:`doc/api/prev_api_changes`
- 2. merge all of the files in the most recent :file:`doc/api/next_api_changes`
-    into :file:`doc/api/api_changes.rst`
- 3. comment out the most recent API changes at the top.
+*Primarily needed for major and minor releases. We may sometimes have API
+changes in bugfix releases.*
 
-In both cases step 3 will have to be un-done right after the release.
+Merge the contents of all the files in :file:`doc/api/next_api_changes/`
+into a single file :file:`doc/api/prev_api_changes/api_changes_X.Y.Z.rst`
+and delete the individual files.
+
+Release notes TOC
+~~~~~~~~~~~~~~~~~
+
+Update :file:`doc/users/release_notes.rst`:
+
+- For major and minor releases add a new section
+
+  .. code:: rst
+
+     X.Y
+     ===
+     .. toctree::
+         :maxdepth: 1
+
+         prev_whats_new/whats_new_X.Y.0.rst
+         ../api/prev_api_changes/api_changes_X.Y.0.rst
+         prev_whats_new/github_stats_X.Y.0.rst
+
+- For bugfix releases add the GitHub stats and (if present) the API changes to
+  the existing X.Y section
+
+  .. code:: rst
+
+     ../api/prev_api_changes/api_changes_X.Y.Z.rst
+     prev_whats_new/github_stats_X.Y.Z.rst
 
 Verify that docs build
 ----------------------
@@ -144,6 +171,19 @@ Python3 yet.  You will need to create a Python2 environment with
 
 Address any issues which may arise.  The internal links are checked on Circle
 CI, this should only flag failed external links.
+
+
+Update supported versions in SECURITY.md
+----------------------------------------
+
+For minor version release update the table in :file:`SECURITY.md` to specify
+that the 2 most recent minor releases in the current major version series are
+supported.
+
+For a major version release update the table in :file:`SECURITY.md` to specify
+that the last minor version in the previous major version series is still
+supported.  Dropping support for the last version of a major version series
+will be handled on an ad-hoc basis.
 
 .. _release_tag:
 
@@ -172,18 +212,16 @@ with the tag [#]_::
 
 Finally, push the tag to GitHub::
 
-  git push DANGER master v2.0.0
+  git push DANGER main v2.0.0
 
 Congratulations, the scariest part is done!
 
-.. [#] The tarball that is provided by GitHub is produced using `git
-       archive <https://git-scm.com/docs/git-archive>`__.  We use
-       `versioneer <https://github.com/warner/python-versioneer>`__
-       which uses a format string in
+.. [#] The tarball that is provided by GitHub is produced using `git archive`_.
+       We use setuptools_scm_ which uses a format string in
        :file:`lib/matplotlib/_version.py` to have ``git`` insert a
        list of references to exported commit (see
        :file:`.gitattributes` for the configuration).  This string is
-       then used by ``versioneer`` to produce the correct version,
+       then used by ``setuptools_scm`` to produce the correct version,
        based on the git tag, when users install from the tarball.
        However, if there is a branch pointed at the tagged commit,
        then the branch name will also be included in the tarball.
@@ -195,6 +233,8 @@ Congratulations, the scariest part is done!
 
           git archive v2.0.0 -o matplotlib-2.0.0.tar.gz --prefix=matplotlib-2.0.0/
 
+.. _git archive: https://git-scm.com/docs/git-archive
+.. _setuptools_scm: https://github.com/pypa/setuptools_scm
 
 If this is a final release, also create a 'doc' branch (this is not
 done for pre-releases)::
@@ -216,7 +256,7 @@ On this branch un-comment the globs from :ref:`release_chkdocs`.  And then ::
 
 .. _release_DOI:
 
-Release Management / DOI
+Release management / DOI
 ========================
 
 Via the `GitHub UI
@@ -308,7 +348,7 @@ Congratulations, you have now done the second scariest part!
 
 .. _release_docs:
 
-Build and Deploy Documentation
+Build and deploy documentation
 ==============================
 
 To build the documentation you must have the tagged version installed, but
@@ -318,21 +358,21 @@ build the docs from the ``ver-doc`` branch.  An easy way to arrange this is::
   pip install -r requirements/doc/doc-requirements.txt
   git checkout v2.0.0-doc
   git clean -xfd
-  make -Cdoc O="-Ainclude_analytics=True -j$(nproc)" html latexpdf LATEXMKOPTS="-silent -f"
+  make -Cdoc O="-t release -j$(nproc)" html latexpdf LATEXMKOPTS="-silent -f"
 
 which will build both the html and pdf version of the documentation.
 
 
 The built documentation exists in the `matplotlib.github.com
 <https://github.com/matplotlib/matplotlib.github.com/>`__ repository.
-Pushing changes to master automatically updates the website.
+Pushing changes to main automatically updates the website.
 
 The documentation is organized by version.  At the root of the tree is always
 the documentation for the latest stable release.  Under that, there are
 directories containing the documentation for older versions.  The documentation
-for current master is built on Circle CI and pushed to the `devdocs
+for current main is built on Circle CI and pushed to the `devdocs
 <https://github.com/matplotlib/devdocs/>`__ repository.  These are available at
-`matplotlib.org/devdocs <https://matplotlib.org/devdocs>`__.
+`matplotlib.org/devdocs <https://matplotlib.org/devdocs/>`__.
 
 Assuming you have this repository checked out in the same directory as
 matplotlib ::
@@ -355,7 +395,7 @@ the newly released version.  Now commit and push everything to GitHub ::
 
   git add *
   git commit -a -m 'Updating docs for v2.0.0'
-  git push DANGER master
+  git push DANGER main
 
 Congratulations you have now done the third scariest part!
 
@@ -382,3 +422,13 @@ In addition, announcements should be made on social networks (twitter
 via the ``@matplotlib`` account, any other via personal accounts).
 `NumFOCUS <https://numfocus.org/>`__ should be contacted for
 inclusion in their newsletter.
+
+
+Conda packages
+==============
+
+The Matplotlib project itself does not release conda packages. In particular,
+the Matplotlib release manager is not responsible for conda packaging.
+
+For information on the packaging of Matplotlib for conda-forge see
+https://github.com/conda-forge/matplotlib-feedstock.

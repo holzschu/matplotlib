@@ -212,31 +212,11 @@ int convert_dashes(PyObject *dashobj, void *dashesp)
 {
     Dashes *dashes = (Dashes *)dashesp;
 
-    if (dashobj == NULL && dashobj == Py_None) {
-        return 1;
-    }
-
-    PyObject *dash_offset_obj = NULL;
     double dash_offset = 0.0;
     PyObject *dashes_seq = NULL;
 
-    if (!PyArg_ParseTuple(dashobj, "OO:dashes", &dash_offset_obj, &dashes_seq)) {
+    if (!PyArg_ParseTuple(dashobj, "dO:dashes", &dash_offset, &dashes_seq)) {
         return 0;
-    }
-
-    if (dash_offset_obj != Py_None) {
-        dash_offset = PyFloat_AsDouble(dash_offset_obj);
-        if (PyErr_Occurred()) {
-            return 0;
-        }
-    } else {
-        if (PyErr_WarnEx(PyExc_FutureWarning,
-                         "Passing the dash offset as None is deprecated since "
-                         "Matplotlib 3.3 and will be removed in Matplotlib 3.5; "
-                         "pass it as zero instead.",
-                         1)) {
-            return 0;
-        }
     }
 
     if (dashes_seq == Py_None) {
@@ -415,6 +395,16 @@ exit:
     return status;
 }
 
+int convert_pathgen(PyObject *obj, void *pathgenp)
+{
+    py::PathGenerator *paths = (py::PathGenerator *)pathgenp;
+    if (!paths->set(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Not an iterable of paths");
+        return 0;
+    }
+    return 1;
+}
+
 int convert_clippath(PyObject *clippath_tuple, void *clippathp)
 {
     ClipPath *clippath = (ClipPath *)clippathp;
@@ -488,22 +478,6 @@ int convert_gcagg(PyObject *pygc, void *gcp)
           convert_from_method(pygc, "get_sketch_params", &convert_sketch_params, &gc->sketch))) {
         return 0;
     }
-
-    return 1;
-}
-
-int convert_offset_position(PyObject *obj, void *offsetp)
-{
-    e_offset_position *offset = (e_offset_position *)offsetp;
-    const char *names[] = {"data", NULL};
-    int values[] = {OFFSET_POSITION_DATA};
-    int result = (int)OFFSET_POSITION_FIGURE;
-
-    if (!convert_string_enum(obj, "offset_position", names, values, &result)) {
-        PyErr_Clear();
-    }
-
-    *offset = (e_offset_position)result;
 
     return 1;
 }

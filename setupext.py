@@ -1,6 +1,4 @@
 import configparser
-from distutils import ccompiler, sysconfig
-from distutils.core import Extension
 import functools
 import hashlib
 from io import BytesIO
@@ -12,10 +10,12 @@ import shlex
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import textwrap
 import urllib.request
-import versioneer
+
+from setuptools import Distribution, Extension
 
 _log = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ def _get_xdg_cache_dir():
     """
     Return the XDG cache directory.
 
-    See https://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
+    See https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
     """
     cache_dir = os.environ.get('XDG_CACHE_HOME')
     if not cache_dir:
@@ -168,27 +168,29 @@ _freetype_hashes = {
     '2.10.1':
         '3a60d391fd579440561bf0e7f31af2222bc610ad6ce4d9d7bd2165bca8669110',
 }
-# This is the version of FreeType to use when building a local
-# version.  It must match the value in
-# lib/matplotlib.__init__.py and also needs to be changed below in the
-# embedded windows build script (grep for "REMINDER" in this file)
+# This is the version of FreeType to use when building a local version.  It
+# must match the value in lib/matplotlib.__init__.py and also needs to be
+# changed below in the embedded windows build script (grep for "REMINDER" in
+# this file). Also update the cache path in `.circleci/config.yml`.
 LOCAL_FREETYPE_VERSION = '2.6.1'
 LOCAL_FREETYPE_HASH = _freetype_hashes.get(LOCAL_FREETYPE_VERSION, 'unknown')
 
+# Also update the cache path in `.circleci/config.yml`.
 LOCAL_QHULL_VERSION = '2020.2'
+LOCAL_QHULL_HASH = 'b5c2d7eb833278881b952c8a52d20179eab87766b00b865000469a45c1838b7e'
 
 
-# matplotlib build options, which can be altered using setup.cfg
-setup_cfg = os.environ.get('MPLSETUPCFG') or 'setup.cfg'
+# Matplotlib build options, which can be altered using mplsetup.cfg
+mplsetup_cfg = os.environ.get('MPLSETUPCFG') or 'mplsetup.cfg'
 config = configparser.ConfigParser()
-if os.path.exists(setup_cfg):
-    config.read(setup_cfg)
+if os.path.exists(mplsetup_cfg):
+    config.read(mplsetup_cfg)
 options = {
     'backend': config.get('rc_options', 'backend', fallback=None),
     'system_freetype': config.getboolean(
         'libs', 'system_freetype', fallback=sys.platform.startswith('aix')),
-    'system_qhull': config.getboolean('libs', 'system_qhull',
-                                      fallback=False),
+    'system_qhull': config.getboolean(
+        'libs', 'system_qhull', fallback=False),
 }
 
 
@@ -319,16 +321,15 @@ class SetupPackage:
 
 
 class OptionalPackage(SetupPackage):
-    config_category = "packages"
     default_config = True
 
     def check(self):
         """
-        Check whether ``setup.cfg`` requests this package to be installed.
+        Check whether ``mplsetup.cfg`` requests this package to be installed.
 
         May be overridden by subclasses for additional checks.
         """
-        if config.getboolean(self.config_category, self.name,
+        if config.getboolean("packages", self.name,
                              fallback=self.default_config):
             return "installing"
         else:  # Configuration opt-out by user
@@ -358,9 +359,6 @@ def _pkg_data_helper(pkg, subdir):
 class Matplotlib(SetupPackage):
     name = "matplotlib"
 
-    def check(self):
-        return versioneer.get_version()
-
     def get_package_data(self):
         return {
             'matplotlib': [
@@ -375,7 +373,6 @@ class Matplotlib(SetupPackage):
         # agg
         ext = Extension(
             "matplotlib.backends._backend_agg", [
-                "src/mplutils.cpp",
                 "src/py_converters.cpp",
                 "src/_backend_agg.cpp",
                 "src/_backend_agg_wrapper.cpp",
@@ -407,7 +404,6 @@ class Matplotlib(SetupPackage):
             "matplotlib.ft2font", [
                 "src/ft2font.cpp",
                 "src/ft2font_wrapper.cpp",
-                "src/mplutils.cpp",
                 "src/py_converters.cpp",
             ])
         FreeType.add_flags(ext)
@@ -417,8 +413,6 @@ class Matplotlib(SetupPackage):
         # image
         ext = Extension(
             "matplotlib._image", [
-                "src/_image.cpp",
-                "src/mplutils.cpp",
                 "src/_image_wrapper.cpp",
                 "src/py_converters.cpp",
             ])
@@ -436,7 +430,7 @@ class Matplotlib(SetupPackage):
         yield ext
         # qhull
         ext = Extension(
-            "matplotlib._qhull", ["src/qhull_wrap.c"],
+            "matplotlib._qhull", ["src/qhull_wrap.cpp"],
             define_macros=[("MPL_DEVNULL", os.devnull)])
         add_numpy_flags(ext)
         Qhull.add_flags(ext)
@@ -448,8 +442,8 @@ class Matplotlib(SetupPackage):
             ],
             include_dirs=["src"],
             # psapi library needed for finding Tcl/Tk at run time.
-            libraries=({"linux": ["dl"], "win32": ["psapi"],
-                        "cygwin": ["psapi"]}.get(sys.platform, [])),
+            libraries={"linux": ["dl"], "win32": ["comctl32", "psapi"],
+                       "cygwin": ["comctl32", "psapi"]}.get(sys.platform, []),
             extra_link_args={"win32": ["-mwindows"]}.get(sys.platform, []))
         add_numpy_flags(ext)
         add_libagg_flags(ext)
@@ -459,7 +453,6 @@ class Matplotlib(SetupPackage):
             "matplotlib._tri", [
                 "src/tri/_tri.cpp",
                 "src/tri/_tri_wrapper.cpp",
-                "src/mplutils.cpp",
             ])
         add_numpy_flags(ext)
         yield ext
@@ -532,9 +525,27 @@ def add_libagg_flags_and_sources(ext):
         os.path.join("extern", "agg24-svn", "src", x) for x in agg_sources)
 
 
-# First compile checkdep_freetype2.c, which aborts the compilation either
-# with "foo.h: No such file or directory" if the header is not found, or an
-# appropriate error message if the header indicates a too-old version.
+def get_ccompiler():
+    """
+    Return a new CCompiler instance.
+
+    CCompiler used to be constructible via `distutils.ccompiler.new_compiler`,
+    but this API was removed as part of the distutils deprecation.  Instead,
+    we trick setuptools into instantiating it by creating a dummy Distribution
+    with a list of extension modules that claims to be truthy, but is actually
+    empty, and then running the Distribution's build_ext command.  (If using
+    a plain empty ext_modules, build_ext would early-return without doing
+    anything.)
+    """
+
+    class L(list):
+        def __bool__(self):
+            return True
+
+    build_ext = Distribution({"ext_modules": L()}).get_command_obj("build_ext")
+    build_ext.finalize_options()
+    build_ext.run()
+    return build_ext.compiler
 
 
 class FreeType(SetupPackage):
@@ -542,6 +553,9 @@ class FreeType(SetupPackage):
 
     @classmethod
     def add_flags(cls, ext):
+        # checkdep_freetype2.c immediately aborts the compilation either with
+        # "foo.h: No such file or directory" if the header is not found, or an
+        # appropriate error message if the header indicates a too-old version.
         ext.sources.insert(0, 'src/checkdep_freetype2.c')
         if options.get('system_freetype'):
             # iOS: we need to use freetype as a framework, not as a library.
@@ -604,12 +618,25 @@ class FreeType(SetupPackage):
 
         print(f"Building freetype in {src_path}")
         if sys.platform != 'win32':  # compilation on non-windows
-            env = {**env, "CFLAGS": "{} -fPIC".format(env.get("CFLAGS", ""))}
-            subprocess.check_call(
-                ["./configure", "--with-zlib=no", "--with-bzip2=no",
-                 "--with-png=no", "--with-harfbuzz=no", "--enable-static",
-                 "--disable-shared"],
-                env=env, cwd=src_path)
+            env = {
+                **env,
+                **{
+                    var: value
+                    for var, value in sysconfig.get_config_vars().items()
+                    if var in {"CC", "CFLAGS", "CXX", "CXXFLAGS", "LD",
+                               "LDFLAGS"}
+                },
+            }
+            env["CFLAGS"] = env.get("CFLAGS", "") + " -fPIC"
+            configure = [
+                "./configure", "--with-zlib=no", "--with-bzip2=no",
+                "--with-png=no", "--with-harfbuzz=no", "--enable-static",
+                "--disable-shared"
+            ]
+            host = sysconfig.get_config_var('BUILD_GNU_TYPE')
+            if host is not None:  # May be unset on PyPy.
+                configure.append(f"--host={host}")
+            subprocess.check_call(configure, env=env, cwd=src_path)
             if 'GNUMAKE' in env:
                 make = env['GNUMAKE']
             elif 'MAKE' in env:
@@ -657,7 +684,7 @@ class FreeType(SetupPackage):
                 f.truncate()
                 f.write(vcxproj)
 
-            cc = ccompiler.new_compiler()
+            cc = get_ccompiler()
             cc.initialize()  # Get msbuild in the %PATH% of cc.spawn.
             cc.spawn(["msbuild", str(sln_path),
                       "/t:Clean;Build",
@@ -687,7 +714,7 @@ class Qhull(SetupPackage):
 
         toplevel = get_and_extract_tarball(
             urls=["http://www.qhull.org/download/qhull-2020-src-8.0.2.tgz"],
-            sha="b5c2d7eb833278881b952c8a52d20179eab87766b00b865000469a45c1838b7e",
+            sha=LOCAL_QHULL_HASH,
             dirname=f"qhull-{LOCAL_QHULL_VERSION}",
         )
         shutil.copyfile(toplevel / "COPYING.txt", "LICENSE/LICENSE_QHULL")
@@ -701,7 +728,6 @@ class Qhull(SetupPackage):
 
 
 class BackendMacOSX(OptionalPackage):
-    config_category = 'gui_support'
     name = 'macosx'
 
     def check(self):
@@ -710,10 +736,10 @@ class BackendMacOSX(OptionalPackage):
         return super().check()
 
     def get_extensions(self):
-        sources = [
-            'src/_macosx.m'
-            ]
-        ext = Extension('matplotlib.backends._macosx', sources)
+        ext = Extension(
+            'matplotlib.backends._macosx', [
+                'src/_macosx.m'
+            ])
         ext.extra_compile_args.extend(['-Werror=unguarded-availability'])
         ext.extra_link_args.extend(['-framework', 'Cocoa'])
         if platform.python_implementation().lower() == 'pypy':

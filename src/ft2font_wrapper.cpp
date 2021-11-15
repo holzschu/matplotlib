@@ -258,7 +258,6 @@ typedef struct
 {
     PyObject_HEAD
     FT2Font *x;
-    PyObject *fname;
     PyObject *py_file;
     FT_StreamRec stream;
     Py_ssize_t shape[2];
@@ -297,6 +296,8 @@ exit:
 
 static void close_file_callback(FT_Stream stream)
 {
+    PyObject *type, *value, *traceback;
+    PyErr_Fetch(&type, &value, &traceback);
     PyFT2Font *self = (PyFT2Font *)stream->descriptor.pointer;
     PyObject *close_result = NULL;
     if (!(close_result = PyObject_CallMethod(self->py_file, "close", ""))) {
@@ -308,6 +309,7 @@ exit:
     if (PyErr_Occurred()) {
         PyErr_WriteUnraisable((PyObject*)self);
     }
+    PyErr_Restore(type, value, traceback);
 }
 
 static PyTypeObject PyFT2FontType;
@@ -317,7 +319,6 @@ static PyObject *PyFT2Font_new(PyTypeObject *type, PyObject *args, PyObject *kwd
     PyFT2Font *self;
     self = (PyFT2Font *)type->tp_alloc(type, 0);
     self->x = NULL;
-    self->fname = NULL;
     self->py_file = NULL;
     memset(&self->stream, 0, sizeof(FT_StreamRec));
     return (PyObject *)self;
@@ -408,9 +409,6 @@ static int PyFT2Font_init(PyFT2Font *self, PyObject *args, PyObject *kwds)
 
     CALL_CPP_INIT("FT2Font->set_kerning_factor", (self->x->set_kerning_factor(kerning_factor)));
 
-    Py_INCREF(filename);
-    self->fname = filename;
-
 exit:
     return PyErr_Occurred() ? -1 : 0;
 }
@@ -419,7 +417,6 @@ static void PyFT2Font_dealloc(PyFT2Font *self)
 {
     delete self->x;
     Py_XDECREF(self->py_file);
-    Py_XDECREF(self->fname);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -544,7 +541,10 @@ static PyObject *PyFT2Font_set_text(PyFT2Font *self, PyObject *args, PyObject *k
     if (PyUnicode_Check(textobj)) {
         size = PyUnicode_GET_LENGTH(textobj);
         codepoints.resize(size);
-#if defined(PYPY_VERSION) && (PYPY_VERSION_NUM  < 0x07030200)
+#if defined(PYPY_VERSION) && (PYPY_VERSION_NUM < 0x07040000)
+        // PyUnicode_ReadChar is available from PyPy 7.3.2, but wheels do not
+        // specify the micro-release version, so put the version bound at 7.4
+        // to prevent generating wheels unusable on PyPy 7.3.{0,1}.
         Py_UNICODE *unistr = PyUnicode_AsUnicode(textobj);
         for (size_t i = 0; i < size; ++i) {
             codepoints[i] = unistr[i];
@@ -1417,12 +1417,12 @@ static PyObject *PyFT2Font_underline_thickness(PyFT2Font *self, void *closure)
 
 static PyObject *PyFT2Font_fname(PyFT2Font *self, void *closure)
 {
-    if (self->fname) {
-        Py_INCREF(self->fname);
-        return self->fname;
+    if (self->stream.close) {  // Called passed a filename to the constructor.
+        return PyObject_GetAttrString(self->py_file, "name");
+    } else {
+        Py_INCREF(self->py_file);
+        return self->py_file;
     }
-
-    Py_RETURN_NONE;
 }
 
 static int PyFT2Font_get_buffer(PyFT2Font *self, Py_buffer *buf, int flags)
@@ -1530,23 +1530,15 @@ static PyTypeObject *PyFT2Font_init_type(PyObject *m, PyTypeObject *type)
     return type;
 }
 
-static struct PyModuleDef moduledef = {
-    PyModuleDef_HEAD_INIT,
-    "ft2font",
-    NULL,
-    0,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL
-};
+static struct PyModuleDef moduledef = { PyModuleDef_HEAD_INIT, "ft2font" };
 
 #pragma GCC visibility push(default)
 
 PyMODINIT_FUNC PyInit_ft2font(void)
 {
     PyObject *m;
+
+    import_array();
 
     m = PyModule_Create(&moduledef);
 
@@ -1555,55 +1547,57 @@ PyMODINIT_FUNC PyInit_ft2font(void)
     }
 
     if (!PyFT2Image_init_type(m, &PyFT2ImageType)) {
+        Py_DECREF(m);
         return NULL;
     }
 
     if (!PyGlyph_init_type(m, &PyGlyphType)) {
+        Py_DECREF(m);
         return NULL;
     }
 
     if (!PyFT2Font_init_type(m, &PyFT2FontType)) {
+        Py_DECREF(m);
         return NULL;
     }
 
-    PyObject *d = PyModule_GetDict(m);
-
-    if (add_dict_int(d, "SCALABLE", FT_FACE_FLAG_SCALABLE) ||
-        add_dict_int(d, "FIXED_SIZES", FT_FACE_FLAG_FIXED_SIZES) ||
-        add_dict_int(d, "FIXED_WIDTH", FT_FACE_FLAG_FIXED_WIDTH) ||
-        add_dict_int(d, "SFNT", FT_FACE_FLAG_SFNT) ||
-        add_dict_int(d, "HORIZONTAL", FT_FACE_FLAG_HORIZONTAL) ||
-        add_dict_int(d, "VERTICAL", FT_FACE_FLAG_VERTICAL) ||
-        add_dict_int(d, "KERNING", FT_FACE_FLAG_KERNING) ||
-        add_dict_int(d, "FAST_GLYPHS", FT_FACE_FLAG_FAST_GLYPHS) ||
-        add_dict_int(d, "MULTIPLE_MASTERS", FT_FACE_FLAG_MULTIPLE_MASTERS) ||
-        add_dict_int(d, "GLYPH_NAMES", FT_FACE_FLAG_GLYPH_NAMES) ||
-        add_dict_int(d, "EXTERNAL_STREAM", FT_FACE_FLAG_EXTERNAL_STREAM) ||
-        add_dict_int(d, "ITALIC", FT_STYLE_FLAG_ITALIC) ||
-        add_dict_int(d, "BOLD", FT_STYLE_FLAG_BOLD) ||
-        add_dict_int(d, "KERNING_DEFAULT", FT_KERNING_DEFAULT) ||
-        add_dict_int(d, "KERNING_UNFITTED", FT_KERNING_UNFITTED) ||
-        add_dict_int(d, "KERNING_UNSCALED", FT_KERNING_UNSCALED) ||
-        add_dict_int(d, "LOAD_DEFAULT", FT_LOAD_DEFAULT) ||
-        add_dict_int(d, "LOAD_NO_SCALE", FT_LOAD_NO_SCALE) ||
-        add_dict_int(d, "LOAD_NO_HINTING", FT_LOAD_NO_HINTING) ||
-        add_dict_int(d, "LOAD_RENDER", FT_LOAD_RENDER) ||
-        add_dict_int(d, "LOAD_NO_BITMAP", FT_LOAD_NO_BITMAP) ||
-        add_dict_int(d, "LOAD_VERTICAL_LAYOUT", FT_LOAD_VERTICAL_LAYOUT) ||
-        add_dict_int(d, "LOAD_FORCE_AUTOHINT", FT_LOAD_FORCE_AUTOHINT) ||
-        add_dict_int(d, "LOAD_CROP_BITMAP", FT_LOAD_CROP_BITMAP) ||
-        add_dict_int(d, "LOAD_PEDANTIC", FT_LOAD_PEDANTIC) ||
-        add_dict_int(d, "LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH", FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH) ||
-        add_dict_int(d, "LOAD_NO_RECURSE", FT_LOAD_NO_RECURSE) ||
-        add_dict_int(d, "LOAD_IGNORE_TRANSFORM", FT_LOAD_IGNORE_TRANSFORM) ||
-        add_dict_int(d, "LOAD_MONOCHROME", FT_LOAD_MONOCHROME) ||
-        add_dict_int(d, "LOAD_LINEAR_DESIGN", FT_LOAD_LINEAR_DESIGN) ||
-        add_dict_int(d, "LOAD_NO_AUTOHINT", (unsigned long)FT_LOAD_NO_AUTOHINT) ||
-        add_dict_int(d, "LOAD_TARGET_NORMAL", (unsigned long)FT_LOAD_TARGET_NORMAL) ||
-        add_dict_int(d, "LOAD_TARGET_LIGHT", (unsigned long)FT_LOAD_TARGET_LIGHT) ||
-        add_dict_int(d, "LOAD_TARGET_MONO", (unsigned long)FT_LOAD_TARGET_MONO) ||
-        add_dict_int(d, "LOAD_TARGET_LCD", (unsigned long)FT_LOAD_TARGET_LCD) ||
-        add_dict_int(d, "LOAD_TARGET_LCD_V", (unsigned long)FT_LOAD_TARGET_LCD_V)) {
+    if (PyModule_AddIntConstant(m, "SCALABLE", FT_FACE_FLAG_SCALABLE) ||
+        PyModule_AddIntConstant(m, "FIXED_SIZES", FT_FACE_FLAG_FIXED_SIZES) ||
+        PyModule_AddIntConstant(m, "FIXED_WIDTH", FT_FACE_FLAG_FIXED_WIDTH) ||
+        PyModule_AddIntConstant(m, "SFNT", FT_FACE_FLAG_SFNT) ||
+        PyModule_AddIntConstant(m, "HORIZONTAL", FT_FACE_FLAG_HORIZONTAL) ||
+        PyModule_AddIntConstant(m, "VERTICAL", FT_FACE_FLAG_VERTICAL) ||
+        PyModule_AddIntConstant(m, "KERNING", FT_FACE_FLAG_KERNING) ||
+        PyModule_AddIntConstant(m, "FAST_GLYPHS", FT_FACE_FLAG_FAST_GLYPHS) ||
+        PyModule_AddIntConstant(m, "MULTIPLE_MASTERS", FT_FACE_FLAG_MULTIPLE_MASTERS) ||
+        PyModule_AddIntConstant(m, "GLYPH_NAMES", FT_FACE_FLAG_GLYPH_NAMES) ||
+        PyModule_AddIntConstant(m, "EXTERNAL_STREAM", FT_FACE_FLAG_EXTERNAL_STREAM) ||
+        PyModule_AddIntConstant(m, "ITALIC", FT_STYLE_FLAG_ITALIC) ||
+        PyModule_AddIntConstant(m, "BOLD", FT_STYLE_FLAG_BOLD) ||
+        PyModule_AddIntConstant(m, "KERNING_DEFAULT", FT_KERNING_DEFAULT) ||
+        PyModule_AddIntConstant(m, "KERNING_UNFITTED", FT_KERNING_UNFITTED) ||
+        PyModule_AddIntConstant(m, "KERNING_UNSCALED", FT_KERNING_UNSCALED) ||
+        PyModule_AddIntConstant(m, "LOAD_DEFAULT", FT_LOAD_DEFAULT) ||
+        PyModule_AddIntConstant(m, "LOAD_NO_SCALE", FT_LOAD_NO_SCALE) ||
+        PyModule_AddIntConstant(m, "LOAD_NO_HINTING", FT_LOAD_NO_HINTING) ||
+        PyModule_AddIntConstant(m, "LOAD_RENDER", FT_LOAD_RENDER) ||
+        PyModule_AddIntConstant(m, "LOAD_NO_BITMAP", FT_LOAD_NO_BITMAP) ||
+        PyModule_AddIntConstant(m, "LOAD_VERTICAL_LAYOUT", FT_LOAD_VERTICAL_LAYOUT) ||
+        PyModule_AddIntConstant(m, "LOAD_FORCE_AUTOHINT", FT_LOAD_FORCE_AUTOHINT) ||
+        PyModule_AddIntConstant(m, "LOAD_CROP_BITMAP", FT_LOAD_CROP_BITMAP) ||
+        PyModule_AddIntConstant(m, "LOAD_PEDANTIC", FT_LOAD_PEDANTIC) ||
+        PyModule_AddIntConstant(m, "LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH", FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH) ||
+        PyModule_AddIntConstant(m, "LOAD_NO_RECURSE", FT_LOAD_NO_RECURSE) ||
+        PyModule_AddIntConstant(m, "LOAD_IGNORE_TRANSFORM", FT_LOAD_IGNORE_TRANSFORM) ||
+        PyModule_AddIntConstant(m, "LOAD_MONOCHROME", FT_LOAD_MONOCHROME) ||
+        PyModule_AddIntConstant(m, "LOAD_LINEAR_DESIGN", FT_LOAD_LINEAR_DESIGN) ||
+        PyModule_AddIntConstant(m, "LOAD_NO_AUTOHINT", (unsigned long)FT_LOAD_NO_AUTOHINT) ||
+        PyModule_AddIntConstant(m, "LOAD_TARGET_NORMAL", (unsigned long)FT_LOAD_TARGET_NORMAL) ||
+        PyModule_AddIntConstant(m, "LOAD_TARGET_LIGHT", (unsigned long)FT_LOAD_TARGET_LIGHT) ||
+        PyModule_AddIntConstant(m, "LOAD_TARGET_MONO", (unsigned long)FT_LOAD_TARGET_MONO) ||
+        PyModule_AddIntConstant(m, "LOAD_TARGET_LCD", (unsigned long)FT_LOAD_TARGET_LCD) ||
+        PyModule_AddIntConstant(m, "LOAD_TARGET_LCD_V", (unsigned long)FT_LOAD_TARGET_LCD_V)) {
+        Py_DECREF(m);
         return NULL;
     }
 
@@ -1612,6 +1606,7 @@ PyMODINIT_FUNC PyInit_ft2font(void)
 
     if (error) {
         PyErr_SetString(PyExc_RuntimeError, "Could not initialize the freetype2 library");
+        Py_DECREF(m);
         return NULL;
     }
 
@@ -1622,15 +1617,15 @@ PyMODINIT_FUNC PyInit_ft2font(void)
         FT_Library_Version(_ft2Library, &major, &minor, &patch);
         sprintf(version_string, "%d.%d.%d", major, minor, patch);
         if (PyModule_AddStringConstant(m, "__freetype_version__", version_string)) {
+            Py_DECREF(m);
             return NULL;
         }
     }
 
     if (PyModule_AddStringConstant(m, "__freetype_build_type__", STRINGIFY(FREETYPE_BUILD_TYPE))) {
+        Py_DECREF(m);
         return NULL;
     }
-
-    import_array();
 
     return m;
 }

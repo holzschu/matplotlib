@@ -14,7 +14,6 @@ See also the :doc:`grouped bar
 </gallery/lines_bars_and_markers/barh>` examples.
 """
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -41,8 +40,7 @@ p2 = ax.bar(ind, womenMeans, width,
 ax.axhline(0, color='grey', linewidth=0.8)
 ax.set_ylabel('Scores')
 ax.set_title('Scores by group and gender')
-ax.set_xticks(ind)
-ax.set_xticklabels(('G1', 'G2', 'G3', 'G4', 'G5'))
+ax.set_xticks(ind, labels=['G1', 'G2', 'G3', 'G4', 'G5'])
 ax.legend()
 
 # Label with label_type 'center' instead of the default 'edge'
@@ -67,8 +65,7 @@ error = np.random.rand(len(people))
 fig, ax = plt.subplots()
 
 hbars = ax.barh(y_pos, performance, xerr=error, align='center')
-ax.set_yticks(y_pos)
-ax.set_yticklabels(people)
+ax.set_yticks(y_pos, labels=people)
 ax.invert_yaxis()  # labels read top-to-bottom
 ax.set_xlabel('Performance')
 ax.set_title('How fast do you want to go today?')
@@ -85,8 +82,7 @@ plt.show()
 fig, ax = plt.subplots()
 
 hbars = ax.barh(y_pos, performance, xerr=error, align='center')
-ax.set_yticks(y_pos)
-ax.set_yticklabels(people)
+ax.set_yticks(y_pos, labels=people)
 ax.invert_yaxis()  # labels read top-to-bottom
 ax.set_xlabel('Performance')
 ax.set_title('How fast do you want to go today?')
@@ -100,17 +96,11 @@ plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions, methods and classes is shown
-# in this example:
-
-matplotlib.axes.Axes.bar
-matplotlib.pyplot.bar
-matplotlib.axes.Axes.barh
-matplotlib.pyplot.barh
-matplotlib.axes.Axes.bar_label
-matplotlib.pyplot.bar_label
+#    - `matplotlib.axes.Axes.bar` / `matplotlib.pyplot.bar`
+#    - `matplotlib.axes.Axes.barh` / `matplotlib.pyplot.barh`
+#    - `matplotlib.axes.Axes.bar_label` / `matplotlib.pyplot.bar_label`

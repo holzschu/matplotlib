@@ -45,26 +45,19 @@ axs[1].set_title('Box plot')
 # adding horizontal grid lines
 for ax in axs:
     ax.yaxis.grid(True)
-    ax.set_xticks([y + 1 for y in range(len(all_data))])
+    ax.set_xticks([y + 1 for y in range(len(all_data))],
+                  labels=['x1', 'x2', 'x3', 'x4'])
     ax.set_xlabel('Four separate samples')
     ax.set_ylabel('Observed values')
 
-# add x-tick labels
-plt.setp(axs, xticks=[y + 1 for y in range(len(all_data))],
-         xticklabels=['x1', 'x2', 'x3', 'x4'])
 plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions and methods is shown in this example:
-
-import matplotlib
-matplotlib.axes.Axes.boxplot
-matplotlib.pyplot.boxplot
-matplotlib.axes.Axes.violinplot
-matplotlib.pyplot.violinplot
+#    - `matplotlib.axes.Axes.boxplot` / `matplotlib.pyplot.boxplot`
+#    - `matplotlib.axes.Axes.violinplot` / `matplotlib.pyplot.violinplot`

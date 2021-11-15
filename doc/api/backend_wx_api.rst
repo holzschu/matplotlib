@@ -1,12 +1,10 @@
+:mod:`.backend_wxagg`, :mod:`.backend_wxcairo`
+==============================================
+
 **NOTE** These backends are not documented here, to avoid adding a dependency
 to building the docs.
 
-:mod:`matplotlib.backends.backend_wxagg`
-========================================
+.. redirect-from:: /api/backend_wxagg_api
 
 .. module:: matplotlib.backends.backend_wxagg
-
-:mod:`matplotlib.backends.backend_wxcairo`
-==========================================
-
 .. module:: matplotlib.backends.backend_wxcairo

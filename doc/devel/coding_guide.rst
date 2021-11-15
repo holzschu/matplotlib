@@ -34,21 +34,23 @@ When making a PR, pay attention to:
 
 .. rst-class:: checklist
 
-* :ref:`Target the master branch <pr-branch-selection>`.
+* :ref:`Target the main branch <pr-branch-selection>`.
 * Adhere to the :ref:`coding_guidelines`.
 * Update the :ref:`documentation <pr-documentation>` if necessary.
 * Aim at making the PR as "ready-to-go" as you can. This helps to speed up
   the review process.
 * It is ok to open incomplete or work-in-progress PRs if you need help or
   feedback from the developers. You may mark these as
-  `draft pull requests <https://help.github.com/en/articles/about-pull-requests#draft-pull-requests>`_
+  `draft pull requests <https://docs.github.com/en/github/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests#draft-pull-requests>`_
   on GitHub.
 * When updating your PR, instead of adding new commits to fix something, please
   consider amending your initial commit(s) to keep the history clean.
-  You can achieve this using::
+  You can achieve this using
 
-      git commit --amend --no-edit
-      git push [your-remote-repo] [your-branch] --force-with-lease
+  .. code-block:: bash
+
+     git commit --amend --no-edit
+     git push [your-remote-repo] [your-branch] --force-with-lease
 
 See also :ref:`contributing` for how to make a PR.
 
@@ -76,16 +78,16 @@ Organizational topics:
 .. rst-class:: checklist
 
 * Make sure all :ref:`automated tests <pr-automated-tests>` pass.
-* The PR should :ref:`target the master branch <pr-branch-selection>`.
+* The PR should :ref:`target the main branch <pr-branch-selection>`.
 * Tag with descriptive :ref:`labels <pr-labels>`.
 * Set the :ref:`milestone <pr-milestones>`.
 * Keep an eye on the :ref:`number of commits <pr-squashing>`.
-* Approve if all of the above topics handled.
+* Approve if all of the above topics are handled.
 * :ref:`Merge  <pr-merging>` if a sufficient number of approvals is reached.
 
 .. _pr-guidelines-details:
 
-Detailed Guidelines
+Detailed guidelines
 ===================
 
 .. _pr-documentation:
@@ -143,7 +145,7 @@ Milestones
   Setting a milestone does not imply or guarantee that a PR will be merged for that
   release, but if it were to be merged what release it would be in.
 
-  All of these PRs should target the master branch. The milestone tag triggers
+  All of these PRs should target the main branch. The milestone tag triggers
   an :ref:`automatic backport <automated-backports>` for milestones which have
   a corresponding branch.
 
@@ -159,7 +161,7 @@ Merging
   core developers (those with commit rights) should review all pull
   requests.  If you are the first to review a PR and approve of the
   changes use the GitHub `'approve review'
-  <https://help.github.com/articles/reviewing-changes-in-pull-requests/>`__
+  <https://docs.github.com/en/github/collaborating-with-pull-requests/reviewing-changes-in-pull-requests>`__
   tool to mark it as such.  If you are a subsequent reviewer please
   approve the review and if you think no more review is needed, merge
   the PR.
@@ -219,6 +221,18 @@ will run on all supported platforms and versions of Python.
 
   .. _tox: https://tox.readthedocs.io/
 
+* If you know your changes do not need to be tested (this is very rare!), all
+  CIs can be skipped for a given commit by including ``[ci skip]`` or
+  ``[skip ci]`` in the commit message. If you know only a subset of CIs need
+  to be run (e.g., if you are changing some block of plain reStructuredText and
+  want only CircleCI to run to render the result), individual CIs can be
+  skipped on individual commits as well by using the following substrings
+  in commit messages:
+
+  - GitHub Actions: ``[skip actions]``
+  - AppVeyor: ``[skip appveyor]`` (must be in the first line of the commit)
+  - Azure Pipelines: ``[skip azp]``
+  - CircleCI: ``[skip circle]``
 
 .. _pr-squashing:
 
@@ -246,14 +260,14 @@ Number of commits and squashing
 
 .. _branches_and_backports:
 
-Branches and Backports
+Branches and backports
 ======================
 
 Current branches
 ----------------
 The current active branches are
 
-*master*
+*main*
   The current development version. Future minor releases (*v3.N.0*) will be
   branched from this. Supports Python 3.7+.
 
@@ -271,7 +285,7 @@ The current active branches are
 Branch selection for pull requests
 ----------------------------------
 
-Generally, all pull requests should target the master branch.
+Generally, all pull requests should target the main branch.
 
 Other branches are fed through :ref:`automatic <automated-backports>` or
 :ref:`manual <manual-backports>`. Directly
@@ -330,7 +344,7 @@ When doing backports please copy the form used by meeseekdev,
 conflicts make note of them and how you resolved them in the commit
 message.
 
-We do a backport from master to v2.2.x assuming:
+We do a backport from main to v2.2.x assuming:
 
 * ``matplotlib`` is a read-only remote branch of the matplotlib/matplotlib repo
 
@@ -340,22 +354,26 @@ the merge notification) or through the git CLI tools.
 
 Assuming that you already have a local branch ``v2.2.x`` (if not, then
 ``git checkout -b v2.2.x``), and that your remote pointing to
-``https://github.com/matplotlib/matplotlib`` is called ``upstream``::
+``https://github.com/matplotlib/matplotlib`` is called ``upstream``:
 
-  git fetch upstream
-  git checkout v2.2.x  # or include -b if you don't already have this.
-  git reset --hard upstream/v2.2.x
-  git cherry-pick -m 1 TARGET_SHA
-  # resolve conflicts and commit if required
+.. code-block:: bash
+
+   git fetch upstream
+   git checkout v2.2.x  # or include -b if you don't already have this.
+   git reset --hard upstream/v2.2.x
+   git cherry-pick -m 1 TARGET_SHA
+   # resolve conflicts and commit if required
 
 Files with conflicts can be listed by ``git status``,
 and will have to be fixed by hand (search on ``>>>>>``).  Once
 the conflict is resolved, you will have to re-add the file(s) to the branch
-and then continue the cherry pick::
+and then continue the cherry pick:
 
-  git add lib/matplotlib/conflicted_file.py
-  git add lib/matplotlib/conflicted_file2.py
-  git cherry-pick --continue
+.. code-block:: bash
+
+   git add lib/matplotlib/conflicted_file.py
+   git add lib/matplotlib/conflicted_file2.py
+   git cherry-pick --continue
 
 Use your discretion to push directly to upstream or to open a PR; be
-sure to push or PR against the ``v2.2.x`` upstream branch, not ``master``!
+sure to push or PR against the ``v2.2.x`` upstream branch, not ``main``!

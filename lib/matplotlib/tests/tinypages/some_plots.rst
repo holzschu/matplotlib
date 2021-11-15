@@ -15,11 +15,16 @@ Plot 2 doesn't use context either; has length 6:
 
     plt.plot(range(6))
 
-Plot 3 has length 4:
+Plot 3 has length 4, and uses doctest syntax:
 
 .. plot::
+    :format: doctest
 
-    plt.plot(range(4))
+    This is a doctest...
+
+    >>> plt.plot(range(4))
+
+    ... isn't it?
 
 Plot 4 shows that a new block with context does not see the variable defined
 in the no-context block:
@@ -115,9 +120,11 @@ Plot 14 uses ``include-source``:
 
     # Only a comment
 
-Plot 15 uses an external file with the plot commands and a caption:
+Plot 15 uses an external file with the plot commands and a caption (the
+encoding is ignored and just verifies the deprecation is not broken):
 
 .. plot:: range4.py
+   :encoding: utf-8
 
    This is the caption for plot 15.
 
@@ -161,3 +168,8 @@ scenario:
 
    plt.figure()
    plt.plot(range(4))
+ 
+Plot 21 is generated via an include directive:
+
+.. include:: included_plot_21.rst
+

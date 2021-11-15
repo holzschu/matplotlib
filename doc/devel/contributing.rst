@@ -6,19 +6,20 @@ Contributing
 
 This project is a community effort, and everyone is welcome to
 contribute. Everyone within the community
-is expected to abide by our `code of conduct <../../CODE_OF_CONDUCT.md>`_.
+is expected to abide by our
+`code of conduct <https://github.com/matplotlib/matplotlib/blob/main/CODE_OF_CONDUCT.md>`_.
 
 The project is hosted on
 https://github.com/matplotlib/matplotlib
 
-Contributor Incubator
+Contributor incubator
 =====================
 
-If you are interested in becoming a regular contributor to Matplotlib, but 
-don't know where to start or feel insecure about it, you can join our non-public 
+If you are interested in becoming a regular contributor to Matplotlib, but
+don't know where to start or feel insecure about it, you can join our non-public
 communication channel for new contributors. To do so, please go to `gitter
 <https://gitter.im/matplotlib/matplotlib>`_ and ask to be added to '#incubator'.
-This is a private gitter room moderated by core Matplotlib developers where you can 
+This is a private gitter room moderated by core Matplotlib developers where you can
 get guidance and support for your first few PRs.  This is a place you can ask questions
 about anything: how to use git, github, how our PR review process works, technical questions
 about the code, what makes for good documentation or a blog post, how to get involved involved
@@ -27,7 +28,7 @@ in community work, or get "pre-review" on your PR.
 
 .. _new_contributors:
 
-Issues for New Contributors
+Issues for new contributors
 ---------------------------
 
 While any contributions are welcome, we have marked some issues as
@@ -38,6 +39,16 @@ the internals of Matplotlib. The issues may additionally be tagged with a
 difficulty. ``Difficulty: Easy`` is suited for people with little Python experience.
 ``Difficulty: Medium`` and ``Difficulty: Hard`` are not trivial to solve and
 require more thought and programming experience.
+
+In general, the Matplotlib project does not assign issues. Issues are 
+"assigned" or "claimed" by opening a PR; there is no other assignment 
+mechanism. If you have opened such a PR, please comment on the issue thread to 
+avoid duplication of work. Please check if there is an existing PR for the 
+issue you are addressing. If there is, try to work with the author by 
+submitting reviews of their code or commenting on the PR rather than opening 
+a new PR; duplicate PRs are subject to being closed.  However, if the existing 
+PR is an outline, unlikely to work, or stalled, and the original author is 
+unresponsive, feel free to open a new PR referencing the old one. 
 
 .. _submitting-a-bug-report:
 
@@ -72,10 +83,12 @@ If you are reporting a bug, please do your best to include the following:
       >>> platform.python_version()
       '3.9.2'
 
-We have preloaded the issue creation page with a Markdown template that you can
+We have preloaded the issue creation page with a Markdown form that you can
 use to organize this information.
 
 Thank you for your help in keeping bug reports complete, targeted and descriptive.
+
+.. _request-a-new-feature:
 
 Requesting a new feature
 ========================
@@ -115,14 +128,14 @@ A brief overview is:
 
       git clone https://github.com/<YOUR GITHUB USERNAME>/matplotlib.git
 
-4. Enter the directory and install the local version of Matplotlib. 
-   See ref`<installing_for_devs>` for instructions
+4. Enter the directory and install the local version of Matplotlib.
+   See :ref:`installing_for_devs` for instructions
 
 5. Create a branch to hold your changes::
 
-      git checkout -b my-feature origin/master
+      git checkout -b my-feature origin/main
 
-   and start making changes. Never work in the ``master`` branch!
+   and start making changes. Never work in the ``main`` branch!
 
 6. Work on this copy, on your computer, using Git to do the version control.
    When you're done editing e.g., ``lib/matplotlib/collections.py``, do::
@@ -139,7 +152,7 @@ Finally, go to the web page of your fork of the Matplotlib repo, and click
 
 .. seealso::
 
-  * `Git documentation <https://git-scm.com/documentation>`_
+  * `Git documentation <https://git-scm.com/doc>`_
   * `Git-Contributing to a Project <https://git-scm.com/book/en/v2/GitHub-Contributing-to-a-Project>`_
   * `Introduction to GitHub  <https://lab.github.com/githubtraining/introduction-to-github>`_
   * :ref:`development-workflow` for best practices for Matplotlib
@@ -159,19 +172,31 @@ rules before submitting a pull request:
   appropriate. Use the `numpy docstring standard
   <https://numpydoc.readthedocs.io/en/latest/format.html>`_.
 
-* Formatting should follow the recommendations of `PEP8
-  <https://www.python.org/dev/peps/pep-0008/>`__. You should consider
-  installing/enabling automatic PEP8 checking in your editor.  Part of the test
-  suite is checking PEP8 compliance, things go smoother if the code is mostly
-  PEP8 compliant to begin with.
+* Formatting should follow the recommendations of PEP8_, as enforced by
+  flake8_.  You can check flake8 compliance from the command line with ::
+
+    python -m pip install flake8
+    flake8 /path/to/module.py
+
+  or your editor may provide integration with it.  Note that Matplotlib
+  intentionally does not use the black_ auto-formatter (1__), in particular due
+  to its unability to understand the semantics of mathematical expressions
+  (2__, 3__).
+
+  .. _PEP8: https://www.python.org/dev/peps/pep-0008/
+  .. _flake8: https://flake8.pycqa.org/
+  .. _black: https://black.readthedocs.io/
+  .. __: https://github.com/matplotlib/matplotlib/issues/18796
+  .. __: https://github.com/psf/black/issues/148
+  .. __: https://github.com/psf/black/issues/1984
 
 * Each high-level plotting function should have a simple example in the
   ``Example`` section of the docstring.  This should be as simple as possible
   to demonstrate the method.  More complex examples should go in the
   ``examples`` tree.
 
-* Changes (both new features and bugfixes) should be tested. See :ref:`testing`
-  for more details.
+* Changes (both new features and bugfixes) should have good test coverage. See
+  :ref:`testing` for more details.
 
 * Import the following modules using the standard scipy conventions::
 
@@ -199,19 +224,6 @@ rules before submitting a pull request:
 
 * See below for additional points about :ref:`keyword-argument-processing`, if
   applicable for your pull request.
-
-In addition, you can check for common programming errors with the following
-tools:
-
-* Code with a good unittest coverage (at least 70%, better 100%), check with::
-
-   python -mpip install coverage
-   python -mpytest --cov=matplotlib --showlocals -v
-
-* No pyflakes warnings, check with::
-
-   python -mpip install pyflakes
-   pyflakes path/to/module.py
 
 .. note::
 
@@ -263,7 +275,7 @@ Other ways to contribute
 It also helps us if you spread the word: reference the project from your blog
 and articles or link to it from your website!  If Matplotlib contributes to a
 project that leads to a scientific publication, please follow the
-:doc:`/citing` guidelines.
+:doc:`/users/project/citing` guidelines.
 
 .. _coding_guidelines:
 
@@ -288,12 +300,12 @@ prevent unexpected breaking of code that uses Matplotlib.
 - If possible, usage of an deprecated API should emit a
   `.MatplotlibDeprecationWarning`. There are a number of helper tools for this:
 
-  - Use ``cbook.warn_deprecated()`` for general deprecation warnings.
-  - Use the decorator ``@cbook.deprecated`` to deprecate classes, functions,
+  - Use ``_api.warn_deprecated()`` for general deprecation warnings.
+  - Use the decorator ``@_api.deprecated`` to deprecate classes, functions,
     methods, or properties.
   - To warn on changes of the function signature, use the decorators
-    ``@cbook._delete_parameter``, ``@cbook._rename_parameter``, and
-    ``@cbook._make_keyword_only``.
+    ``@_api.delete_parameter``, ``@_api.rename_parameter``, and
+    ``@_api.make_keyword_only``.
 
 - Deprecated API may be removed two point-releases after they were deprecated.
 
@@ -322,7 +334,7 @@ New modules and files: installation
 
 * If you have added new files or directories, or reorganized existing
   ones, make sure the new files are included in the match patterns in
-  :file:`MANIFEST.in`, and/or in *package_data* in :file:`setup.py`.
+  in *package_data* in :file:`setupext.py`.
 
 C/C++ extensions
 ----------------
@@ -341,30 +353,33 @@ C/C++ extensions
   docstrings, and the Numpydoc format is well understood in the
   scientific Python community.
 
+* C/C++ code in the :file:`extern/` directory is vendored, and should be kept
+  close to upstream whenever possible.  It can be modified to fix bugs or
+  implement new features only if the required changes cannot be made elsewhere
+  in the codebase.  In particular, avoid making style fixes to it.
+
 .. _keyword-argument-processing:
 
 Keyword argument processing
 ---------------------------
 
 Matplotlib makes extensive use of ``**kwargs`` for pass-through customizations
-from one function to another. A typical example is in `matplotlib.pyplot.text`.
-The definition of the pylab text function is a simple pass-through to
-`matplotlib.axes.Axes.text`::
+from one function to another.  A typical example is
+`~matplotlib.axes.Axes.text`.  The definition of `matplotlib.pyplot.text` is a
+simple pass-through to `matplotlib.axes.Axes.text`::
 
-  # in pylab.py
-  def text(*args, **kwargs):
-      ret = gca().text(*args, **kwargs)
-      draw_if_interactive()
-      return ret
+  # in pyplot.py
+  def text(x, y, s, fontdict=None, **kwargs):
+      return gca().text(x, y, s, fontdict=fontdict, **kwargs)
 
-`~matplotlib.axes.Axes.text` in simplified form looks like this, i.e., it just
+`matplotlib.axes.Axes.text` (simplified for illustration) just
 passes all ``args`` and ``kwargs`` on to ``matplotlib.text.Text.__init__``::
 
   # in axes/_axes.py
-  def text(self, x, y, s, fontdict=None, withdash=False, **kwargs):
+  def text(self, x, y, s, fontdict=None, **kwargs):
       t = Text(x=x, y=y, text=s, **kwargs)
 
-and ``matplotlib.text.Text.__init__`` (again with liberties for illustration)
+and ``matplotlib.text.Text.__init__`` (again, simplified)
 just passes them on to the `matplotlib.artist.Artist.update` method::
 
   # in text.py
@@ -435,11 +450,13 @@ or manually with ::
   logging.basicConfig(level=logging.DEBUG)
   import matplotlib.pyplot as plt
 
-Then they will receive messages like::
+Then they will receive messages like
 
-  DEBUG:matplotlib.backends:backend MacOSX version unknown
-  DEBUG:matplotlib.yourmodulename:Here is some information
-  DEBUG:matplotlib.yourmodulename:Here is some more detailed information
+.. code-block:: none
+
+   DEBUG:matplotlib.backends:backend MacOSX version unknown
+   DEBUG:matplotlib.yourmodulename:Here is some information
+   DEBUG:matplotlib.yourmodulename:Here is some more detailed information
 
 Which logging level to use?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -484,12 +501,10 @@ Matplotlib. For example, for the module::
         if bottom == top:
             warnings.warn('Attempting to set identical bottom==top')
 
-
 running the script::
 
     from matplotlib import my_matplotlib_module
-    my_matplotlib_module.set_range(0, 0)  #set range
-
+    my_matplotlib_module.set_range(0, 0)  # set range
 
 will display::
 
@@ -504,10 +519,12 @@ Modifying the module to use `._api.warn_external`::
         if bottom == top:
             _api.warn_external('Attempting to set identical bottom==top')
 
-and running the same script will display::
+and running the same script will display
 
-  UserWarning: Attempting to set identical bottom==top
-  my_matplotlib_module.set_range(0, 0)  #set range
+.. code-block:: none
+
+   UserWarning: Attempting to set identical bottom==top
+   my_matplotlib_module.set_range(0, 0)  # set range
 
 .. _logging tutorial: https://docs.python.org/3/howto/logging.html#logging-basic-tutorial
 

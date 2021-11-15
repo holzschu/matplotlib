@@ -3,6 +3,7 @@ import multiprocessing
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import warnings
 
@@ -11,8 +12,8 @@ import pytest
 
 from matplotlib.font_manager import (
     findfont, findSystemFonts, FontProperties, fontManager, json_dump,
-    json_load, get_font, get_fontconfig_fonts, is_opentype_cff_font,
-    MSUserFontDirectories, _call_fc_list)
+    json_load, get_font, is_opentype_cff_font, MSUserFontDirectories,
+    _get_fontconfig_fonts)
 from matplotlib import pyplot as plt, rc_context
 
 has_fclist = shutil.which('fc-list') is not None
@@ -72,7 +73,7 @@ def test_otf():
 
 @pytest.mark.skipif(not has_fclist, reason='no fontconfig installed')
 def test_get_fontconfig_fonts():
-    assert len(get_fontconfig_fonts()) > 1
+    assert len(_get_fontconfig_fonts()) > 1
 
 
 @pytest.mark.parametrize('factor', [2, 4, 6, 8])
@@ -100,7 +101,7 @@ def test_utf16m_sfnt():
         entry = next(entry for entry in fontManager.ttflist
                      if Path(entry.fname).name == "seguisbi.ttf")
     except StopIteration:
-        pytest.skip("Couldn't find font to test against.")
+        pytest.skip("Couldn't find seguisbi.ttf font to test against.")
     else:
         # Check that we successfully read "semibold" from the font's sfnt table
         # and set its weight accordingly.
@@ -110,10 +111,21 @@ def test_utf16m_sfnt():
 def test_find_ttc():
     fp = FontProperties(family=["WenQuanYi Zen Hei"])
     if Path(findfont(fp)).name != "wqy-zenhei.ttc":
-        pytest.skip("Font may be missing")
-
+        pytest.skip("Font wqy-zenhei.ttc may be missing")
     fig, ax = plt.subplots()
     ax.text(.5, .5, "\N{KANGXI RADICAL DRAGON}", fontproperties=fp)
+    for fmt in ["raw", "svg", "pdf", "ps"]:
+        fig.savefig(BytesIO(), format=fmt)
+
+
+def test_find_noto():
+    fp = FontProperties(family=["Noto Sans CJK SC", "Noto Sans CJK JP"])
+    name = Path(findfont(fp)).name
+    if name not in ("NotoSansCJKsc-Regular.otf", "NotoSansCJK-Regular.ttc"):
+        pytest.skip(f"Noto Sans CJK SC font may be missing (found {name})")
+
+    fig, ax = plt.subplots()
+    ax.text(0.5, 0.5, 'Hello, 你好', fontproperties=fp)
     for fmt in ["raw", "svg", "pdf", "ps"]:
         fig.savefig(BytesIO(), format=fmt)
 
@@ -153,13 +165,13 @@ def test_user_fonts_linux(tmpdir, monkeypatch):
 
     with monkeypatch.context() as m:
         m.setenv('XDG_DATA_HOME', str(tmpdir))
-        _call_fc_list.cache_clear()
+        _get_fontconfig_fonts.cache_clear()
         # Now, the font should be available
         fonts = findSystemFonts()
         assert any(font_test_file in font for font in fonts)
 
     # Make sure the temporary directory is no longer cached.
-    _call_fc_list.cache_clear()
+    _get_fontconfig_fonts.cache_clear()
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows only')
@@ -215,3 +227,42 @@ def test_missing_family(caplog):
         "findfont: Generic family 'sans' not found because none of the "
         "following families were found: this-font-does-not-exist",
     ]
+
+
+def _test_threading():
+    import threading
+    from matplotlib.ft2font import LOAD_NO_HINTING
+    import matplotlib.font_manager as fm
+
+    N = 10
+    b = threading.Barrier(N)
+
+    def bad_idea(n):
+        b.wait()
+        for j in range(100):
+            font = fm.get_font(fm.findfont("DejaVu Sans"))
+            font.set_text(str(n), 0.0, flags=LOAD_NO_HINTING)
+
+    threads = [
+        threading.Thread(target=bad_idea, name=f"bad_thread_{j}", args=(j,))
+        for j in range(N)
+    ]
+
+    for t in threads:
+        t.start()
+
+    for t in threads:
+        t.join()
+
+
+def test_fontcache_thread_safe():
+    pytest.importorskip('threading')
+    import inspect
+
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         inspect.getsource(_test_threading) + '\n_test_threading()']
+    )
+    if proc.returncode:
+        pytest.fail("The subprocess returned with non-zero exit status "
+                    f"{proc.returncode}.")

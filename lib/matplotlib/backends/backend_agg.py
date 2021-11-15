@@ -1,5 +1,5 @@
 """
-An `Anti-Grain Geometry <http://antigrain.com>`_ (AGG) backend.
+An `Anti-Grain Geometry`_ (AGG) backend.
 
 Features that are implemented:
 
@@ -17,6 +17,8 @@ Features that are implemented:
 Still TODO:
 
 * integrate screen dpi w/ ppi and text
+
+.. _Anti-Grain Geometry: http://agg.sourceforge.net/antigrain.com
 """
 
 try:
@@ -109,9 +111,7 @@ class RendererAgg(RendererBase):
         self.draw_gouraud_triangles = self._renderer.draw_gouraud_triangles
         self.draw_image = self._renderer.draw_image
         self.draw_markers = self._renderer.draw_markers
-        # This is its own method for the duration of the deprecation of
-        # offset_position = "data".
-        # self.draw_path_collection = self._renderer.draw_path_collection
+        self.draw_path_collection = self._renderer.draw_path_collection
         self.draw_quad_mesh = self._renderer.draw_quad_mesh
         self.copy_from_bbox = self._renderer.copy_from_bbox
 
@@ -150,31 +150,65 @@ class RendererAgg(RendererBase):
                     c = c[ii0:ii1]
                     c[0] = Path.MOVETO  # move to end of last chunk
                 p = Path(v, c)
+                p.simplify_threshold = path.simplify_threshold
                 try:
                     self._renderer.draw_path(gc, p, transform, rgbFace)
                 except OverflowError as err:
-                    raise OverflowError(
-                        "Exceeded cell block limit (set 'agg.path.chunksize' "
-                        "rcparam)") from err
+                    msg = (
+                        "Exceeded cell block limit in Agg.\n\n"
+                        "Please reduce the value of "
+                        f"rcParams['agg.path.chunksize'] (currently {nmax}) "
+                        "or increase the path simplification threshold"
+                        "(rcParams['path.simplify_threshold'] = "
+                        f"{mpl.rcParams['path.simplify_threshold']:.2f} by "
+                        "default and path.simplify_threshold = "
+                        f"{path.simplify_threshold:.2f} on the input)."
+                    )
+                    raise OverflowError(msg) from None
         else:
             try:
                 self._renderer.draw_path(gc, path, transform, rgbFace)
             except OverflowError as err:
-                raise OverflowError("Exceeded cell block limit (set "
-                                    "'agg.path.chunksize' rcparam)") from err
+                cant_chunk = ''
+                if rgbFace is not None:
+                    cant_chunk += "- can not split filled path\n"
+                if gc.get_hatch() is not None:
+                    cant_chunk += "- can not split hatched path\n"
+                if not path.should_simplify:
+                    cant_chunk += "- path.should_simplify is False\n"
+                if len(cant_chunk):
+                    msg = (
+                        "Exceeded cell block limit in Agg, however for the "
+                        "following reasons:\n\n"
+                        f"{cant_chunk}\n"
+                        "we can not automatically split up this path to draw."
+                        "\n\nPlease manually simplify your path."
+                    )
 
-    def draw_path_collection(self, gc, master_transform, paths, all_transforms,
-                             offsets, offsetTrans, facecolors, edgecolors,
-                             linewidths, linestyles, antialiaseds, urls,
-                             offset_position):
-        if offset_position == "data":
-            _api.warn_deprecated(
-                "3.3", message="Support for offset_position='data' is "
-                "deprecated since %(since)s and will be removed %(removal)s.")
-        return self._renderer.draw_path_collection(
-            gc, master_transform, paths, all_transforms, offsets, offsetTrans,
-            facecolors, edgecolors, linewidths, linestyles, antialiaseds, urls,
-            offset_position)
+                else:
+                    inc_threshold = (
+                        "or increase the path simplification threshold"
+                        "(rcParams['path.simplify_threshold'] = "
+                        f"{mpl.rcParams['path.simplify_threshold']} "
+                        "by default and path.simplify_threshold "
+                        f"= {path.simplify_threshold} "
+                        "on the input)."
+                        )
+                    if nmax > 100:
+                        msg = (
+                            "Exceeded cell block limit in Agg.  Please reduce "
+                            "the value of rcParams['agg.path.chunksize'] "
+                            f"(currently {nmax}) {inc_threshold}"
+                        )
+                    else:
+                        msg = (
+                            "Exceeded cell block limit in Agg.  Please set "
+                            "the value of rcParams['agg.path.chunksize'], "
+                            f"(currently {nmax}) to be greater than 100 "
+                            + inc_threshold
+                        )
+
+                raise OverflowError(msg) from None
 
     def draw_mathtext(self, gc, x, y, s, prop, angle):
         """Draw mathtext using :mod:`matplotlib.mathtext`."""
@@ -217,12 +251,8 @@ class RendererAgg(RendererBase):
     def get_text_width_height_descent(self, s, prop, ismath):
         # docstring inherited
 
-        if ismath in ["TeX", "TeX!"]:
-            if ismath == "TeX!":
-                _api.warn_deprecated(
-                    "3.3", message="Support for ismath='TeX!' is deprecated "
-                    "since %(since)s and will be removed %(removal)s; use "
-                    "ismath='TeX' instead.")
+        _api.check_in_list(["TeX", True, False], ismath=ismath)
+        if ismath == "TeX":
             # todo: handle props
             texmanager = self.get_texmanager()
             fontsize = prop.get_size_in_points()
@@ -448,6 +478,7 @@ class FigureCanvasAgg(FigureCanvasBase):
         return self.renderer.buffer_rgba()
 
     @_check_savefig_extra_args
+    @_api.delete_parameter("3.5", "args")
     def print_raw(self, filename_or_obj, *args):
         FigureCanvasAgg.draw(self)
         renderer = self.get_renderer()
@@ -456,7 +487,18 @@ class FigureCanvasAgg(FigureCanvasBase):
 
     print_rgba = print_raw
 
+    def _print_pil(self, filename_or_obj, fmt, pil_kwargs, metadata=None):
+        """
+        Draw the canvas, then save it using `.image.imsave` (to which
+        *pil_kwargs* and *metadata* are forwarded).
+        """
+        FigureCanvasAgg.draw(self)
+        mpl.image.imsave(
+            filename_or_obj, self.buffer_rgba(), format=fmt, origin="upper",
+            dpi=self.figure.dpi, metadata=metadata, pil_kwargs=pil_kwargs)
+
     @_check_savefig_extra_args
+    @_api.delete_parameter("3.5", "args")
     def print_png(self, filename_or_obj, *args,
                   metadata=None, pil_kwargs=None):
         """
@@ -505,10 +547,7 @@ class FigureCanvasAgg(FigureCanvasBase):
             If the 'pnginfo' key is present, it completely overrides
             *metadata*, including the default 'Software' key.
         """
-        FigureCanvasAgg.draw(self)
-        mpl.image.imsave(
-            filename_or_obj, self.buffer_rgba(), format="png", origin="upper",
-            dpi=self.figure.dpi, metadata=metadata, pil_kwargs=pil_kwargs)
+        self._print_pil(filename_or_obj, "png", pil_kwargs, metadata)
 
     def print_to_buffer(self):
         FigureCanvasAgg.draw(self)
@@ -520,82 +559,41 @@ class FigureCanvasAgg(FigureCanvasBase):
     # print_figure(), and the latter ensures that `self.figure.dpi` already
     # matches the dpi kwarg (if any).
 
-    @_check_savefig_extra_args(
-        extra_kwargs=["quality", "optimize", "progressive"])
-    @_api.delete_parameter("3.3", "quality",
-                           alternative="pil_kwargs={'quality': ...}")
-    @_api.delete_parameter("3.3", "optimize",
-                           alternative="pil_kwargs={'optimize': ...}")
-    @_api.delete_parameter("3.3", "progressive",
-                           alternative="pil_kwargs={'progressive': ...}")
+    @_check_savefig_extra_args()
+    @_api.delete_parameter("3.5", "args")
     def print_jpg(self, filename_or_obj, *args, pil_kwargs=None, **kwargs):
-        """
-        Write the figure to a JPEG file.
-
-        Parameters
-        ----------
-        filename_or_obj : str or path-like or file-like
-            The file to write to.
-
-        Other Parameters
-        ----------------
-        quality : int, default: :rc:`savefig.jpeg_quality`
-            The image quality, on a scale from 1 (worst) to 95 (best).
-            Values above 95 should be avoided; 100 disables portions of
-            the JPEG compression algorithm, and results in large files
-            with hardly any gain in image quality.  This parameter is
-            deprecated.
-        optimize : bool, default: False
-            Whether the encoder should make an extra pass over the image
-            in order to select optimal encoder settings.  This parameter is
-            deprecated.
-        progressive : bool, default: False
-            Whether the image should be stored as a progressive JPEG file.
-            This parameter is deprecated.
-        pil_kwargs : dict, optional
-            Additional keyword arguments that are passed to
-            `PIL.Image.Image.save` when saving the figure.  These take
-            precedence over *quality*, *optimize* and *progressive*.
-        """
         # Remove transparency by alpha-blending on an assumed white background.
         r, g, b, a = mcolors.to_rgba(self.figure.get_facecolor())
         try:
             self.figure.set_facecolor(a * np.array([r, g, b]) + 1 - a)
-            FigureCanvasAgg.draw(self)
+            self._print_pil(filename_or_obj, "jpeg", pil_kwargs)
         finally:
             self.figure.set_facecolor((r, g, b, a))
-        if pil_kwargs is None:
-            pil_kwargs = {}
-        for k in ["quality", "optimize", "progressive"]:
-            if k in kwargs:
-                pil_kwargs.setdefault(k, kwargs.pop(k))
-        if "quality" not in pil_kwargs:
-            quality = pil_kwargs["quality"] = \
-                dict.__getitem__(mpl.rcParams, "savefig.jpeg_quality")
-            if quality not in [0, 75, 95]:  # default qualities.
-                _api.warn_deprecated(
-                    "3.3", name="savefig.jpeg_quality", obj_type="rcParam",
-                    addendum="Set the quality using "
-                    "`pil_kwargs={'quality': ...}`; the future default "
-                    "quality will be 75, matching the default of Pillow and "
-                    "libjpeg.")
-        pil_kwargs.setdefault("dpi", (self.figure.dpi, self.figure.dpi))
-        # Drop alpha channel now.
-        return (Image.fromarray(np.asarray(self.buffer_rgba())[..., :3])
-                .save(filename_or_obj, format='jpeg', **pil_kwargs))
 
     print_jpeg = print_jpg
 
     @_check_savefig_extra_args
     def print_tif(self, filename_or_obj, *, pil_kwargs=None):
-        FigureCanvasAgg.draw(self)
-        if pil_kwargs is None:
-            pil_kwargs = {}
-        pil_kwargs.setdefault("dpi", (self.figure.dpi, self.figure.dpi))
-        return (Image.fromarray(np.asarray(self.buffer_rgba()))
-                .save(filename_or_obj, format='tiff', **pil_kwargs))
+        self._print_pil(filename_or_obj, "tiff", pil_kwargs)
 
     print_tiff = print_tif
+
+    @_check_savefig_extra_args
+    def print_webp(self, filename_or_obj, *, pil_kwargs=None):
+        self._print_pil(filename_or_obj, "webp", pil_kwargs)
+
+    print_jpg.__doc__, print_tif.__doc__, print_webp.__doc__ = map(
+        """
+        Write the figure to a {} file.
+
+        Parameters
+        ----------
+        filename_or_obj : str or path-like or file-like
+            The file to write to.
+        pil_kwargs : dict, optional
+            Additional keyword arguments that are passed to
+            `PIL.Image.Image.save` when saving the figure.
+        """.format, ["JPEG", "TIFF", "WebP"])
 
 
 @_Backend.export

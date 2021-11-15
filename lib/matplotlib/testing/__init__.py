@@ -49,7 +49,7 @@ def setup():
     set_reproducibility_for_testing()
 
 
-def check_for_pgf(texsystem):
+def _check_for_pgf(texsystem):
     """
     Check if a given TeX system + pgf is available
 
@@ -78,4 +78,8 @@ def check_for_pgf(texsystem):
 
 
 def _has_tex_package(package):
-    return bool(mpl.dviread.find_tex_file(f"{package}.sty"))
+    try:
+        mpl.dviread._find_tex_file(f"{package}.sty")
+        return True
+    except FileNotFoundError:
+        return False

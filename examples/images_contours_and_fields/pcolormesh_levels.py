@@ -8,7 +8,6 @@ is faster than the similar `~.axes.Axes.pcolor`.
 
 """
 
-import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
@@ -95,7 +94,7 @@ levels = MaxNLocator(nbins=15).tick_values(z.min(), z.max())
 
 # pick the desired colormap, sensible levels, and define a normalization
 # instance which takes data values and translates those into levels.
-cmap = plt.get_cmap('PiYG')
+cmap = plt.colormaps['PiYG']
 norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
 
 fig, (ax0, ax1) = plt.subplots(nrows=2)
@@ -121,18 +120,13 @@ plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions and methods is shown in this example:
-
-matplotlib.axes.Axes.pcolormesh
-matplotlib.pyplot.pcolormesh
-matplotlib.axes.Axes.contourf
-matplotlib.pyplot.contourf
-matplotlib.figure.Figure.colorbar
-matplotlib.pyplot.colorbar
-matplotlib.colors.BoundaryNorm
-matplotlib.ticker.MaxNLocator
+#    - `matplotlib.axes.Axes.pcolormesh` / `matplotlib.pyplot.pcolormesh`
+#    - `matplotlib.axes.Axes.contourf` / `matplotlib.pyplot.contourf`
+#    - `matplotlib.figure.Figure.colorbar` / `matplotlib.pyplot.colorbar`
+#    - `matplotlib.colors.BoundaryNorm`
+#    - `matplotlib.ticker.MaxNLocator`

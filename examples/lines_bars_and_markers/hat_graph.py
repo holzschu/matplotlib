@@ -7,7 +7,6 @@ labels.
 
 .. _hat graph: https://doi.org/10.1186/s41235-019-0182-3
 """
-import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -41,8 +40,7 @@ def hat_graph(ax, xlabels, values, group_labels):
 
     values = np.asarray(values)
     x = np.arange(values.shape[1])
-    ax.set_xticks(x)
-    ax.set_xticklabels(xlabels)
+    ax.set_xticks(x, labels=xlabels)
     spacing = 0.3  # spacing between hat groups
     width = (1 - spacing) / values.shape[0]
     heights0 = values[0]
@@ -73,14 +71,10 @@ fig.tight_layout()
 plt.show()
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions, methods and classes is shown
-# in this example:
-matplotlib.axes.Axes.bar
-matplotlib.pyplot.bar
-matplotlib.axes.Axes.annotate
-matplotlib.pyplot.annotate
+#    - `matplotlib.axes.Axes.bar` / `matplotlib.pyplot.bar`
+#    - `matplotlib.axes.Axes.annotate` / `matplotlib.pyplot.annotate`

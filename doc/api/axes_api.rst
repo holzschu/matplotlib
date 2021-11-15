@@ -295,7 +295,6 @@ Axis limits and direction
    Axes.get_ylim
 
    Axes.update_datalim
-   Axes.update_datalim_bounds
 
    Axes.set_xbound
    Axes.get_xbound
@@ -607,3 +606,4 @@ Other
    Axes.get_default_bbox_extra_artists
    Axes.get_transformed_clip_path_and_affine
    Axes.has_data
+   Axes.set

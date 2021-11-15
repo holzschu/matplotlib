@@ -58,7 +58,6 @@ the :ref:`angle-annotation-usage` section.
 
 
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.patches import Arc
 from matplotlib.transforms import IdentityTransform, TransformedBbox, Bbox
@@ -135,8 +134,7 @@ class AngleAnnotation(Arc):
         if self.unit == "points":
             factor = self.ax.figure.dpi / 72.
         elif self.unit[:4] == "axes":
-            b = TransformedBbox(Bbox.from_bounds(0, 0, 1, 1),
-                                self.ax.transAxes)
+            b = TransformedBbox(Bbox.unit(), self.ax.transAxes)
             dic = {"max": max(b.width, b.height),
                    "min": min(b.width, b.height),
                    "width": b.width, "height": b.height}
@@ -314,18 +312,14 @@ plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions, methods and classes is shown
-# in this example:
-
-matplotlib.patches.Arc
-matplotlib.axes.Axes.annotate
-matplotlib.pyplot.annotate
-matplotlib.text.Annotation
-matplotlib.transforms.IdentityTransform
-matplotlib.transforms.TransformedBbox
-matplotlib.transforms.Bbox
+#    - `matplotlib.patches.Arc`
+#    - `matplotlib.axes.Axes.annotate` / `matplotlib.pyplot.annotate`
+#    - `matplotlib.text.Annotation`
+#    - `matplotlib.transforms.IdentityTransform`
+#    - `matplotlib.transforms.TransformedBbox`
+#    - `matplotlib.transforms.Bbox`

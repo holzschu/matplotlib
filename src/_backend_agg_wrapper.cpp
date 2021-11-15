@@ -344,7 +344,7 @@ PyRendererAgg_draw_path_collection(PyRendererAgg *self, PyObject *args, PyObject
 {
     GCAgg gc;
     agg::trans_affine master_transform;
-    PyObject *pathobj;
+    py::PathGenerator paths;
     numpy::array_view<const double, 3> transforms;
     numpy::array_view<const double, 2> offsets;
     agg::trans_affine offset_trans;
@@ -354,15 +354,16 @@ PyRendererAgg_draw_path_collection(PyRendererAgg *self, PyObject *args, PyObject
     DashesVector dashes;
     numpy::array_view<const uint8_t, 1> antialiaseds;
     PyObject *ignored;
-    e_offset_position offset_position;
+    PyObject *offset_position; // offset position is no longer used
 
     if (!PyArg_ParseTuple(args,
-                          "O&O&OO&O&O&O&O&O&O&O&OO&:draw_path_collection",
+                          "O&O&O&O&O&O&O&O&O&O&O&OO:draw_path_collection",
                           &convert_gcagg,
                           &gc,
                           &convert_trans_affine,
                           &master_transform,
-                          &pathobj,
+                          &convert_pathgen,
+                          &paths,
                           &convert_transforms,
                           &transforms,
                           &convert_points,
@@ -388,33 +389,22 @@ PyRendererAgg_draw_path_collection(PyRendererAgg *self, PyObject *args, PyObject
 #endif
                           &antialiaseds,
                           &ignored,
-                          &convert_offset_position,
                           &offset_position)) {
         return NULL;
     }
 
-    try
-    {
-        py::PathGenerator path(pathobj);
-
-        CALL_CPP("draw_path_collection",
-                 (self->x->draw_path_collection(gc,
-                                                master_transform,
-                                                path,
-                                                transforms,
-                                                offsets,
-                                                offset_trans,
-                                                facecolors,
-                                                edgecolors,
-                                                linewidths,
-                                                dashes,
-                                                antialiaseds,
-                                                offset_position)));
-    }
-    catch (const py::exception &)
-    {
-        return NULL;
-    }
+    CALL_CPP("draw_path_collection",
+             (self->x->draw_path_collection(gc,
+                                            master_transform,
+                                            paths,
+                                            transforms,
+                                            offsets,
+                                            offset_trans,
+                                            facecolors,
+                                            edgecolors,
+                                            linewidths,
+                                            dashes,
+                                            antialiaseds)));
 
     Py_RETURN_NONE;
 }
@@ -714,17 +704,7 @@ static PyTypeObject *PyRendererAgg_init_type(PyObject *m, PyTypeObject *type)
     return type;
 }
 
-static struct PyModuleDef moduledef = {
-    PyModuleDef_HEAD_INIT,
-    "_backend_agg",
-    NULL,
-    0,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL
-};
+static struct PyModuleDef moduledef = { PyModuleDef_HEAD_INIT, "_backend_agg" };
 
 #pragma GCC visibility push(default)
 
@@ -732,19 +712,21 @@ PyMODINIT_FUNC PyInit__backend_agg(void)
 {
     PyObject *m;
 
+    import_array();
+
     m = PyModule_Create(&moduledef);
 
     if (m == NULL) {
         return NULL;
     }
 
-    import_array();
-
     if (!PyRendererAgg_init_type(m, &PyRendererAggType)) {
+        Py_DECREF(m);
         return NULL;
     }
 
     if (!PyBufferRegion_init_type(m, &PyBufferRegionType)) {
+        Py_DECREF(m);
         return NULL;
     }
 

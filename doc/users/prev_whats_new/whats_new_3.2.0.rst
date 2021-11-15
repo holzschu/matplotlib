@@ -1,6 +1,7 @@
+.. _whats-new-3-2-0:
 
-What's new in Matplotlib 3.2
-============================
+What's new in Matplotlib 3.2 (Mar 04, 2020)
+===========================================
 
 For a list of all of the issues and pull requests since the last
 revision, see the :ref:`github-stats`.
@@ -46,6 +47,8 @@ Gouraud-shading alpha channel in PDF backend
 --------------------------------------------
 The pdf backend now supports an alpha channel in Gouraud-shaded
 triangle meshes.
+
+.. _whats-new-3-2-0-kerning:
 
 Kerning adjustments now use correct values
 ------------------------------------------

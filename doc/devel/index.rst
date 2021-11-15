@@ -1,8 +1,8 @@
 .. _developers-guide-index:
 
-################################
-The Matplotlib Developers' Guide
-################################
+############
+Contributing
+############
 
 Thank you for your interest in helping to improve Matplotlib! There are various
 ways to contribute to Matplotlib. All of them are super valuable but don't necessarily
@@ -36,10 +36,11 @@ process or how to fix something feel free to ask on `gitter
    development_setup.rst
    testing.rst
    documenting_mpl.rst
-   add_new_projection.rst
+   style_guide.rst
    gitwash/index.rst
    coding_guide.rst
    release_guide.rst
+   dependencies.rst
    min_dep_policy.rst
    MEP/index
 

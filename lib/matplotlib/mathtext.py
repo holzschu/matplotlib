@@ -24,17 +24,25 @@ import types
 import numpy as np
 from PIL import Image
 
-from matplotlib import _api, colors as mcolors, rcParams, _mathtext
+from matplotlib import (
+    _api, colors as mcolors, rcParams, _mathtext, _mathtext_data)
 from matplotlib.ft2font import FT2Image, LOAD_NO_HINTING
 from matplotlib.font_manager import FontProperties
-# Backcompat imports, all are deprecated as of 3.4.
-from matplotlib._mathtext import (  # noqa: F401
-    SHRINK_FACTOR, GROW_FACTOR, NUM_SIZE_LEVELS)
-from matplotlib._mathtext_data import (  # noqa: F401
-    latex_to_bakoma, latex_to_cmex, latex_to_standard, stix_virtual_fonts,
-    tex2uni)
 
 _log = logging.getLogger(__name__)
+
+
+@_api.caching_module_getattr
+class __getattr__:
+    locals().update({
+        name: _api.deprecated("3.4")(
+            property(lambda self, _mod=mod, _name=name: getattr(_mod, _name)))
+        for mod, names in [
+            (_mathtext, ["SHRINK_FACTOR", "GROW_FACTOR", "NUM_SIZE_LEVELS"]),
+            (_mathtext_data, [
+                "latex_to_bakoma", "latex_to_cmex", "latex_to_standard",
+                "stix_virtual_fonts", "tex2uni"])]
+        for name in names})
 
 
 get_unicode_index = _mathtext.get_unicode_index
@@ -189,6 +197,7 @@ class MathtextBackendPs(MathtextBackend):
         "_PSResult", "width height depth pswriter used_characters")
 
     def __init__(self):
+        super().__init__()
         self.pswriter = StringIO()
         self.lastfont = None
 
@@ -230,6 +239,7 @@ class MathtextBackendPdf(MathtextBackend):
         "_PDFResult", "width height depth glyphs rects used_characters")
 
     def __init__(self):
+        super().__init__()
         self.glyphs = []
         self.rects = []
 
@@ -260,6 +270,7 @@ class MathtextBackendSvg(MathtextBackend):
     backend.
     """
     def __init__(self):
+        super().__init__()
         self.svg_glyphs = []
         self.svg_rects = []
 
@@ -293,6 +304,7 @@ class MathtextBackendPath(MathtextBackend):
     _Result = namedtuple("_Result", "width height depth glyphs rects")
 
     def __init__(self):
+        super().__init__()
         self.glyphs = []
         self.rects = []
 
@@ -320,6 +332,7 @@ class MathtextBackendCairo(MathtextBackend):
     """
 
     def __init__(self):
+        super().__init__()
         self.glyphs = []
         self.rects = []
 
@@ -357,36 +370,6 @@ for _cls_name in [
 
 class MathTextWarning(Warning):
     pass
-
-
-@_api.deprecated("3.3")
-class GlueSpec:
-    """See `Glue`."""
-
-    def __init__(self, width=0., stretch=0., stretch_order=0,
-                 shrink=0., shrink_order=0):
-        self.width         = width
-        self.stretch       = stretch
-        self.stretch_order = stretch_order
-        self.shrink        = shrink
-        self.shrink_order  = shrink_order
-
-    def copy(self):
-        return GlueSpec(
-            self.width,
-            self.stretch,
-            self.stretch_order,
-            self.shrink,
-            self.shrink_order)
-
-    @classmethod
-    def factory(cls, glue_type):
-        return cls._types[glue_type]
-
-
-with _api.suppress_matplotlib_deprecation_warning():
-    GlueSpec._types = {k: GlueSpec(**v._asdict())
-                       for k, v in _mathtext._GlueSpec._named.items()}
 
 
 @_api.deprecated("3.4")
@@ -605,18 +588,12 @@ def math_to_image(s, filename_or_obj, prop=None, dpi=None, format=None):
         format is determined as for `.Figure.savefig`.
     """
     from matplotlib import figure
-    # backend_agg supports all of the core output formats
-    from matplotlib.backends import backend_agg
-
-    if prop is None:
-        prop = FontProperties()
 
     parser = MathTextParser('path')
     width, height, depth, _, _ = parser.parse(s, dpi=72, prop=prop)
 
     fig = figure.Figure(figsize=(width / 72.0, height / 72.0))
     fig.text(0, depth/height, s, fontproperties=prop)
-    backend_agg.FigureCanvasAgg(fig)
     fig.savefig(filename_or_obj, dpi=dpi, format=format)
 
     return depth

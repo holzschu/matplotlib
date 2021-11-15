@@ -9,6 +9,7 @@ jobs:
     steps:
     - uses: actions/first-interaction@v1
       with:
+        add-labels: "status: needs workflow approval"
         repo-token: ${{ secrets.GITHUB_TOKEN }}
         pr-message: >+
           Thank you for opening your first PR into Matplotlib!
@@ -32,4 +33,4 @@ jobs:
 
           We strive to be a welcoming and open project. Please follow our
           [Code of
-          Conduct](https://github.com/matplotlib/matplotlib/blob/master/CODE_OF_CONDUCT.md).
+          Conduct](https://github.com/matplotlib/matplotlib/blob/main/CODE_OF_CONDUCT.md).

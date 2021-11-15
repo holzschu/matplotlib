@@ -1,6 +1,8 @@
 import io
-import os
+from pathlib import Path
 import re
+import shlex
+from xml.etree import ElementTree as ET
 
 import numpy as np
 import pytest
@@ -101,7 +103,7 @@ math_tests = [
     r"$\left\Vert a \right\Vert \left\vert b \right\vert \left| a \right| \left\| b\right\| \Vert a \Vert \vert b \vert$",
     r'$\mathring{A}  \AA$',
     r'$M \, M \thinspace M \/ M \> M \: M \; M \ M \enspace M \quad M \qquad M \! M$',
-    r'$\Cup$ $\Cap$ $\leftharpoonup$ $\barwedge$ $\rightharpoonup$',
+    r'$\Cap$ $\Cup$ $\leftharpoonup$ $\barwedge$ $\rightharpoonup$',
     r'$\dotplus$ $\doteq$ $\doteqdot$ $\ddots$',
     r'$xyz^kx_kx^py^{p-2} d_i^jb_jc_kd x^j_i E^0 E^0_u$',  # github issue #4873
     r'${xyz}^k{x}_{k}{x}^{p}{y}^{p-2} {d}_{i}^{j}{b}_{j}{c}_{k}{d} {x}^{j}_{i}{E}^{0}{E}^0_u$',
@@ -337,19 +339,13 @@ def test_mathtext_fallback_invalid():
             mpl.rcParams['mathtext.fallback'] = fallback
 
 
-def test_mathtext_fallback_to_cm_invalid():
-    for fallback in [True, False]:
-        with pytest.warns(_api.MatplotlibDeprecationWarning):
-            mpl.rcParams['mathtext.fallback_to_cm'] = fallback
-
-
 @pytest.mark.parametrize(
     "fallback,fontlist",
     [("cm", ['DejaVu Sans', 'mpltest', 'STIXGeneral', 'cmr10', 'STIXGeneral']),
      ("stix", ['DejaVu Sans', 'mpltest', 'STIXGeneral'])])
 def test_mathtext_fallback(fallback, fontlist):
     mpl.font_manager.fontManager.addfont(
-        os.path.join((os.path.dirname(os.path.realpath(__file__))), 'mpltest.ttf'))
+        str(Path(__file__).resolve().parent / 'mpltest.ttf'))
     mpl.rcParams["svg.fonttype"] = 'none'
     mpl.rcParams['mathtext.fontset'] = 'custom'
     mpl.rcParams['mathtext.rm'] = 'mpltest'
@@ -363,12 +359,13 @@ def test_mathtext_fallback(fallback, fontlist):
     fig, ax = plt.subplots()
     fig.text(.5, .5, test_str, fontsize=40, ha='center')
     fig.savefig(buff, format="svg")
-    char_fonts = [
-        line.split("font-family:")[-1].split(";")[0]
-        for line in str(buff.getvalue()).split(r"\n") if "tspan" in line
-    ]
+    tspans = (ET.fromstring(buff.getvalue())
+              .findall(".//{http://www.w3.org/2000/svg}tspan[@style]"))
+    # Getting the last element of the style attrib is a close enough
+    # approximation for parsing the font property.
+    char_fonts = [shlex.split(tspan.attrib["style"])[-1] for tspan in tspans]
     assert char_fonts == fontlist
-    mpl.font_manager.fontManager.ttflist = mpl.font_manager.fontManager.ttflist[:-1]
+    mpl.font_manager.fontManager.ttflist.pop()
 
 
 def test_math_to_image(tmpdir):
@@ -391,3 +388,54 @@ def test_math_fontfamily():
              size=24, math_fontfamily='dejavusans')
     fig.text(0.2, 0.3, r"$This\ text\ should\ have\ another$",
              size=24, math_fontfamily='stix')
+
+
+def test_default_math_fontfamily():
+    mpl.rcParams['mathtext.fontset'] = 'cm'
+    test_str = r'abc$abc\alpha$'
+    fig, ax = plt.subplots()
+
+    text1 = fig.text(0.1, 0.1, test_str, font='Arial')
+    prop1 = text1.get_fontproperties()
+    assert prop1.get_math_fontfamily() == 'cm'
+    text2 = fig.text(0.2, 0.2, test_str, fontproperties='Arial')
+    prop2 = text2.get_fontproperties()
+    assert prop2.get_math_fontfamily() == 'cm'
+
+    fig.draw_without_rendering()
+
+
+def test_argument_order():
+    mpl.rcParams['mathtext.fontset'] = 'cm'
+    test_str = r'abc$abc\alpha$'
+    fig, ax = plt.subplots()
+
+    text1 = fig.text(0.1, 0.1, test_str,
+                     math_fontfamily='dejavusans', font='Arial')
+    prop1 = text1.get_fontproperties()
+    assert prop1.get_math_fontfamily() == 'dejavusans'
+    text2 = fig.text(0.2, 0.2, test_str,
+                     math_fontfamily='dejavusans', fontproperties='Arial')
+    prop2 = text2.get_fontproperties()
+    assert prop2.get_math_fontfamily() == 'dejavusans'
+    text3 = fig.text(0.3, 0.3, test_str,
+                     font='Arial', math_fontfamily='dejavusans')
+    prop3 = text3.get_fontproperties()
+    assert prop3.get_math_fontfamily() == 'dejavusans'
+    text4 = fig.text(0.4, 0.4, test_str,
+                     fontproperties='Arial', math_fontfamily='dejavusans')
+    prop4 = text4.get_fontproperties()
+    assert prop4.get_math_fontfamily() == 'dejavusans'
+
+    fig.draw_without_rendering()
+
+
+def test_mathtext_cmr10_minus_sign():
+    # cmr10 does not contain a minus sign and used to issue a warning
+    # RuntimeWarning: Glyph 8722 missing from current font.
+    mpl.rcParams['font.family'] = 'cmr10'
+    mpl.rcParams['axes.formatter.use_mathtext'] = True
+    fig, ax = plt.subplots()
+    ax.plot(range(-1, 1), range(-1, 1))
+    # draw to make sure we have no warnings
+    fig.canvas.draw()

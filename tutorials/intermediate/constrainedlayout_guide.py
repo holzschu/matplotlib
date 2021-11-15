@@ -22,7 +22,8 @@ a figure. Two ways of doing so are
 
       plt.subplots(constrained_layout=True)
 
-* activate it via :ref:`rcParams<matplotlib-rcparams>`, like::
+* activate it via :ref:`rcParams<customizing-with-dynamic-rc-settings>`,
+  like::
 
       plt.rcParams['figure.constrained_layout.use'] = True
 
@@ -71,15 +72,15 @@ def example_plot(ax, fontsize=12, hide_labels=False):
         ax.set_ylabel('y-label', fontsize=fontsize)
         ax.set_title('Title', fontsize=fontsize)
 
-
 fig, ax = plt.subplots(constrained_layout=False)
 example_plot(ax, fontsize=24)
 
 ###############################################################################
 # To prevent this, the location of axes needs to be adjusted. For
-# subplots, this can be done by adjusting the subplot params
-# (:ref:`howto-subplots-adjust`). However, specifying your figure with the
-# ``constrained_layout=True`` kwarg will do the adjusting automatically.
+# subplots, this can be done manually by adjusting the subplot parameters
+# using `.Figure.subplots_adjust`. However, specifying your figure with the
+# # ``constrained_layout=True`` keyword argument will do the adjusting
+# # automatically.
 
 fig, ax = plt.subplots(constrained_layout=True)
 example_plot(ax, fontsize=24)
@@ -112,7 +113,7 @@ for ax in axs.flat:
 #
 # .. note::
 #
-#   For the `~.axes.Axes.pcolormesh` kwargs (``pc_kwargs``) we use a
+#   For the `~.axes.Axes.pcolormesh` keyword arguments (``pc_kwargs``) we use a
 #   dictionary. Below we will assign one colorbar to a number of axes each
 #   containing a `~.cm.ScalarMappable`; specifying the norm and colormap
 #   ensures the colorbar is accurate for all the axes.
@@ -295,8 +296,8 @@ pads = [0, 0.05, 0.1, 0.2]
 for pad, ax in zip(pads, axs.flat):
     pc = ax.pcolormesh(arr, **pc_kwargs)
     fig.colorbar(pc, ax=ax, shrink=0.6, pad=pad)
-    ax.set_xticklabels('')
-    ax.set_yticklabels('')
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
     ax.set_title(f'pad: {pad}')
 fig.set_constrained_layout_pads(w_pad=2 / 72, h_pad=2 / 72, hspace=0.2,
                                 wspace=0.2)
@@ -305,9 +306,9 @@ fig.set_constrained_layout_pads(w_pad=2 / 72, h_pad=2 / 72, hspace=0.2,
 # rcParams
 # ========
 #
-# There are five :ref:`rcParams<matplotlib-rcparams>` that can be set,
-# either in a script or in the :file:`matplotlibrc` file.
-# They all have the prefix ``figure.constrained_layout``:
+# There are five :ref:`rcParams<customizing-with-dynamic-rc-settings>`
+# that can be set, either in a script or in the :file:`matplotlibrc`
+# file. They all have the prefix ``figure.constrained_layout``:
 #
 # - *use*: Whether to use constrained_layout. Default is False
 # - *w_pad*, *h_pad*:    Padding around axes objects.
@@ -508,6 +509,7 @@ example_plot(ax2)
 example_plot(ax3)
 example_plot(ax4)
 fig.suptitle('subplot2grid')
+plt.show()
 
 ###############################################################################
 # Other Caveats
@@ -555,7 +557,7 @@ fig.suptitle('subplot2grid')
 # has some complexity due to the complex ways we can layout a figure.
 #
 # Layout in Matplotlib is carried out with gridspecs
-# via the `~.GridSpec` class. A gridspec is a logical division of the figure
+# via the `.GridSpec` class. A gridspec is a logical division of the figure
 # into rows and columns, with the relative width of the Axes in those
 # rows and columns set by *width_ratios* and *height_ratios*.
 #
@@ -588,7 +590,7 @@ from matplotlib._layoutgrid import plot_children
 
 fig, ax = plt.subplots(constrained_layout=True)
 example_plot(ax, fontsize=24)
-plot_children(fig, fig._layoutgrid)
+plot_children(fig)
 
 #######################################################################
 # Simple case: two Axes
@@ -603,7 +605,7 @@ plot_children(fig, fig._layoutgrid)
 fig, ax = plt.subplots(1, 2, constrained_layout=True)
 example_plot(ax[0], fontsize=32)
 example_plot(ax[1], fontsize=8)
-plot_children(fig, fig._layoutgrid, printit=False)
+plot_children(fig, printit=False)
 
 #######################################################################
 # Two Axes and colorbar
@@ -616,7 +618,7 @@ fig, ax = plt.subplots(1, 2, constrained_layout=True)
 im = ax[0].pcolormesh(arr, **pc_kwargs)
 fig.colorbar(im, ax=ax[0], shrink=0.6)
 im = ax[1].pcolormesh(arr, **pc_kwargs)
-plot_children(fig, fig._layoutgrid)
+plot_children(fig)
 
 #######################################################################
 # Colorbar associated with a Gridspec
@@ -629,7 +631,7 @@ fig, axs = plt.subplots(2, 2, constrained_layout=True)
 for ax in axs.flat:
     im = ax.pcolormesh(arr, **pc_kwargs)
 fig.colorbar(im, ax=axs, shrink=0.6)
-plot_children(fig, fig._layoutgrid, printit=False)
+plot_children(fig, printit=False)
 
 #######################################################################
 # Uneven sized Axes
@@ -654,7 +656,7 @@ ax = fig.add_subplot(gs[0, 1])
 im = ax.pcolormesh(arr, **pc_kwargs)
 ax = fig.add_subplot(gs[1, 1])
 im = ax.pcolormesh(arr, **pc_kwargs)
-plot_children(fig, fig._layoutgrid, printit=False)
+plot_children(fig, printit=False)
 
 #######################################################################
 # One case that requires finessing is if margins do not have any artists
@@ -669,4 +671,5 @@ ax00 = fig.add_subplot(gs[0, 0:2])
 ax01 = fig.add_subplot(gs[0, 2:])
 ax10 = fig.add_subplot(gs[1, 1:3])
 example_plot(ax10, fontsize=14)
-plot_children(fig, fig._layoutgrid)
+plot_children(fig)
+plt.show()

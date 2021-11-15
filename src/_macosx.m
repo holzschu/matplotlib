@@ -237,6 +237,8 @@ static int wait_for_stdin(void)
 }
 - (void)dealloc;
 - (void)drawRect:(NSRect)rect;
+- (void)updateDevicePixelRatio:(double)scale;
+- (void)windowDidChangeBackingProperties:(NSNotification*)notification;
 - (void)windowDidResize:(NSNotification*)notification;
 - (View*)initWithFrame:(NSRect)rect;
 - (void)setCanvas: (PyObject*)newCanvas;
@@ -706,6 +708,7 @@ FigureManager_init(FigureManager *self, PyObject *args, PyObject *kwds)
     [window setDelegate: view];
     [window makeFirstResponder: view];
     [[window contentView] addSubview: view];
+    [view updateDevicePixelRatio: [window backingScaleFactor]];
 
     return 0;
 }
@@ -801,6 +804,9 @@ FigureManager_resize(FigureManager* self, PyObject *args, PyObject *kwds)
     Window* window = self->window;
     if(window)
     {
+        CGFloat device_pixel_ratio = [window backingScaleFactor];
+        width /= device_pixel_ratio;
+        height /= device_pixel_ratio;
         // 36 comes from hard-coded size of toolbar later in code
         [window setContentSize: NSMakeSize(width, height + 36.)];
     }
@@ -1373,13 +1379,15 @@ set_cursor(PyObject* unused, PyObject* args)
 {
     int i;
     if(!PyArg_ParseTuple(args, "i", &i)) return NULL;
-    switch (i)
-    { case 0: [[NSCursor pointingHandCursor] set]; break;
+    switch (i) {
       case 1: [[NSCursor arrowCursor] set]; break;
-      case 2: [[NSCursor crosshairCursor] set]; break;
-      case 3: [[NSCursor openHandCursor] set]; break;
+      case 2: [[NSCursor pointingHandCursor] set]; break;
+      case 3: [[NSCursor crosshairCursor] set]; break;
+      case 4: [[NSCursor openHandCursor] set]; break;
       /* OSX handles busy state itself so no need to set a cursor here */
-      case 4: break;
+      case 5: break;
+      case 6: [[NSCursor resizeLeftRightCursor] set]; break;
+      case 7: [[NSCursor resizeUpDownCursor] set]; break;
       default: return NULL;
     }
     Py_RETURN_NONE;
@@ -1652,15 +1660,6 @@ static int _copy_agg_buffer(CGContextRef cr, PyObject *renderer)
 
     CGContextRef cr = [[NSGraphicsContext currentContext] CGContext];
 
-    double new_device_scale = _get_device_scale(cr);
-
-    if (device_scale != new_device_scale) {
-        device_scale = new_device_scale;
-        if (!PyObject_CallMethod(canvas, "_set_device_scale", "d", device_scale, NULL)) {
-            PyErr_Print();
-            goto exit;
-        }
-    }
     if (!(renderer = PyObject_CallMethod(canvas, "_draw", "", NULL))
         || !(renderer_buffer = PyObject_GetAttrString(renderer, "_renderer"))) {
         PyErr_Print();
@@ -1679,6 +1678,33 @@ static int _copy_agg_buffer(CGContextRef cr, PyObject *renderer)
     Py_XDECREF(renderer);
 
     PyGILState_Release(gstate);
+}
+
+- (void)updateDevicePixelRatio:(double)scale
+{
+    PyObject* change = NULL;
+    PyGILState_STATE gstate = PyGILState_Ensure();
+
+    device_scale = scale;
+    if (!(change = PyObject_CallMethod(canvas, "_set_device_pixel_ratio", "d", device_scale, NULL))) {
+        PyErr_Print();
+        goto exit;
+    }
+    if (PyObject_IsTrue(change)) {
+        [self setNeedsDisplay: YES];
+    }
+
+  exit:
+    Py_XDECREF(change);
+
+    PyGILState_Release(gstate);
+}
+
+- (void)windowDidChangeBackingProperties:(NSNotification *)notification
+{
+    Window* window = [notification object];
+
+    [self updateDevicePixelRatio: [window backingScaleFactor]];
 }
 
 - (void)windowDidResize: (NSNotification*)notification
@@ -1883,127 +1909,12 @@ static int _copy_agg_buffer(CGContextRef cr, PyObject *renderer)
     PyGILState_Release(gstate);
 }
 
-- (void)rightMouseDown:(NSEvent *)event
-{
-    int x, y;
-    int num = 3;
-    int dblclick = 0;
-    PyObject* result;
-    PyGILState_STATE gstate;
-    NSPoint location = [event locationInWindow];
-    location = [self convertPoint: location fromView: nil];
-    x = location.x * device_scale;
-    y = location.y * device_scale;
-    gstate = PyGILState_Ensure();
-    if ([event clickCount] == 2) {
-      dblclick = 1;
-    }
-    result = PyObject_CallMethod(canvas, "button_press_event", "iiii", x, y, num, dblclick);
-    if(result)
-        Py_DECREF(result);
-    else
-        PyErr_Print();
-
-    PyGILState_Release(gstate);
-}
-
-- (void)rightMouseUp:(NSEvent *)event
-{
-    int x, y;
-    int num = 3;
-    PyObject* result;
-    PyGILState_STATE gstate;
-    NSPoint location = [event locationInWindow];
-    location = [self convertPoint: location fromView: nil];
-    x = location.x * device_scale;
-    y = location.y * device_scale;
-    gstate = PyGILState_Ensure();
-    result = PyObject_CallMethod(canvas, "button_release_event", "iii", x, y, num);
-    if(result)
-        Py_DECREF(result);
-    else
-        PyErr_Print();
-
-    PyGILState_Release(gstate);
-}
-
-- (void)rightMouseDragged:(NSEvent *)event
-{
-    int x, y;
-    NSPoint location = [event locationInWindow];
-    location = [self convertPoint: location fromView: nil];
-    x = location.x * device_scale;
-    y = location.y * device_scale;
-    PyGILState_STATE gstate = PyGILState_Ensure();
-    PyObject* result = PyObject_CallMethod(canvas, "motion_notify_event", "ii", x, y);
-    if(result)
-        Py_DECREF(result);
-    else
-        PyErr_Print();
-
-    PyGILState_Release(gstate);
-}
-
-- (void)otherMouseDown:(NSEvent *)event
-{
-    int x, y;
-    int num = 2;
-    int dblclick = 0;
-    PyObject* result;
-    PyGILState_STATE gstate;
-    NSPoint location = [event locationInWindow];
-    location = [self convertPoint: location fromView: nil];
-    x = location.x * device_scale;
-    y = location.y * device_scale;
-    gstate = PyGILState_Ensure();
-    if ([event clickCount] == 2) {
-      dblclick = 1;
-    }
-    result = PyObject_CallMethod(canvas, "button_press_event", "iiii", x, y, num, dblclick);
-    if(result)
-        Py_DECREF(result);
-    else
-        PyErr_Print();
-
-    PyGILState_Release(gstate);
-}
-
-- (void)otherMouseUp:(NSEvent *)event
-{
-    int x, y;
-    int num = 2;
-    PyObject* result;
-    PyGILState_STATE gstate;
-    NSPoint location = [event locationInWindow];
-    location = [self convertPoint: location fromView: nil];
-    x = location.x * device_scale;
-    y = location.y * device_scale;
-    gstate = PyGILState_Ensure();
-    result = PyObject_CallMethod(canvas, "button_release_event", "iii", x, y, num);
-    if(result)
-        Py_DECREF(result);
-    else
-        PyErr_Print();
-
-    PyGILState_Release(gstate);
-}
-
-- (void)otherMouseDragged:(NSEvent *)event
-{
-    int x, y;
-    NSPoint location = [event locationInWindow];
-    location = [self convertPoint: location fromView: nil];
-    x = location.x * device_scale;
-    y = location.y * device_scale;
-    PyGILState_STATE gstate = PyGILState_Ensure();
-    PyObject* result = PyObject_CallMethod(canvas, "motion_notify_event", "ii", x, y);
-    if(result)
-        Py_DECREF(result);
-    else
-        PyErr_Print();
-
-    PyGILState_Release(gstate);
-}
+- (void)rightMouseDown:(NSEvent *)event { [self mouseDown: event]; }
+- (void)rightMouseUp:(NSEvent *)event { [self mouseUp: event]; }
+- (void)rightMouseDragged:(NSEvent *)event { [self mouseDragged: event]; }
+- (void)otherMouseDown:(NSEvent *)event { [self mouseDown: event]; }
+- (void)otherMouseUp:(NSEvent *)event { [self mouseUp: event]; }
+- (void)otherMouseDragged:(NSEvent *)event { [self mouseDragged: event]; }
 
 - (void)setRubberband:(NSRect)rect
 {
@@ -2408,15 +2319,7 @@ static struct PyMethodDef methods[] = {
 };
 
 static struct PyModuleDef moduledef = {
-    PyModuleDef_HEAD_INIT,
-    "_macosx",
-    "Mac OS X native backend",
-    -1,
-    methods,
-    NULL,
-    NULL,
-    NULL,
-    NULL
+    PyModuleDef_HEAD_INIT, "_macosx", "Mac OS X native backend", -1, methods
 };
 
 #pragma GCC visibility push(default)

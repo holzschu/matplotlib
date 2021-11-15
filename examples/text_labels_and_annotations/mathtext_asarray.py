@@ -21,10 +21,11 @@ def text_to_rgba(s, *, dpi, **kwargs):
     # (If desired, one can also directly save the image to the filesystem.)
     fig = Figure(facecolor="none")
     fig.text(0, 0, s, **kwargs)
-    buf = BytesIO()
-    fig.savefig(buf, dpi=dpi, format="png", bbox_inches="tight", pad_inches=0)
-    buf.seek(0)
-    rgba = plt.imread(buf)
+    with BytesIO() as buf:
+        fig.savefig(buf, dpi=dpi, format="png", bbox_inches="tight",
+                    pad_inches=0)
+        buf.seek(0)
+        rgba = plt.imread(buf)
     return rgba
 
 
@@ -47,16 +48,12 @@ plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions, methods, classes and modules is shown
-# in this example:
-
-import matplotlib
-matplotlib.figure.Figure.figimage
-matplotlib.figure.Figure.text
-matplotlib.transforms.IdentityTransform
-matplotlib.image.imread
+#    - `matplotlib.figure.Figure.figimage`
+#    - `matplotlib.figure.Figure.text`
+#    - `matplotlib.transforms.IdentityTransform`
+#    - `matplotlib.image.imread`

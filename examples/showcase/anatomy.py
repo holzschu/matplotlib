@@ -52,7 +52,7 @@ ax.set_title("Anatomy of a figure", fontsize=20, verticalalignment='bottom')
 ax.set_xlabel("X axis label")
 ax.set_ylabel("Y axis label")
 
-ax.legend()
+ax.legend(loc="upper right")
 
 
 def circle(x, y, radius=0.15):
@@ -146,20 +146,16 @@ plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions, methods, classes and modules is shown
-# in this example:
-
-import matplotlib
-matplotlib.pyplot.figure
-matplotlib.axes.Axes.text
-matplotlib.axis.Axis.set_minor_formatter
-matplotlib.axis.Axis.set_major_locator
-matplotlib.axis.Axis.set_minor_locator
-matplotlib.patches.Circle
-matplotlib.patheffects.withStroke
-matplotlib.ticker.FuncFormatter
+#    - `matplotlib.pyplot.figure`
+#    - `matplotlib.axes.Axes.text`
+#    - `matplotlib.axis.Axis.set_minor_formatter`
+#    - `matplotlib.axis.Axis.set_major_locator`
+#    - `matplotlib.axis.Axis.set_minor_locator`
+#    - `matplotlib.patches.Circle`
+#    - `matplotlib.patheffects.withStroke`
+#    - `matplotlib.ticker.FuncFormatter`

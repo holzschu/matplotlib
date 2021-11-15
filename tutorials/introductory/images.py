@@ -33,7 +33,7 @@ This turns on inline plotting, where plot graphics will appear in your
 notebook.  This has important implications for interactivity.  For inline plotting, commands in
 cells below the cell that outputs a plot will not affect the plot.  For example,
 changing the colormap is not possible from cells below the cell that creates a plot.
-However, for other backends, such as Qt5, that open a separate window,
+However, for other backends, such as Qt, that open a separate window,
 cells below those that create the plot will change the plot - it is a
 live object in memory.
 
@@ -69,7 +69,7 @@ import matplotlib.image as mpimg
 # on where you get your data, the other kinds of image that you'll most
 # likely encounter are RGBA images, which allow for transparency, or
 # single-channel grayscale (luminosity) images.  Download `stinkbug.png
-# <https://raw.githubusercontent.com/matplotlib/matplotlib/master/doc/_static/stinkbug.png>`_
+# <https://raw.githubusercontent.com/matplotlib/matplotlib/main/doc/_static/stinkbug.png>`_
 # to your computer for the rest of this tutorial.
 #
 # And here we go...
@@ -132,7 +132,7 @@ imgplot = plt.imshow(img)
 lum_img = img[:, :, 0]
 
 # This is array slicing.  You can read more in the `Numpy tutorial
-# <https://docs.scipy.org/doc/numpy/user/quickstart.html>`_.
+# <https://numpy.org/doc/stable/user/quickstart.html>`_.
 
 plt.imshow(lum_img)
 

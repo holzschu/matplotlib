@@ -1,6 +1,6 @@
 """
-The matplotlib build options can be modified with a setup.cfg file. See
-setup.cfg.template for more information.
+The Matplotlib build options can be modified with a mplsetup.cfg file. See
+mplsetup.cfg.template for more information.
 """
 
 # NOTE: This file must remain Python 2 compatible for the foreseeable future,
@@ -29,29 +29,13 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from setuptools import setup, find_packages, Extension
-from setuptools.command.build_ext import build_ext as BuildExtCommand
-from setuptools.command.test import test as TestCommand
-
-# The setuptools version of sdist adds a setup.cfg file to the tree.
-# We don't want that, so we simply remove it, and it will fall back to
-# vanilla distutils.
-try:
-    from setuptools.command import sdist
-except ImportError:
-    pass
-else:
-    del sdist.sdist.make_release_tree
-
-from distutils.errors import CompileError
-from distutils.dist import Distribution
+from setuptools import setup, find_packages, Distribution, Extension
+import setuptools.command.build_ext
+import setuptools.command.build_py
+import setuptools.command.sdist
 
 import setupext
 from setupext import print_raw, print_status
-
-# Get the version from versioneer
-import versioneer
-__version__ = versioneer.get_version()
 
 
 # These are the packages in the order we want to display them.
@@ -74,18 +58,15 @@ def has_flag(self, flagname):
         f.write('int main (int argc, char **argv) { return 0; }')
         try:
             self.compile([f.name], extra_postargs=[flagname])
-        except CompileError:
+        except Exception as exc:
+            # https://github.com/pypa/setuptools/issues/2698
+            if type(exc).__name__ != "CompileError":
+                raise
             return False
     return True
 
 
-class NoopTestCommand(TestCommand):
-    def __init__(self, dist):
-        print("Matplotlib does not support running tests with "
-              "'python setup.py test'. Please run 'pytest'.")
-
-
-class BuildExtraLibraries(BuildExtCommand):
+class BuildExtraLibraries(setuptools.command.build_ext.build_ext):
     def finalize_options(self):
         self.distribution.ext_modules[:] = [
             ext
@@ -199,10 +180,49 @@ class BuildExtraLibraries(BuildExtCommand):
             package.do_custom_build(env)
         return super().build_extensions()
 
+    def build_extension(self, ext):
+        # When C coverage is enabled, the path to the object file is saved.
+        # Since we re-use source files in multiple extensions, libgcov will
+        # complain at runtime that it is trying to save coverage for the same
+        # object file at different timestamps (since each source is compiled
+        # again for each extension). Thus, we need to use unique temporary
+        # build directories to store object files for each extension.
+        orig_build_temp = self.build_temp
+        self.build_temp = os.path.join(self.build_temp, ext.name)
+        try:
+            super().build_extension(ext)
+        finally:
+            self.build_temp = orig_build_temp
 
-cmdclass = versioneer.get_cmdclass()
-cmdclass['test'] = NoopTestCommand
-cmdclass['build_ext'] = BuildExtraLibraries
+
+def update_matplotlibrc(path):
+    # If packagers want to change the default backend, insert a `#backend: ...`
+    # line.  Otherwise, use the default `##backend: Agg` which has no effect
+    # even after decommenting, which allows _auto_backend_sentinel to be filled
+    # in at import time.
+    template_lines = path.read_text().splitlines(True)
+    backend_line_idx, = [  # Also asserts that there is a single such line.
+        idx for idx, line in enumerate(template_lines)
+        if "#backend:" in line]
+    template_lines[backend_line_idx] = (
+        "#backend: {}".format(setupext.options["backend"])
+        if setupext.options["backend"]
+        else "##backend: Agg")
+    path.write_text("".join(template_lines))
+
+
+class BuildPy(setuptools.command.build_py.build_py):
+    def run(self):
+        super().run()
+        update_matplotlibrc(
+            Path(self.build_lib, "matplotlib/mpl-data/matplotlibrc"))
+
+
+class Sdist(setuptools.command.sdist.sdist):
+    def make_release_tree(self, base_dir, files):
+        super().make_release_tree(base_dir, files)
+        update_matplotlibrc(
+            Path(base_dir, "lib/matplotlib/mpl-data/matplotlibrc"))
 
 
 package_data = {}  # Will be filled below by the various components.
@@ -215,7 +235,7 @@ if not (any('--' + opt in sys.argv
     # Go through all of the packages and figure out which ones we are
     # going to build/install.
     print_raw()
-    print_raw("Edit setup.cfg to change the build options; "
+    print_raw("Edit mplsetup.cfg to change the build options; "
               "suppress output with --quiet.")
     print_raw()
     print_raw("BUILDING MATPLOTLIB")
@@ -243,21 +263,8 @@ if not (any('--' + opt in sys.argv
             package_data.setdefault(key, [])
             package_data[key] = list(set(val + package_data[key]))
 
-    # Write the default matplotlibrc file
-    with open('matplotlibrc.template') as fd:
-        template_lines = fd.read().splitlines(True)
-    backend_line_idx, = [  # Also asserts that there is a single such line.
-        idx for idx, line in enumerate(template_lines)
-        if line.startswith('#backend:')]
-    if setupext.options['backend']:
-        template_lines[backend_line_idx] = (
-            'backend: {}'.format(setupext.options['backend']))
-    with open('lib/matplotlib/mpl-data/matplotlibrc', 'w') as fd:
-        fd.write(''.join(template_lines))
-
-setup(  # Finally, pass this all along to distutils to do the heavy lifting.
+setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
     name="matplotlib",
-    version=__version__,
     description="Python plotting package",
     author="John D. Hunter, Michael Droettboom",
     author_email="matplotlib-users@python.org",
@@ -285,6 +292,7 @@ setup(  # Finally, pass this all along to distutils to do the heavy lifting.
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
         'Topic :: Scientific/Engineering :: Visualization',
     ],
 
@@ -300,16 +308,34 @@ setup(  # Finally, pass this all along to distutils to do the heavy lifting.
     python_requires='>={}'.format('.'.join(str(n) for n in py_min_version)),
     setup_requires=[
         "certifi>=2020.06.20",
-        "numpy>=1.16",
+        "numpy>=1.17",
+        "setuptools_scm>=4",
+        "setuptools_scm_git_archive",
     ],
     install_requires=[
         "cycler>=0.10",
+        "fonttools>=4.22.0",
         "kiwisolver>=1.0.1",
-        "numpy>=1.16",
+        "numpy>=1.17",
+        "packaging>=20.0",
         "pillow>=6.2.0",
-        "pyparsing>=2.2.1",
+        "pyparsing>=2.2.1,<3.0.0",
         "python-dateutil>=2.7",
-    ],
-
-    cmdclass=cmdclass,
+    ] + (
+        # Installing from a git checkout.
+        ["setuptools_scm>=4"] if Path(__file__).with_name(".git").exists()
+        else []
+    ),
+    use_scm_version={
+        "version_scheme": "release-branch-semver",
+        "local_scheme": "node-and-date",
+        "write_to": "lib/matplotlib/_version.py",
+        "parentdir_prefix_version": "matplotlib-",
+        "fallback_version": "0.0+UNKNOWN",
+    },
+    cmdclass={
+        "build_ext": BuildExtraLibraries,
+        "build_py": BuildPy,
+        "sdist": Sdist,
+    },
 )

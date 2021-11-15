@@ -43,7 +43,7 @@ def survey(results, category_names):
     labels = list(results.keys())
     data = np.array(list(results.values()))
     data_cum = data.cumsum(axis=1)
-    category_colors = plt.get_cmap('RdYlGn')(
+    category_colors = plt.colormaps['RdYlGn'](
         np.linspace(0.15, 0.85, data.shape[1]))
 
     fig, ax = plt.subplots(figsize=(9.2, 5))
@@ -71,18 +71,11 @@ plt.show()
 
 #############################################################################
 #
-# ------------
+# .. admonition:: References
 #
-# References
-# """"""""""
+#    The use of the following functions, methods, classes and modules is shown
+#    in this example:
 #
-# The use of the following functions, methods, classes and modules is shown
-# in this example:
-
-import matplotlib
-matplotlib.axes.Axes.barh
-matplotlib.pyplot.barh
-matplotlib.axes.Axes.bar_label
-matplotlib.pyplot.bar_label
-matplotlib.axes.Axes.legend
-matplotlib.pyplot.legend
+#    - `matplotlib.axes.Axes.barh` / `matplotlib.pyplot.barh`
+#    - `matplotlib.axes.Axes.bar_label` / `matplotlib.pyplot.bar_label`
+#    - `matplotlib.axes.Axes.legend` / `matplotlib.pyplot.legend`
