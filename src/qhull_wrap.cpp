@@ -248,6 +248,10 @@ delaunay_impl(npy_intp npoints, const double* x, const double* y,
     return tuple;
 }
 
+#if TARGET_OS_IPHONE
+// iOS: need non static member functions. This replaces xarray.converter_contiguous and yarray.converter_contiguous:
+static int (*x_converter_contiguous)(PyObject *, void *) = numpy::numpy_converter_contiguous<double, 1>;
+#endif
 /* Process Python arguments and call Delaunay implementation method. */
 static PyObject*
 delaunay(PyObject *self, PyObject *args)
@@ -260,8 +264,13 @@ delaunay(PyObject *self, PyObject *args)
     const double* y;
 
     if (!PyArg_ParseTuple(args, "O&O&",
+#if !TARGET_OS_IPHONE
                           &xarray.converter_contiguous, &xarray,
                           &yarray.converter_contiguous, &yarray)) {
+#else
+                          &x_converter_contiguous, &xarray,
+                          &x_converter_contiguous, &yarray)) {
+#endif
         return NULL;
     }
 
