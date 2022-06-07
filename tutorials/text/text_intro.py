@@ -8,7 +8,7 @@ Introduction to plotting and working with text in Matplotlib.
 Matplotlib has extensive text support, including support for
 mathematical expressions, truetype support for raster and
 vector outputs, newline separated text with arbitrary
-rotations, and unicode support.
+rotations, and Unicode support.
 
 Because it embeds fonts directly in output documents, e.g., for postscript
 or PDF, what you see on the screen is what you get in the hardcopy.
@@ -31,11 +31,11 @@ math symbols and commands, supporting :doc:`mathematical expressions
 Basic text commands
 ===================
 
-The following commands are used to create text in the pyplot
-interface and the object-oriented API:
+The following commands are used to create text in the implicit and explicit
+interfaces (see :ref:`api_interfaces` for an explanation of the tradeoffs):
 
 =================== =================== ======================================
-`.pyplot` API       OO API              description
+implicit API        explicit API        description
 =================== =================== ======================================
 `~.pyplot.text`     `~.Axes.text`       Add text at an arbitrary location of
                                         the `~matplotlib.axes.Axes`.
@@ -63,6 +63,7 @@ All of these functions create and return a `.Text` instance, which can be
 configured with a variety of font and other properties.  The example below
 shows all of these commands in action, and more detail is provided in the
 sections that follow.
+
 """
 
 import matplotlib
@@ -87,7 +88,7 @@ ax.text(3, 8, 'boxed italics text in data coords', style='italic',
 
 ax.text(2, 6, r'an equation: $E=mc^2$', fontsize=15)
 
-ax.text(3, 2, 'unicode: Institut für Festkörperphysik')
+ax.text(3, 2, 'Unicode: Institut für Festkörperphysik')
 
 ax.text(0.95, 0.01, 'colored text in axes coords',
         verticalalignment='bottom', horizontalalignment='right',
@@ -211,8 +212,8 @@ for ax, loc in zip(axs, locs):
 plt.show()
 
 ##############################################################################
-# Vertical spacing for titles is controlled via :rc:`axes.titlepad`, which
-# defaults to 5 points.  Setting to a different value moves the title.
+# Vertical spacing for titles is controlled via :rc:`axes.titlepad`.
+# Setting to a different value moves the title.
 
 fig, ax = plt.subplots(figsize=(5, 3))
 fig.subplots_adjust(top=0.8)
@@ -282,7 +283,7 @@ plt.show()
 # Tick Locators and Formatters
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# Instead of making a list of all the tickalbels, we could have
+# Instead of making a list of all the ticklabels, we could have
 # used `matplotlib.ticker.StrMethodFormatter` (new-style ``str.format()``
 # format string) or `matplotlib.ticker.FormatStrFormatter` (old-style '%'
 # format string) and passed it to the ``ax.xaxis``.  A

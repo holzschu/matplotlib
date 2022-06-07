@@ -13,7 +13,7 @@ from PIL import Image
 
 import matplotlib as mpl
 from matplotlib import (
-    _api, colors, image as mimage, patches, pyplot as plt, style, rcParams)
+    colors, image as mimage, patches, pyplot as plt, style, rcParams)
 from matplotlib.image import (AxesImage, BboxImage, FigureImage,
                               NonUniformImage, PcolorImage)
 from matplotlib.testing.decorators import check_figures_equal, image_comparison
@@ -342,6 +342,7 @@ def test_cursor_data():
         ([[.123, .987]], "[0.123]"),
         ([[np.nan, 1, 2]], "[]"),
         ([[1, 1+1e-15]], "[1.0000000000000000]"),
+        ([[-1, -1]], "[-1.0000000000000000]"),
     ])
 def test_format_cursor_data(data, text):
     from matplotlib.backend_bases import MouseEvent
@@ -720,7 +721,7 @@ def test_load_from_url():
     url = ('file:'
            + ('///' if sys.platform == 'win32' else '')
            + path.resolve().as_posix())
-    with _api.suppress_matplotlib_deprecation_warning():
+    with pytest.raises(ValueError, match="Please open the URL"):
         plt.imread(url)
     with urllib.request.urlopen(url) as file:
         plt.imread(file)
@@ -977,7 +978,7 @@ def test_imshow_bignumbers_real():
 def test_empty_imshow(make_norm):
     fig, ax = plt.subplots()
     with pytest.warns(UserWarning,
-                      match="Attempting to set identical left == right"):
+                      match="Attempting to set identical low and high xlims"):
         im = ax.imshow([[]], norm=make_norm())
     im.set_extent([-5, 5, -5, 5])
     fig.canvas.draw()
@@ -1137,13 +1138,6 @@ def test_exact_vmin():
 
     # check than the RBGA values are the same
     assert np.all(from_image == direct_computation)
-
-
-@pytest.mark.network
-@pytest.mark.flaky
-def test_https_imread_smoketest():
-    with _api.suppress_matplotlib_deprecation_warning():
-        v = mimage.imread('https://matplotlib.org/1.5.0/_static/logo2.png')
 
 
 # A basic ndarray subclass that implements a quantity
@@ -1376,3 +1370,43 @@ def test_rgba_antialias():
     # alternating red and blue stripes become purple
     axs[3].imshow(aa, interpolation='antialiased', interpolation_stage='rgba',
                   cmap=cmap, vmin=-1.2, vmax=1.2)
+
+
+# We check for the warning with a draw() in the test, but we also need to
+# filter the warning as it is emitted by the figure test decorator
+@pytest.mark.filterwarnings(r'ignore:Data with more than .* '
+                            'cannot be accurately displayed')
+@pytest.mark.parametrize('origin', ['upper', 'lower'])
+@pytest.mark.parametrize(
+    'dim, size, msg', [['row', 2**23, r'2\*\*23 columns'],
+                       ['col', 2**24, r'2\*\*24 rows']])
+@check_figures_equal(extensions=('png', ))
+def test_large_image(fig_test, fig_ref, dim, size, msg, origin):
+    # Check that Matplotlib downsamples images that are too big for AGG
+    # See issue #19276. Currently the fix only works for png output but not
+    # pdf or svg output.
+    ax_test = fig_test.subplots()
+    ax_ref = fig_ref.subplots()
+
+    array = np.zeros((1, size + 2))
+    array[:, array.size // 2:] = 1
+    if dim == 'col':
+        array = array.T
+    im = ax_test.imshow(array, vmin=0, vmax=1,
+                        aspect='auto', extent=(0, 1, 0, 1),
+                        interpolation='none',
+                        origin=origin)
+
+    with pytest.warns(UserWarning,
+                      match=f'Data with more than {msg} cannot be '
+                      'accurately displayed.'):
+        fig_test.canvas.draw()
+
+    array = np.zeros((1, 2))
+    array[:, 1] = 1
+    if dim == 'col':
+        array = array.T
+    im = ax_ref.imshow(array, vmin=0, vmax=1, aspect='auto',
+                       extent=(0, 1, 0, 1),
+                       interpolation='none',
+                       origin=origin)

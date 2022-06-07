@@ -41,7 +41,7 @@ class RendererTemplate(RendererBase):
     The renderer handles drawing/rendering operations.
 
     This is a minimal do-nothing class that can be used to get started when
-    writing a new backend.  Refer to `backend_bases.RendererBase` for
+    writing a new backend.  Refer to `.backend_bases.RendererBase` for
     documentation of the methods.
     """
 
@@ -108,7 +108,7 @@ class RendererTemplate(RendererBase):
 
 class GraphicsContextTemplate(GraphicsContextBase):
     """
-    The graphics context provides the color, line styles, etc...  See the cairo
+    The graphics context provides the color, line styles, etc.  See the cairo
     and postscript backends for examples of mapping the graphics context
     attributes (cap styles, join styles, line widths, colors) to a particular
     backend.  In cairo this is done by wrapping a cairo.Context object and
@@ -131,7 +131,7 @@ class GraphicsContextTemplate(GraphicsContextBase):
 ########################################################################
 #
 # The following functions and classes are for pyplot and implement
-# window/figure managers, etc...
+# window/figure managers, etc.
 #
 ########################################################################
 
@@ -158,20 +158,28 @@ def show(*, block=None):
 
 def new_figure_manager(num, *args, FigureClass=Figure, **kwargs):
     """Create a new figure manager instance."""
-    # If a main-level app must be created, this (and
-    # new_figure_manager_given_figure) is the usual place to do it -- see
-    # backend_wx, backend_wxagg and backend_tkagg for examples.  Not all GUIs
-    # require explicit instantiation of a main-level app (e.g., backend_gtk3)
-    # for pylab.
     thisFig = FigureClass(*args, **kwargs)
     return new_figure_manager_given_figure(num, thisFig)
 
 
 def new_figure_manager_given_figure(num, figure):
     """Create a new figure manager instance for the given figure."""
+    # If a main-level app must be created, this is the usual place to do it
+    # -- see the wx and tk backends for examples (the default implementation
+    # of new_figure_manager defers to new_figure_manager_given_figure, so it
+    # also benefits from this instantiation).  Not all GUIs require explicit
+    # instantiation of a main-level app (e.g., backend_gtk3) for pylab.
     canvas = FigureCanvasTemplate(figure)
     manager = FigureManagerTemplate(canvas, num)
     return manager
+
+
+class FigureManagerTemplate(FigureManagerBase):
+    """
+    Helper class for pyplot mode, wraps everything up into a neat bundle.
+
+    For non-interactive backends, the base class is sufficient.
+    """
 
 
 class FigureCanvasTemplate(FigureCanvasBase):
@@ -190,6 +198,8 @@ class FigureCanvasTemplate(FigureCanvasBase):
     figure : `matplotlib.figure.Figure`
         A high-level Figure instance
     """
+
+    manager_class = FigureManagerTemplate
 
     def draw(self):
         """
@@ -225,14 +235,6 @@ class FigureCanvasTemplate(FigureCanvasBase):
 
     def get_default_filetype(self):
         return 'foo'
-
-
-class FigureManagerTemplate(FigureManagerBase):
-    """
-    Helper class for pyplot mode, wraps everything up into a neat bundle.
-
-    For non-interactive backends, the base class is sufficient.
-    """
 
 
 ########################################################################

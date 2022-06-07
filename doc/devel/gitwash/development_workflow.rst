@@ -72,7 +72,7 @@ someone reviewing your branch to see what you are doing.
 
 Choose an informative name for the branch to remind yourself and the rest of us
 what the changes in the branch are for.  For example ``add-ability-to-fly``, or
-``buxfix-for-issue-42``.
+``bugfix-for-issue-42``.
 
 ::
 
@@ -211,7 +211,7 @@ Now all those people can do::
     git clone https://github.com/your-user-name/matplotlib.git
 
 Remember that links starting with ``https`` or ``git@`` are read-write, and that
-``git@`` uses the ssh protocol; links starting with ``git://`` are read-only.
+``git@`` uses the ssh protocol.
 
 Your collaborators can then commit directly into that repo with the
 usual::

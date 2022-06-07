@@ -8,8 +8,8 @@ mplsetup.cfg.template for more information.
 # and/or pip.
 import sys
 
-py_min_version = (3, 7)  # minimal supported python version
-since_mpl_version = (3, 4)  # py_min_version is required since this mpl version
+py_min_version = (3, 8)  # minimal supported python version
+since_mpl_version = (3, 6)  # py_min_version is required since this mpl version
 
 if sys.version_info < py_min_version:
     error = """
@@ -160,12 +160,6 @@ class BuildExtraLibraries(setuptools.command.build_ext.build_ext):
         return env
 
     def build_extensions(self):
-        # Remove the -Wstrict-prototypes option, it's not valid for C++.  Fixed
-        # in Py3.7 as bpo-5755.
-        try:
-            self.compiler.compiler_so.remove('-Wstrict-prototypes')
-        except (ValueError, AttributeError):
-            pass
         if (self.compiler.compiler_type == 'msvc' and
                 os.environ.get('MPL_DISABLE_FH4')):
             # Disable FH4 Exception Handling implementation so that we don't
@@ -200,15 +194,15 @@ def update_matplotlibrc(path):
     # line.  Otherwise, use the default `##backend: Agg` which has no effect
     # even after decommenting, which allows _auto_backend_sentinel to be filled
     # in at import time.
-    template_lines = path.read_text().splitlines(True)
+    template_lines = path.read_text(encoding="utf-8").splitlines(True)
     backend_line_idx, = [  # Also asserts that there is a single such line.
         idx for idx, line in enumerate(template_lines)
         if "#backend:" in line]
     template_lines[backend_line_idx] = (
-        "#backend: {}".format(setupext.options["backend"])
+        "#backend: {}\n".format(setupext.options["backend"])
         if setupext.options["backend"]
-        else "##backend: Agg")
-    path.write_text("".join(template_lines))
+        else "##backend: Agg\n")
+    path.write_text("".join(template_lines), encoding="utf-8")
 
 
 class BuildPy(setuptools.command.build_py.build_py):
@@ -289,7 +283,6 @@ setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
         'License :: OSI Approved :: Python Software Foundation License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
@@ -308,23 +301,26 @@ setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
     python_requires='>={}'.format('.'.join(str(n) for n in py_min_version)),
     setup_requires=[
         "certifi>=2020.06.20",
-        "numpy>=1.17",
+        "numpy>=1.19",
         "setuptools_scm>=4",
         "setuptools_scm_git_archive",
     ],
     install_requires=[
+        "contourpy>=1.0.1",
         "cycler>=0.10",
         "fonttools>=4.22.0",
         "kiwisolver>=1.0.1",
-        "numpy>=1.17",
+        "numpy>=1.19",
         "packaging>=20.0",
         "pillow>=6.2.0",
-        "pyparsing>=2.2.1,<3.0.0",
+        "pyparsing>=2.2.1",
         "python-dateutil>=2.7",
     ] + (
-        # Installing from a git checkout.
-        ["setuptools_scm>=4"] if Path(__file__).with_name(".git").exists()
-        else []
+        # Installing from a git checkout that is not producing a wheel.
+        ["setuptools_scm>=4"] if (
+            Path(__file__).with_name(".git").exists() and
+            os.environ.get("CIBUILDWHEEL", "0") != "1"
+        ) else []
     ),
     use_scm_version={
         "version_scheme": "release-branch-semver",

@@ -1,0 +1,22 @@
+[
+    {
+        "name": "3.5 (stable)",
+        "version": "stable"
+    },
+    {
+        "name": "3.6 (dev)",
+        "version": "devdocs"
+    },
+    {
+        "name": "3.4",
+        "version": "3.4.3"
+    },
+    {
+        "name": "3.3",
+        "version": "3.3.4"
+    },
+    {
+        "name": "2.2",
+        "version": "2.2.4"
+    }
+]

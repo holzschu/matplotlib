@@ -3,7 +3,6 @@ import itertools
 import logging
 import math
 from numbers import Integral, Number
-from datetime import timedelta
 
 import numpy as np
 from numpy import ma
@@ -14,7 +13,6 @@ import matplotlib.collections as mcoll
 import matplotlib.colors as mcolors
 import matplotlib.contour as mcontour
 import matplotlib.dates  # Register date unit converter as side-effect.
-import matplotlib.docstring as docstring
 import matplotlib.image as mimage
 import matplotlib.legend as mlegend
 import matplotlib.lines as mlines
@@ -31,7 +29,7 @@ import matplotlib.ticker as mticker
 import matplotlib.transforms as mtransforms
 import matplotlib.tri as mtri
 import matplotlib.units as munits
-from matplotlib import _api, _preprocess_data, rcParams
+from matplotlib import _api, _docstring, _preprocess_data, rcParams
 from matplotlib.axes._base import (
     _AxesBase, _TransformedBoundsLocator, _process_plot_format)
 from matplotlib.axes._secondary_axes import SecondaryAxis
@@ -44,7 +42,7 @@ _log = logging.getLogger(__name__)
 # All the other methods should go in the _AxesBase class.
 
 
-@docstring.interpd
+@_docstring.interpd
 class Axes(_AxesBase):
     """
     The `Axes` contains most of the figure elements: `~.axis.Axis`,
@@ -119,9 +117,9 @@ class Axes(_AxesBase):
             Which title to set.
 
         y : float, default: :rc:`axes.titley`
-            Vertical Axes loation for the title (1.0 is the top).  If
-            None (the default), y is determined automatically to avoid
-            decorators on the Axes.
+            Vertical Axes location for the title (1.0 is the top).  If
+            None (the default) and :rc:`axes.titley` is also None, y is
+            determined automatically to avoid decorators on the Axes.
 
         pad : float, default: :rc:`axes.titlepad`
             The offset of the title from the top of the Axes, in points.
@@ -167,7 +165,7 @@ class Axes(_AxesBase):
         title.update(default)
         if fontdict is not None:
             title.update(fontdict)
-        title.update(kwargs)
+        title._internal_update(kwargs)
         return title
 
     def get_legend_handles_labels(self, legend_handler_map=None):
@@ -184,7 +182,7 @@ class Axes(_AxesBase):
             [self], legend_handler_map)
         return handles, labels
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def legend(self, *args, **kwargs):
         """
         Place a legend on the Axes.
@@ -327,13 +325,27 @@ class Axes(_AxesBase):
             Defaults to `ax.transAxes`, i.e. the units of *rect* are in
             Axes-relative coordinates.
 
+        projection : {None, 'aitoff', 'hammer', 'lambert', 'mollweide', \
+'polar', 'rectilinear', str}, optional
+            The projection type of the inset `~.axes.Axes`. *str* is the name
+            of a custom projection, see `~matplotlib.projections`. The default
+            None results in a 'rectilinear' projection.
+
+        polar : bool, default: False
+            If True, equivalent to projection='polar'.
+
+        axes_class : subclass type of `~.axes.Axes`, optional
+            The `.axes.Axes` subclass that is instantiated.  This parameter
+            is incompatible with *projection* and *polar*.  See
+            :ref:`axisartist_users-guide-index` for examples.
+
         zorder : number
             Defaults to 5 (same as `.Axes.legend`).  Adjust higher or lower
             to change whether it is above or below data plotted on the
             parent Axes.
 
         **kwargs
-            Other keyword arguments are passed on to the child `.Axes`.
+            Other keyword arguments are passed on to the inset Axes class.
 
         Returns
         -------
@@ -359,7 +371,10 @@ class Axes(_AxesBase):
         # This puts the rectangle into figure-relative coordinates.
         inset_locator = _TransformedBoundsLocator(bounds, transform)
         bounds = inset_locator(self, None).bounds
-        inset_ax = Axes(self.figure, bounds, zorder=zorder, **kwargs)
+        projection_class, pkw = self.figure._process_projection_requirements(
+                bounds, **kwargs)
+        inset_ax = projection_class(self.figure, bounds, zorder=zorder, **pkw)
+
         # this locator lets the axes move if in data coordinates.
         # it gets called in `ax.apply_aspect() (of all places)
         inset_ax.set_axes_locator(inset_locator)
@@ -368,7 +383,7 @@ class Axes(_AxesBase):
 
         return inset_ax
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def indicate_inset(self, bounds, inset_ax=None, *, transform=None,
                        facecolor='none', edgecolor='0.5', alpha=0.5,
                        zorder=4.99, **kwargs):
@@ -520,7 +535,7 @@ class Axes(_AxesBase):
         rect = (xlim[0], ylim[0], xlim[1] - xlim[0], ylim[1] - ylim[0])
         return self.indicate_inset(rect, inset_ax, **kwargs)
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def secondary_xaxis(self, location, *, functions=None, **kwargs):
         """
         Add a second x-axis to this Axes.
@@ -562,7 +577,7 @@ class Axes(_AxesBase):
             raise ValueError('secondary_xaxis location must be either '
                              'a float or "top"/"bottom"')
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def secondary_yaxis(self, location, *, functions=None, **kwargs):
         """
         Add a second y-axis to this Axes.
@@ -594,7 +609,7 @@ class Axes(_AxesBase):
             raise ValueError('secondary_yaxis location must be either '
                              'a float or "left"/"right"')
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def text(self, x, y, s, fontdict=None, **kwargs):
         """
         Add text to the Axes.
@@ -662,9 +677,14 @@ class Axes(_AxesBase):
         self._add_text(t)
         return t
 
-    @docstring.dedent_interpd
-    def annotate(self, text, xy, *args, **kwargs):
-        a = mtext.Annotation(text, xy, *args, **kwargs)
+    @_docstring.dedent_interpd
+    def annotate(self, text, xy, xytext=None, xycoords='data', textcoords=None,
+                 arrowprops=None, annotation_clip=None, **kwargs):
+        # Signature must match Annotation. This is verified in
+        # test_annotate_signature().
+        a = mtext.Annotation(text, xy, xytext=xytext, xycoords=xycoords,
+                             textcoords=textcoords, arrowprops=arrowprops,
+                             annotation_clip=annotation_clip, **kwargs)
         a.set_transform(mtransforms.IdentityTransform())
         if 'clip_on' in kwargs:
             a.set_clip_path(self.patch)
@@ -673,10 +693,10 @@ class Axes(_AxesBase):
     annotate.__doc__ = mtext.Annotation.__init__.__doc__
     #### Lines and spans
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def axhline(self, y=0, xmin=0, xmax=1, **kwargs):
         """
-        Add a horizontal line across the axis.
+        Add a horizontal line across the Axes.
 
         Parameters
         ----------
@@ -737,10 +757,11 @@ class Axes(_AxesBase):
         trans = self.get_yaxis_transform(which='grid')
         l = mlines.Line2D([xmin, xmax], [y, y], transform=trans, **kwargs)
         self.add_line(l)
-        self._request_autoscale_view(scalex=False, scaley=scaley)
+        if scaley:
+            self._request_autoscale_view("y")
         return l
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def axvline(self, x=0, ymin=0, ymax=1, **kwargs):
         """
         Add a vertical line across the Axes.
@@ -804,7 +825,8 @@ class Axes(_AxesBase):
         trans = self.get_xaxis_transform(which='grid')
         l = mlines.Line2D([x, x], [ymin, ymax], transform=trans, **kwargs)
         self.add_line(l)
-        self._request_autoscale_view(scalex=scalex, scaley=False)
+        if scalex:
+            self._request_autoscale_view("x")
         return l
 
     @staticmethod
@@ -815,7 +837,7 @@ class Axes(_AxesBase):
                 raise ValueError(f"{name} must be a single scalar value, "
                                  f"but got {val}")
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def axline(self, xy1, xy2=None, *, slope=None, **kwargs):
         """
         Add an infinitely long straight line.
@@ -889,7 +911,7 @@ class Axes(_AxesBase):
         self._request_autoscale_view()
         return line
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def axhspan(self, ymin, ymax, xmin=0, xmax=1, **kwargs):
         """
         Add a horizontal span (rectangle) across the Axes.
@@ -934,10 +956,10 @@ class Axes(_AxesBase):
         p = mpatches.Polygon(verts, **kwargs)
         p.set_transform(self.get_yaxis_transform(which="grid"))
         self.add_patch(p)
-        self._request_autoscale_view(scalex=False)
+        self._request_autoscale_view("y")
         return p
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def axvspan(self, xmin, xmax, ymin=0, ymax=1, **kwargs):
         """
         Add a vertical span (rectangle) across the Axes.
@@ -991,7 +1013,7 @@ class Axes(_AxesBase):
         p.set_transform(self.get_xaxis_transform(which="grid"))
         p.get_path()._interpolation_steps = 100
         self.add_patch(p)
-        self._request_autoscale_view(scaley=False)
+        self._request_autoscale_view("x")
         return p
 
     @_preprocess_data(replace_names=["y", "xmin", "xmax", "colors"],
@@ -1008,7 +1030,7 @@ class Axes(_AxesBase):
 
         xmin, xmax : float or array-like
             Respective beginning and end of each line. If scalars are
-            provided, all lines will have same length.
+            provided, all lines will have the same length.
 
         colors : list of colors, default: :rc:`lines.color`
 
@@ -1058,13 +1080,13 @@ class Axes(_AxesBase):
         lines = mcoll.LineCollection(masked_verts, colors=colors,
                                      linestyles=linestyles, label=label)
         self.add_collection(lines, autolim=False)
-        lines.update(kwargs)
+        lines._internal_update(kwargs)
 
         if len(y) > 0:
-            minx = min(xmin.min(), xmax.min())
-            maxx = max(xmin.max(), xmax.max())
-            miny = y.min()
-            maxy = y.max()
+            minx = min(np.nanmin(xmin), np.nanmin(xmax))
+            maxx = max(np.nanmax(xmin), np.nanmax(xmax))
+            miny = np.nanmin(y)
+            maxy = np.nanmax(y)
 
             corners = (minx, miny), (maxx, maxy)
 
@@ -1087,7 +1109,7 @@ class Axes(_AxesBase):
 
         ymin, ymax : float or array-like
             Respective beginning and end of each line. If scalars are
-            provided, all lines will have same length.
+            provided, all lines will have the same length.
 
         colors : list of colors, default: :rc:`lines.color`
 
@@ -1137,13 +1159,13 @@ class Axes(_AxesBase):
         lines = mcoll.LineCollection(masked_verts, colors=colors,
                                      linestyles=linestyles, label=label)
         self.add_collection(lines, autolim=False)
-        lines.update(kwargs)
+        lines._internal_update(kwargs)
 
         if len(x) > 0:
-            minx = x.min()
-            maxx = x.max()
-            miny = min(ymin.min(), ymax.min())
-            maxy = max(ymin.max(), ymax.max())
+            minx = np.nanmin(x)
+            maxx = np.nanmax(x)
+            miny = min(np.nanmin(ymin), np.nanmin(ymax))
+            maxy = max(np.nanmax(ymin), np.nanmax(ymax))
 
             corners = (minx, miny), (maxx, maxy)
             self.update_datalim(corners)
@@ -1154,7 +1176,7 @@ class Axes(_AxesBase):
     @_preprocess_data(replace_names=["positions", "lineoffsets",
                                      "linelengths", "linewidths",
                                      "colors", "linestyles"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def eventplot(self, positions, orientation='horizontal', lineoffsets=1,
                   linelengths=1, linewidths=None, colors=None,
                   linestyles='solid', **kwargs):
@@ -1357,7 +1379,7 @@ class Axes(_AxesBase):
                                          color=color,
                                          linestyle=linestyle)
             self.add_collection(coll, autolim=False)
-            coll.update(kwargs)
+            coll._internal_update(kwargs)
             colls.append(coll)
 
         if len(positions) > 0:
@@ -1386,7 +1408,7 @@ class Axes(_AxesBase):
 
     # Uses a custom implementation of data-kwarg handling in
     # _process_plot_var_args.
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def plot(self, *args, scalex=True, scaley=True, data=None, **kwargs):
         """
         Plot y versus x as lines and/or markers.
@@ -1517,7 +1539,8 @@ class Axes(_AxesBase):
         ----------------
         scalex, scaley : bool, default: True
             These parameters determine if the view limits are adapted to the
-            data limits. The values are passed on to `autoscale_view`.
+            data limits. The values are passed on to
+            `~.axes.Axes.autoscale_view`.
 
         **kwargs : `.Line2D` properties, optional
             *kwargs* are used to specify properties like a line label (for
@@ -1633,11 +1656,14 @@ class Axes(_AxesBase):
         lines = [*self._get_lines(*args, data=data, **kwargs)]
         for line in lines:
             self.add_line(line)
-        self._request_autoscale_view(scalex=scalex, scaley=scaley)
+        if scalex:
+            self._request_autoscale_view("x")
+        if scaley:
+            self._request_autoscale_view("y")
         return lines
 
     @_preprocess_data(replace_names=["x", "y"], label_namer="y")
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def plot_date(self, x, y, fmt='o', tz=None, xdate=True, ydate=False,
                   **kwargs):
         """
@@ -1718,7 +1744,7 @@ class Axes(_AxesBase):
         return self.plot(x, y, fmt, **kwargs)
 
     # @_preprocess_data() # let 'plot' do the unpacking..
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def loglog(self, *args, **kwargs):
         """
         Make a plot with log scaling on both the x and y axis.
@@ -1772,7 +1798,7 @@ class Axes(_AxesBase):
             *args, **{k: v for k, v in kwargs.items() if k not in {*dx, *dy}})
 
     # @_preprocess_data() # let 'plot' do the unpacking..
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def semilogx(self, *args, **kwargs):
         """
         Make a plot with log scaling on the x axis.
@@ -1819,7 +1845,7 @@ class Axes(_AxesBase):
             *args, **{k: v for k, v in kwargs.items() if k not in d})
 
     # @_preprocess_data() # let 'plot' do the unpacking..
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def semilogy(self, *args, **kwargs):
         """
         Make a plot with log scaling on the y axis.
@@ -2149,7 +2175,7 @@ class Axes(_AxesBase):
             try:
                 x0 = cbook.safe_first_element(x0)
             except (TypeError, IndexError, KeyError):
-                x0 = x0
+                pass
 
             try:
                 x = cbook.safe_first_element(xconv)
@@ -2170,7 +2196,7 @@ class Axes(_AxesBase):
         return dx
 
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def bar(self, x, height, width=0.8, bottom=None, *, align="center",
             **kwargs):
         r"""
@@ -2401,7 +2427,7 @@ class Axes(_AxesBase):
                 label='_nolegend_',
                 hatch=htch,
                 )
-            r.update(kwargs)
+            r._internal_update(kwargs)
             r.get_path()._interpolation_steps = 100
             if orientation == 'vertical':
                 r.sticky_edges.y.append(b)
@@ -2447,7 +2473,7 @@ class Axes(_AxesBase):
 
         return bar_container
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def barh(self, y, width, height=0.8, left=None, *, align="center",
              **kwargs):
         r"""
@@ -2589,13 +2615,25 @@ class Axes(_AxesBase):
 
         **kwargs
             Any remaining keyword arguments are passed through to
-            `.Axes.annotate`.
+            `.Axes.annotate`. The alignment parameters (
+            *horizontalalignment* / *ha*, *verticalalignment* / *va*) are
+            not supported because the labels are automatically aligned to
+            the bars.
 
         Returns
         -------
         list of `.Text`
             A list of `.Text` instances for the labels.
         """
+        for key in ['horizontalalignment', 'ha', 'verticalalignment', 'va']:
+            if key in kwargs:
+                raise ValueError(
+                    f"Passing {key!r} to bar_label() is not supported.")
+
+        a, b = self.yaxis.get_view_interval()
+        y_inverted = a > b
+        c, d = self.xaxis.get_view_interval()
+        x_inverted = c > d
 
         # want to know whether to put label on positive or negative direction
         # cannot use np.sign here because it will return 0 if x == 0
@@ -2624,7 +2662,7 @@ class Axes(_AxesBase):
         annotations = []
 
         for bar, err, dat, lbl in itertools.zip_longest(
-            bars, errs, datavalues, labels
+                bars, errs, datavalues, labels
         ):
             (x0, y0), (x1, y1) = bar.get_bbox().get_points()
             xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
@@ -2636,7 +2674,7 @@ class Axes(_AxesBase):
                 extrema = max(x0, x1) if dat >= 0 else min(x0, x1)
                 length = abs(x0 - x1)
 
-            if err is None:
+            if err is None or np.size(err) == 0:
                 endpt = extrema
             elif orientation == "vertical":
                 endpt = err[:, 1].max() if dat >= 0 else err[:, 1].min()
@@ -2656,18 +2694,26 @@ class Axes(_AxesBase):
                 xy = endpt, yc
 
             if orientation == "vertical":
-                xytext = 0, sign(dat) * padding
+                y_direction = -1 if y_inverted else 1
+                xytext = 0, y_direction * sign(dat) * padding
             else:
-                xytext = sign(dat) * padding, 0
+                x_direction = -1 if x_inverted else 1
+                xytext = x_direction * sign(dat) * padding, 0
 
             if label_type == "center":
                 ha, va = "center", "center"
             elif label_type == "edge":
                 if orientation == "vertical":
                     ha = 'center'
-                    va = 'top' if dat < 0 else 'bottom'  # also handles NaN
+                    if y_inverted:
+                        va = 'top' if dat > 0 else 'bottom'  # also handles NaN
+                    else:
+                        va = 'top' if dat < 0 else 'bottom'  # also handles NaN
                 elif orientation == "horizontal":
-                    ha = 'right' if dat < 0 else 'left'  # also handles NaN
+                    if x_inverted:
+                        ha = 'right' if dat > 0 else 'left'  # also handles NaN
+                    else:
+                        ha = 'right' if dat < 0 else 'left'  # also handles NaN
                     va = 'center'
 
             if np.isnan(dat):
@@ -2681,7 +2727,7 @@ class Axes(_AxesBase):
         return annotations
 
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def broken_barh(self, xranges, yrange, **kwargs):
         """
         Plot a horizontal sequence of rectangles.
@@ -2940,9 +2986,7 @@ class Axes(_AxesBase):
         Plot a pie chart.
 
         Make a pie chart of array *x*.  The fractional area of each wedge is
-        given by ``x/sum(x)``.  If ``sum(x) < 1``, then the values of *x* give
-        the fractional area directly and the array will not be normalized. The
-        resulting pie will have an empty wedge of size ``1 - sum(x)``.
+        given by ``x/sum(x)``.
 
         The wedges are plotted counterclockwise, by default starting from the
         x-axis.
@@ -3157,9 +3201,41 @@ class Axes(_AxesBase):
         else:
             return slices, texts, autotexts
 
+    @staticmethod
+    def _errorevery_to_mask(x, errorevery):
+        """
+        Normalize `errorbar`'s *errorevery* to be a boolean mask for data *x*.
+
+        This function is split out to be usable both by 2D and 3D errorbars.
+        """
+        if isinstance(errorevery, Integral):
+            errorevery = (0, errorevery)
+        if isinstance(errorevery, tuple):
+            if (len(errorevery) == 2 and
+                    isinstance(errorevery[0], Integral) and
+                    isinstance(errorevery[1], Integral)):
+                errorevery = slice(errorevery[0], None, errorevery[1])
+            else:
+                raise ValueError(
+                    f'{errorevery=!r} is a not a tuple of two integers')
+        elif isinstance(errorevery, slice):
+            pass
+        elif not isinstance(errorevery, str) and np.iterable(errorevery):
+            try:
+                x[errorevery]  # fancy indexing
+            except (ValueError, IndexError) as err:
+                raise ValueError(
+                    f"{errorevery=!r} is iterable but not a valid NumPy fancy "
+                    "index to match 'xerr'/'yerr'") from err
+        else:
+            raise ValueError(f"{errorevery=!r} is not a recognized value")
+        everymask = np.zeros(len(x), bool)
+        everymask[errorevery] = True
+        return everymask
+
     @_preprocess_data(replace_names=["x", "y", "xerr", "yerr"],
                       label_namer="y")
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def errorbar(self, x, y, yerr=None, xerr=None,
                  fmt='', ecolor=None, elinewidth=None, capsize=None,
                  barsabove=False, lolims=False, uplims=False,
@@ -3283,53 +3359,55 @@ class Axes(_AxesBase):
             x = np.asarray(x, dtype=object)
         if not isinstance(y, np.ndarray):
             y = np.asarray(y, dtype=object)
+
+        def _upcast_err(err):
+            """
+            Safely handle tuple of containers that carry units.
+
+            This function covers the case where the input to the xerr/yerr is a
+            length 2 tuple of equal length ndarray-subclasses that carry the
+            unit information in the container.
+
+            If we have a tuple of nested numpy array (subclasses), we defer
+            coercing the units to be consistent to the underlying unit
+            library (and implicitly the broadcasting).
+
+            Otherwise, fallback to casting to an object array.
+            """
+
+            if (
+                    # make sure it is not a scalar
+                    np.iterable(err) and
+                    # and it is not empty
+                    len(err) > 0 and
+                    # and the first element is an array sub-class use
+                    # safe_first_element because getitem is index-first not
+                    # location first on pandas objects so err[0] almost always
+                    # fails.
+                    isinstance(cbook.safe_first_element(err), np.ndarray)
+            ):
+                # Get the type of the first element
+                atype = type(cbook.safe_first_element(err))
+                # Promote the outer container to match the inner container
+                if atype is np.ndarray:
+                    # Converts using np.asarray, because data cannot
+                    # be directly passed to init of np.ndarray
+                    return np.asarray(err, dtype=object)
+                # If atype is not np.ndarray, directly pass data to init.
+                # This works for types such as unyts and astropy units
+                return atype(err)
+            # Otherwise wrap it in an object array
+            return np.asarray(err, dtype=object)
+
         if xerr is not None and not isinstance(xerr, np.ndarray):
-            xerr = np.asarray(xerr, dtype=object)
+            xerr = _upcast_err(xerr)
         if yerr is not None and not isinstance(yerr, np.ndarray):
-            yerr = np.asarray(yerr, dtype=object)
+            yerr = _upcast_err(yerr)
         x, y = np.atleast_1d(x, y)  # Make sure all the args are iterable.
         if len(x) != len(y):
             raise ValueError("'x' and 'y' must have the same size")
 
-        def has_negative_values(array):
-            if array is None:
-                return False
-            try:
-                return np.any(array < 0)
-            except TypeError:  # if array contains 'datetime.timedelta' types
-                return np.any(array < timedelta(0))
-
-        if has_negative_values(xerr):
-            raise ValueError("'xerr' must not contain negative values")
-        if has_negative_values(yerr):
-            raise ValueError("'yerr' must not contain negative values")
-
-        if isinstance(errorevery, Integral):
-            errorevery = (0, errorevery)
-        if isinstance(errorevery, tuple):
-            if (len(errorevery) == 2 and
-                    isinstance(errorevery[0], Integral) and
-                    isinstance(errorevery[1], Integral)):
-                errorevery = slice(errorevery[0], None, errorevery[1])
-            else:
-                raise ValueError(
-                    f'errorevery={errorevery!r} is a not a tuple of two '
-                    f'integers')
-        elif isinstance(errorevery, slice):
-            pass
-        elif not isinstance(errorevery, str) and np.iterable(errorevery):
-            # fancy indexing
-            try:
-                x[errorevery]
-            except (ValueError, IndexError) as err:
-                raise ValueError(
-                    f"errorevery={errorevery!r} is iterable but not a valid "
-                    f"NumPy fancy index to match 'xerr'/'yerr'") from err
-        else:
-            raise ValueError(
-                f"errorevery={errorevery!r} is not a recognized value")
-        everymask = np.zeros(len(x), bool)
-        everymask[errorevery] = True
+        everymask = self._errorevery_to_mask(x, errorevery)
 
         label = kwargs.pop("label", None)
         kwargs['label'] = '_nolegend_'
@@ -3369,7 +3447,8 @@ class Axes(_AxesBase):
         for key in ['marker', 'markersize', 'markerfacecolor',
                     'markeredgewidth', 'markeredgecolor', 'markevery',
                     'linestyle', 'fillstyle', 'drawstyle', 'dash_capstyle',
-                    'dash_joinstyle', 'solid_capstyle', 'solid_joinstyle']:
+                    'dash_joinstyle', 'solid_capstyle', 'solid_joinstyle',
+                    'dashes']:
             base_style.pop(key, None)
 
         # Make the style dict for the line collections (the bars).
@@ -3426,6 +3505,11 @@ class Axes(_AxesBase):
                     f"'{dep_axis}err' (shape: {np.shape(err)}) must be a "
                     f"scalar or a 1D or (2, n) array-like whose shape matches "
                     f"'{dep_axis}' (shape: {np.shape(dep)})") from None
+            res = np.zeros(err.shape, dtype=bool)  # Default in case of nan
+            if np.any(np.less(err, -err, out=res, where=(err == err))):
+                # like err<0, but also works for timedelta and nan.
+                raise ValueError(
+                    f"'{dep_axis}err' must not contain negative values")
             # This is like
             #     elow, ehigh = np.broadcast_to(...)
             #     return dep - elow * ~lolims, dep + ehigh * ~uplims
@@ -3485,7 +3569,8 @@ class Axes(_AxesBase):
                 showbox=None, showfliers=None, boxprops=None,
                 labels=None, flierprops=None, medianprops=None,
                 meanprops=None, capprops=None, whiskerprops=None,
-                manage_ticks=True, autorange=False, zorder=None):
+                manage_ticks=True, autorange=False, zorder=None,
+                capwidths=None):
         """
         Draw a box and whisker plot.
 
@@ -3652,6 +3737,8 @@ class Axes(_AxesBase):
             Show the arithmetic means.
         capprops : dict, default: None
             The style of the caps.
+        capwidths : float or array, default: None
+            The widths of the caps.
         boxprops : dict, default: None
             The style of the box.
         whiskerprops : dict, default: None
@@ -3780,7 +3867,8 @@ class Axes(_AxesBase):
                            medianprops=medianprops, meanprops=meanprops,
                            meanline=meanline, showfliers=showfliers,
                            capprops=capprops, whiskerprops=whiskerprops,
-                           manage_ticks=manage_ticks, zorder=zorder)
+                           manage_ticks=manage_ticks, zorder=zorder,
+                           capwidths=capwidths)
         return artists
 
     def bxp(self, bxpstats, positions=None, widths=None, vert=True,
@@ -3788,7 +3876,8 @@ class Axes(_AxesBase):
             showcaps=True, showbox=True, showfliers=True,
             boxprops=None, whiskerprops=None, flierprops=None,
             medianprops=None, capprops=None, meanprops=None,
-            meanline=False, manage_ticks=True, zorder=None):
+            meanline=False, manage_ticks=True, zorder=None,
+            capwidths=None):
         """
         Drawing function for box and whisker plots.
 
@@ -3825,6 +3914,10 @@ class Axes(_AxesBase):
         widths : float or array-like, default: None
           The widths of the boxes.  The default is
           ``clip(0.15*(distance between extreme positions), 0.15, 0.5)``.
+
+        capwidths : float or array-like, default: None
+          Either a scalar or a vector and sets the width of each cap.
+          The default is ``0.5*(with of the box)``, see *widths*.
 
         vert : bool, default: True
           If `True` (default), makes the boxes vertical.
@@ -3958,7 +4051,16 @@ class Axes(_AxesBase):
         elif len(widths) != N:
             raise ValueError(datashape_message.format("widths"))
 
-        for pos, width, stats in zip(positions, widths, bxpstats):
+        # capwidth
+        if capwidths is None:
+            capwidths = 0.5 * np.array(widths)
+        elif np.isscalar(capwidths):
+            capwidths = [capwidths] * N
+        elif len(capwidths) != N:
+            raise ValueError(datashape_message.format("capwidths"))
+
+        for pos, width, stats, capwidth in zip(positions, widths, bxpstats,
+                                               capwidths):
             # try to find a new label
             datalabels.append(stats.get('label', pos))
 
@@ -3967,8 +4069,8 @@ class Axes(_AxesBase):
             whislo_y = [stats['q1'], stats['whislo']]
             whishi_y = [stats['q3'], stats['whishi']]
             # cap coords
-            cap_left = pos - width * 0.25
-            cap_right = pos + width * 0.25
+            cap_left = pos - capwidth * 0.5
+            cap_right = pos + capwidth * 0.5
             cap_x = [cap_left, cap_right]
             cap_lo = np.full(2, stats['whislo'])
             cap_hi = np.full(2, stats['whishi'])
@@ -3978,14 +4080,16 @@ class Axes(_AxesBase):
             med_y = [stats['med'], stats['med']]
             # notched boxes
             if shownotches:
-                box_x = [box_left, box_right, box_right, cap_right, box_right,
-                         box_right, box_left, box_left, cap_left, box_left,
-                         box_left]
+                notch_left = pos - width * 0.25
+                notch_right = pos + width * 0.25
+                box_x = [box_left, box_right, box_right, notch_right,
+                         box_right, box_right, box_left, box_left, notch_left,
+                         box_left, box_left]
                 box_y = [stats['q1'], stats['q1'], stats['cilo'],
                          stats['med'], stats['cihi'], stats['q3'],
                          stats['q3'], stats['cihi'], stats['med'],
                          stats['cilo'], stats['q1']]
-                med_x = cap_x
+                med_x = [notch_left, notch_right]
             # plain boxes
             else:
                 box_x = [box_left, box_right, box_right, box_left, box_left]
@@ -4051,8 +4155,7 @@ class Axes(_AxesBase):
                 axis.set_major_formatter(formatter)
             formatter.seq = [*formatter.seq, *datalabels]
 
-            self._request_autoscale_view(
-                scalex=self._autoscaleXon, scaley=self._autoscaleYon)
+            self._request_autoscale_view()
 
         return dict(whiskers=whiskers, caps=caps, boxes=boxes,
                     medians=medians, fliers=fliers, means=means)
@@ -4424,22 +4527,21 @@ default: :rc:`scatter.edgecolors`
         offsets = np.ma.column_stack([x, y])
 
         collection = mcoll.PathCollection(
-                (path,), scales,
-                facecolors=colors,
-                edgecolors=edgecolors,
-                linewidths=linewidths,
-                offsets=offsets,
-                transOffset=kwargs.pop('transform', self.transData),
-                alpha=alpha
-                )
+            (path,), scales,
+            facecolors=colors,
+            edgecolors=edgecolors,
+            linewidths=linewidths,
+            offsets=offsets,
+            offset_transform=kwargs.pop('transform', self.transData),
+            alpha=alpha,
+        )
         collection.set_transform(mtransforms.IdentityTransform())
-        collection.update(kwargs)
-
         if colors is None:
             collection.set_array(c)
             collection.set_cmap(cmap)
             collection.set_norm(norm)
             collection._scale_norm(norm, vmin, vmax)
+        collection._internal_update(kwargs)
 
         # Classic mode only:
         # ensure there are margins to allow for the
@@ -4458,7 +4560,7 @@ default: :rc:`scatter.edgecolors`
         return collection
 
     @_preprocess_data(replace_names=["x", "y", "C"], label_namer="y")
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def hexbin(self, x, y, C=None, gridsize=100, bins=None,
                xscale='linear', yscale='linear', extent=None,
                cmap=None, norm=None, vmin=None, vmax=None,
@@ -4611,32 +4713,38 @@ default: :rc:`scatter.edgecolors`
             nx = gridsize
             ny = int(nx / math.sqrt(3))
         # Count the number of data in each hexagon
-        x = np.array(x, float)
-        y = np.array(y, float)
+        x = np.asarray(x, float)
+        y = np.asarray(y, float)
 
-        if marginals:
-            xorig = x.copy()
-            yorig = y.copy()
+        # Will be log()'d if necessary, and then rescaled.
+        tx = x
+        ty = y
 
         if xscale == 'log':
             if np.any(x <= 0.0):
-                raise ValueError("x contains non-positive values, so can not"
-                                 " be log-scaled")
-            x = np.log10(x)
+                raise ValueError("x contains non-positive values, so can not "
+                                 "be log-scaled")
+            tx = np.log10(tx)
         if yscale == 'log':
             if np.any(y <= 0.0):
-                raise ValueError("y contains non-positive values, so can not"
-                                 " be log-scaled")
-            y = np.log10(y)
+                raise ValueError("y contains non-positive values, so can not "
+                                 "be log-scaled")
+            ty = np.log10(ty)
         if extent is not None:
             xmin, xmax, ymin, ymax = extent
         else:
-            xmin, xmax = (np.min(x), np.max(x)) if len(x) else (0, 1)
-            ymin, ymax = (np.min(y), np.max(y)) if len(y) else (0, 1)
+            xmin, xmax = (tx.min(), tx.max()) if len(x) else (0, 1)
+            ymin, ymax = (ty.min(), ty.max()) if len(y) else (0, 1)
 
             # to avoid issues with singular data, expand the min/max pairs
             xmin, xmax = mtransforms.nonsingular(xmin, xmax, expander=0.1)
             ymin, ymax = mtransforms.nonsingular(ymin, ymax, expander=0.1)
+
+        nx1 = nx + 1
+        ny1 = ny + 1
+        nx2 = nx
+        ny2 = ny
+        n = nx1 * ny1 + nx2 * ny2
 
         # In the x-direction, the hexagons exactly cover the region from
         # xmin to xmax. Need some padding to avoid roundoff errors.
@@ -4645,76 +4753,48 @@ default: :rc:`scatter.edgecolors`
         xmax += padding
         sx = (xmax - xmin) / nx
         sy = (ymax - ymin) / ny
+        # Positions in hexagon index coordinates.
+        ix = (tx - xmin) / sx
+        iy = (ty - ymin) / sy
+        ix1 = np.round(ix).astype(int)
+        iy1 = np.round(iy).astype(int)
+        ix2 = np.floor(ix).astype(int)
+        iy2 = np.floor(iy).astype(int)
+        # flat indices, plus one so that out-of-range points go to position 0.
+        i1 = np.where((0 <= ix1) & (ix1 < nx1) & (0 <= iy1) & (iy1 < ny1),
+                      ix1 * ny1 + iy1 + 1, 0)
+        i2 = np.where((0 <= ix2) & (ix2 < nx2) & (0 <= iy2) & (iy2 < ny2),
+                      ix2 * ny2 + iy2 + 1, 0)
 
-        x = (x - xmin) / sx
-        y = (y - ymin) / sy
-        ix1 = np.round(x).astype(int)
-        iy1 = np.round(y).astype(int)
-        ix2 = np.floor(x).astype(int)
-        iy2 = np.floor(y).astype(int)
-
-        nx1 = nx + 1
-        ny1 = ny + 1
-        nx2 = nx
-        ny2 = ny
-        n = nx1 * ny1 + nx2 * ny2
-
-        d1 = (x - ix1) ** 2 + 3.0 * (y - iy1) ** 2
-        d2 = (x - ix2 - 0.5) ** 2 + 3.0 * (y - iy2 - 0.5) ** 2
+        d1 = (ix - ix1) ** 2 + 3.0 * (iy - iy1) ** 2
+        d2 = (ix - ix2 - 0.5) ** 2 + 3.0 * (iy - iy2 - 0.5) ** 2
         bdist = (d1 < d2)
-        if C is None:
-            lattice1 = np.zeros((nx1, ny1))
-            lattice2 = np.zeros((nx2, ny2))
-            c1 = (0 <= ix1) & (ix1 < nx1) & (0 <= iy1) & (iy1 < ny1) & bdist
-            c2 = (0 <= ix2) & (ix2 < nx2) & (0 <= iy2) & (iy2 < ny2) & ~bdist
-            np.add.at(lattice1, (ix1[c1], iy1[c1]), 1)
-            np.add.at(lattice2, (ix2[c2], iy2[c2]), 1)
+
+        if C is None:  # [1:] drops out-of-range points.
+            counts1 = np.bincount(i1[bdist], minlength=1 + nx1 * ny1)[1:]
+            counts2 = np.bincount(i2[~bdist], minlength=1 + nx2 * ny2)[1:]
+            accum = np.concatenate([counts1, counts2]).astype(float)
             if mincnt is not None:
-                lattice1[lattice1 < mincnt] = np.nan
-                lattice2[lattice2 < mincnt] = np.nan
-            accum = np.concatenate([lattice1.ravel(), lattice2.ravel()])
-            good_idxs = ~np.isnan(accum)
-
+                accum[accum < mincnt] = np.nan
+            C = np.ones(len(x))
         else:
-            if mincnt is None:
-                mincnt = 0
-
-            # create accumulation arrays
-            lattice1 = np.empty((nx1, ny1), dtype=object)
-            for i in range(nx1):
-                for j in range(ny1):
-                    lattice1[i, j] = []
-            lattice2 = np.empty((nx2, ny2), dtype=object)
-            for i in range(nx2):
-                for j in range(ny2):
-                    lattice2[i, j] = []
-
+            # store the C values in a list per hexagon index
+            Cs_at_i1 = [[] for _ in range(1 + nx1 * ny1)]
+            Cs_at_i2 = [[] for _ in range(1 + nx2 * ny2)]
             for i in range(len(x)):
                 if bdist[i]:
-                    if 0 <= ix1[i] < nx1 and 0 <= iy1[i] < ny1:
-                        lattice1[ix1[i], iy1[i]].append(C[i])
+                    Cs_at_i1[i1[i]].append(C[i])
                 else:
-                    if 0 <= ix2[i] < nx2 and 0 <= iy2[i] < ny2:
-                        lattice2[ix2[i], iy2[i]].append(C[i])
+                    Cs_at_i2[i2[i]].append(C[i])
+            if mincnt is None:
+                mincnt = 0
+            accum = np.array(
+                [reduce_C_function(acc) if len(acc) > mincnt else np.nan
+                 for Cs_at_i in [Cs_at_i1, Cs_at_i2]
+                 for acc in Cs_at_i[1:]],  # [1:] drops out-of-range points.
+                float)
 
-            for i in range(nx1):
-                for j in range(ny1):
-                    vals = lattice1[i, j]
-                    if len(vals) > mincnt:
-                        lattice1[i, j] = reduce_C_function(vals)
-                    else:
-                        lattice1[i, j] = np.nan
-            for i in range(nx2):
-                for j in range(ny2):
-                    vals = lattice2[i, j]
-                    if len(vals) > mincnt:
-                        lattice2[i, j] = reduce_C_function(vals)
-                    else:
-                        lattice2[i, j] = np.nan
-
-            accum = np.concatenate([lattice1.astype(float).ravel(),
-                                    lattice2.astype(float).ravel()])
-            good_idxs = ~np.isnan(accum)
+        good_idxs = ~np.isnan(accum)
 
         offsets = np.zeros((n, 2), float)
         offsets[:nx1 * ny1, 0] = np.repeat(np.arange(nx1), ny1)
@@ -4758,8 +4838,9 @@ default: :rc:`scatter.edgecolors`
                 edgecolors=edgecolors,
                 linewidths=linewidths,
                 offsets=offsets,
-                transOffset=mtransforms.AffineDeltaTransform(self.transData),
-                )
+                offset_transform=mtransforms.AffineDeltaTransform(
+                    self.transData),
+            )
 
         # Set normalizer if bins is 'log'
         if bins == 'log':
@@ -4771,8 +4852,7 @@ default: :rc:`scatter.edgecolors`
                 vmin = vmax = None
             bins = None
 
-        # autoscale the norm with current accum values if it hasn't
-        # been set
+        # autoscale the norm with current accum values if it hasn't been set
         if norm is not None:
             if norm.vmin is None and norm.vmax is None:
                 norm.autoscale(accum)
@@ -4789,7 +4869,7 @@ default: :rc:`scatter.edgecolors`
         collection.set_cmap(cmap)
         collection.set_norm(norm)
         collection.set_alpha(alpha)
-        collection.update(kwargs)
+        collection._internal_update(kwargs)
         collection._scale_norm(norm, vmin, vmax)
 
         corners = ((xmin, ymin), (xmax, ymax))
@@ -4802,98 +4882,61 @@ default: :rc:`scatter.edgecolors`
             return collection
 
         # Process marginals
-        if C is None:
-            C = np.ones(len(x))
+        bars = []
+        for zname, z, zmin, zmax, zscale, nbins in [
+                ("x", x, xmin, xmax, xscale, nx),
+                ("y", y, ymin, ymax, yscale, 2 * ny),
+        ]:
 
-        def coarse_bin(x, y, bin_edges):
-            """
-            Sort x-values into bins defined by *bin_edges*, then for all the
-            corresponding y-values in each bin use *reduce_c_function* to
-            compute the bin value.
-            """
-            nbins = len(bin_edges) - 1
-            # Sort x-values into bins
-            bin_idxs = np.searchsorted(bin_edges, x) - 1
-            mus = np.zeros(nbins) * np.nan
+            if zscale == "log":
+                bin_edges = np.geomspace(zmin, zmax, nbins + 1)
+            else:
+                bin_edges = np.linspace(zmin, zmax, nbins + 1)
+
+            verts = np.empty((nbins, 4, 2))
+            verts[:, 0, 0] = verts[:, 1, 0] = bin_edges[:-1]
+            verts[:, 2, 0] = verts[:, 3, 0] = bin_edges[1:]
+            verts[:, 0, 1] = verts[:, 3, 1] = .00
+            verts[:, 1, 1] = verts[:, 2, 1] = .05
+            if zname == "y":
+                verts = verts[:, :, ::-1]  # Swap x and y.
+
+            # Sort z-values into bins defined by bin_edges.
+            bin_idxs = np.searchsorted(bin_edges, z) - 1
+            values = np.empty(nbins)
             for i in range(nbins):
-                # Get y-values for each bin
-                yi = y[bin_idxs == i]
-                if len(yi) > 0:
-                    mus[i] = reduce_C_function(yi)
-            return mus
+                # Get C-values for each bin, and compute bin value with
+                # reduce_C_function.
+                ci = C[bin_idxs == i]
+                values[i] = reduce_C_function(ci) if len(ci) > 0 else np.nan
 
-        if xscale == 'log':
-            bin_edges = np.geomspace(xmin, xmax, nx + 1)
-        else:
-            bin_edges = np.linspace(xmin, xmax, nx + 1)
-        xcoarse = coarse_bin(xorig, C, bin_edges)
+            mask = ~np.isnan(values)
+            verts = verts[mask]
+            values = values[mask]
 
-        verts, values = [], []
-        for bin_left, bin_right, val in zip(
-                bin_edges[:-1], bin_edges[1:], xcoarse):
-            if np.isnan(val):
-                continue
-            verts.append([(bin_left, 0),
-                          (bin_left, 0.05),
-                          (bin_right, 0.05),
-                          (bin_right, 0)])
-            values.append(val)
+            trans = getattr(self, f"get_{zname}axis_transform")(which="grid")
+            bar = mcoll.PolyCollection(
+                verts, transform=trans, edgecolors="face")
+            bar.set_array(values)
+            bar.set_cmap(cmap)
+            bar.set_norm(norm)
+            bar.set_alpha(alpha)
+            bar._internal_update(kwargs)
+            bars.append(self.add_collection(bar, autolim=False))
 
-        values = np.array(values)
-        trans = self.get_xaxis_transform(which='grid')
-
-        hbar = mcoll.PolyCollection(verts, transform=trans, edgecolors='face')
-
-        hbar.set_array(values)
-        hbar.set_cmap(cmap)
-        hbar.set_norm(norm)
-        hbar.set_alpha(alpha)
-        hbar.update(kwargs)
-        self.add_collection(hbar, autolim=False)
-
-        if yscale == 'log':
-            bin_edges = np.geomspace(ymin, ymax, 2 * ny + 1)
-        else:
-            bin_edges = np.linspace(ymin, ymax, 2 * ny + 1)
-        ycoarse = coarse_bin(yorig, C, bin_edges)
-
-        verts, values = [], []
-        for bin_bottom, bin_top, val in zip(
-                bin_edges[:-1], bin_edges[1:], ycoarse):
-            if np.isnan(val):
-                continue
-            verts.append([(0, bin_bottom),
-                          (0, bin_top),
-                          (0.05, bin_top),
-                          (0.05, bin_bottom)])
-            values.append(val)
-
-        values = np.array(values)
-
-        trans = self.get_yaxis_transform(which='grid')
-
-        vbar = mcoll.PolyCollection(verts, transform=trans, edgecolors='face')
-        vbar.set_array(values)
-        vbar.set_cmap(cmap)
-        vbar.set_norm(norm)
-        vbar.set_alpha(alpha)
-        vbar.update(kwargs)
-        self.add_collection(vbar, autolim=False)
-
-        collection.hbar = hbar
-        collection.vbar = vbar
+        collection.hbar, collection.vbar = bars
 
         def on_changed(collection):
-            hbar.set_cmap(collection.get_cmap())
-            hbar.set_clim(collection.get_clim())
-            vbar.set_cmap(collection.get_cmap())
-            vbar.set_clim(collection.get_clim())
+            collection.hbar.set_cmap(collection.get_cmap())
+            collection.hbar.set_cmap(collection.get_cmap())
+            collection.vbar.set_clim(collection.get_clim())
+            collection.vbar.set_clim(collection.get_clim())
 
         collection.callbacks.connect('changed', on_changed)
 
         return collection
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def arrow(self, x, y, dx, dy, **kwargs):
         """
         Add an arrow to the Axes.
@@ -4932,7 +4975,7 @@ default: :rc:`scatter.edgecolors`
         self._request_autoscale_view()
         return a
 
-    @docstring.copy(mquiver.QuiverKey.__init__)
+    @_docstring.copy(mquiver.QuiverKey.__init__)
     def quiverkey(self, Q, X, Y, U, label, **kwargs):
         qk = mquiver.QuiverKey(Q, X, Y, U, label, **kwargs)
         self.add_artist(qk)
@@ -4948,7 +4991,7 @@ default: :rc:`scatter.edgecolors`
 
     # args can by a combination if X, Y, U, V, C and all should be replaced
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def quiver(self, *args, **kwargs):
         """%(quiver_doc)s"""
         # Make sure units are handled for x and y values
@@ -4960,7 +5003,7 @@ default: :rc:`scatter.edgecolors`
 
     # args can be some combination of X, Y, U, V, C and all should be replaced
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def barbs(self, *args, **kwargs):
         """%(barbs_doc)s"""
         # Make sure units are handled for x and y values
@@ -5226,7 +5269,7 @@ default: :rc:`scatter.edgecolors`
             dir="horizontal", ind="x", dep="y"
         )
     fill_between = _preprocess_data(
-        docstring.dedent_interpd(fill_between),
+        _docstring.dedent_interpd(fill_between),
         replace_names=["x", "y1", "y2", "where"])
 
     def fill_betweenx(self, y, x1, x2=0, where=None,
@@ -5240,7 +5283,7 @@ default: :rc:`scatter.edgecolors`
             dir="vertical", ind="y", dep="x"
         )
     fill_betweenx = _preprocess_data(
-        docstring.dedent_interpd(fill_betweenx),
+        _docstring.dedent_interpd(fill_betweenx),
         replace_names=["y", "x1", "x2", "where"])
 
     #### plotting z(x, y): imshow, pcolor and relatives, contour
@@ -5478,7 +5521,7 @@ default: :rc:`scatter.edgecolors`
         _valid_shading = ['gouraud', 'nearest', 'flat', 'auto']
         try:
             _api.check_in_list(_valid_shading, shading=shading)
-        except ValueError as err:
+        except ValueError:
             _api.warn_external(f"shading value '{shading}' not in list of "
                                f"valid values {_valid_shading}. Setting "
                                "shading='auto'.")
@@ -5585,8 +5628,11 @@ default: :rc:`scatter.edgecolors`
         return X, Y, C, shading
 
     def _pcolor_grid_deprecation_helper(self):
-        if any(axis._major_tick_kw["gridOn"]
-               for axis in self._get_axis_list()):
+        grid_active = any(axis._major_tick_kw["gridOn"]
+                          for axis in self._axis_map.values())
+        # explicit is-True check because get_axisbelow() can also be 'line'
+        grid_hidden_by_pcolor = self.get_axisbelow() is True
+        if grid_active and not grid_hidden_by_pcolor:
             _api.warn_deprecated(
                 "3.5", message="Auto-removal of grids by pcolor() and "
                 "pcolormesh() is deprecated since %(since)s and will be "
@@ -5594,7 +5640,7 @@ default: :rc:`scatter.edgecolors`
         self.grid(False)
 
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def pcolor(self, *args, shading=None, alpha=None, norm=None, cmap=None,
                vmin=None, vmax=None, **kwargs):
         r"""
@@ -5838,7 +5884,7 @@ default: :rc:`scatter.edgecolors`
         return collection
 
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def pcolormesh(self, *args, alpha=None, norm=None, cmap=None, vmin=None,
                    vmax=None, shading=None, antialiased=False, **kwargs):
         """
@@ -6065,7 +6111,7 @@ default: :rc:`scatter.edgecolors`
         return collection
 
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def pcolorfast(self, *args, alpha=None, norm=None, cmap=None, vmin=None,
                    vmax=None, **kwargs):
         """
@@ -6255,7 +6301,7 @@ default: :rc:`scatter.edgecolors`
         return ret
 
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def contour(self, *args, **kwargs):
         """
         Plot contour lines.
@@ -6271,7 +6317,7 @@ default: :rc:`scatter.edgecolors`
         return contours
 
     @_preprocess_data()
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def contourf(self, *args, **kwargs):
         """
         Plot filled contours.
@@ -6607,6 +6653,7 @@ such objects
             m, bins = np.histogram(x[i], bins, weights=w[i], **hist_kwargs)
             tops.append(m)
         tops = np.array(tops, float)  # causes problems later if it's an int
+        bins = np.array(bins, float)  # causes problems if float16
         if stacked:
             tops = tops.cumsum(axis=0)
             # If a stacked density plot, normalize so the area of all the
@@ -6756,11 +6803,11 @@ such objects
         for patch, lbl in itertools.zip_longest(patches, labels):
             if patch:
                 p = patch[0]
-                p.update(kwargs)
+                p._internal_update(kwargs)
                 if lbl is not None:
                     p.set_label(lbl)
                 for p in patch[1:]:
-                    p.update(kwargs)
+                    p._internal_update(kwargs)
                     p.set_label('_nolegend_')
 
         if nx == 1:
@@ -6818,7 +6865,7 @@ such objects
         else:
             _color = self._get_lines.get_next_color()
         if fill:
-            kwargs.setdefault('edgecolor', 'none')
+            kwargs.setdefault('linewidth', 0)
             kwargs.setdefault('facecolor', _color)
         else:
             kwargs.setdefault('edgecolor', _color)
@@ -6848,7 +6895,7 @@ such objects
         return patch
 
     @_preprocess_data(replace_names=["x", "y", "weights"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def hist2d(self, x, y, bins=10, range=None, density=False, weights=None,
                cmin=None, cmax=None, **kwargs):
         """
@@ -6960,7 +7007,7 @@ such objects
         return h, xedges, yedges, pc
 
     @_preprocess_data(replace_names=["x"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def psd(self, x, NFFT=None, Fs=None, Fc=None, detrend=None,
             window=None, noverlap=None, pad_to=None,
             sides=None, scale_by_freq=None, return_line=None, **kwargs):
@@ -7071,7 +7118,7 @@ such objects
             return pxx, freqs, line
 
     @_preprocess_data(replace_names=["x", "y"], label_namer="y")
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def csd(self, x, y, NFFT=None, Fs=None, Fc=None, detrend=None,
             window=None, noverlap=None, pad_to=None,
             sides=None, scale_by_freq=None, return_line=None, **kwargs):
@@ -7173,7 +7220,7 @@ such objects
             return pxy, freqs, line
 
     @_preprocess_data(replace_names=["x"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def magnitude_spectrum(self, x, Fs=None, Fc=None, window=None,
                            pad_to=None, sides=None, scale=None,
                            **kwargs):
@@ -7259,7 +7306,7 @@ such objects
         return spec, freqs, line
 
     @_preprocess_data(replace_names=["x"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def angle_spectrum(self, x, Fs=None, Fc=None, window=None,
                        pad_to=None, sides=None, **kwargs):
         """
@@ -7328,7 +7375,7 @@ such objects
         return spec, freqs, lines[0]
 
     @_preprocess_data(replace_names=["x"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def phase_spectrum(self, x, Fs=None, Fc=None, window=None,
                        pad_to=None, sides=None, **kwargs):
         """
@@ -7397,15 +7444,14 @@ such objects
         return spec, freqs, lines[0]
 
     @_preprocess_data(replace_names=["x", "y"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def cohere(self, x, y, NFFT=256, Fs=2, Fc=0, detrend=mlab.detrend_none,
                window=mlab.window_hanning, noverlap=0, pad_to=None,
                sides='default', scale_by_freq=None, **kwargs):
         r"""
         Plot the coherence between *x* and *y*.
 
-        Plot the coherence between *x* and *y*.  Coherence is the
-        normalized cross spectral density:
+        Coherence is the normalized cross spectral density:
 
         .. math::
 
@@ -7450,7 +7496,8 @@ such objects
         """
         cxy, freqs = mlab.cohere(x=x, y=y, NFFT=NFFT, Fs=Fs, detrend=detrend,
                                  window=window, noverlap=noverlap,
-                                 scale_by_freq=scale_by_freq)
+                                 scale_by_freq=scale_by_freq, sides=sides,
+                                 pad_to=pad_to)
         freqs += Fc
 
         self.plot(freqs, cxy, **kwargs)
@@ -7461,7 +7508,7 @@ such objects
         return cxy, freqs
 
     @_preprocess_data(replace_names=["x"])
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def specgram(self, x, NFFT=None, Fs=None, Fc=None, detrend=None,
                  window=None, noverlap=None,
                  cmap=None, xextent=None, pad_to=None, sides=None,
@@ -7617,7 +7664,7 @@ such objects
 
         return spec, freqs, t, im
 
-    @docstring.dedent_interpd
+    @_docstring.dedent_interpd
     def spy(self, Z, precision=0, marker=None, markersize=None,
             aspect='equal', origin="upper", **kwargs):
         """
@@ -7861,8 +7908,9 @@ such objects
           The method used to calculate the estimator bandwidth.  This can be
           'scott', 'silverman', a scalar constant or a callable.  If a
           scalar, this will be used directly as `kde.factor`.  If a
-          callable, it should take a `GaussianKDE` instance as its only
-          parameter and return a scalar. If None (default), 'scott' is used.
+          callable, it should take a `matplotlib.mlab.GaussianKDE` instance as
+          its only parameter and return a scalar. If None (default), 'scott'
+          is used.
 
         data : indexable object, optional
             DATA_PARAMETER_PLACEHOLDER
@@ -7899,8 +7947,8 @@ such objects
         """
 
         def _kde_method(X, coords):
-            if hasattr(X, 'values'):  # support pandas.Series
-                X = X.values
+            # Unpack in case of e.g. Pandas or xarray object
+            X = cbook._unpack_to_numpy(X)
             # fallback gracefully if the vector contains only one value
             if np.all(X[0] == X):
                 return (X[0] == coords).astype(float)
@@ -8094,3 +8142,13 @@ such objects
     tricontourf = mtri.tricontourf
     tripcolor = mtri.tripcolor
     triplot = mtri.triplot
+
+    def _get_aspect_ratio(self):
+        """
+        Convenience method to calculate the aspect ratio of the axes in
+        the display coordinate system.
+        """
+        figure_size = self.get_figure().get_size_inches()
+        ll, ur = self.get_position() * figure_size
+        width, height = ur - ll
+        return height / (width * self.get_data_ratio())

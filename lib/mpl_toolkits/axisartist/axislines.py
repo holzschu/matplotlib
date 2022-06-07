@@ -41,6 +41,7 @@ from the axis as some gridlines can never pass any axis.
 
 import numpy as np
 
+import matplotlib as mpl
 from matplotlib import _api, rcParams
 import matplotlib.axes as maxes
 from matplotlib.path import Path
@@ -98,11 +99,14 @@ class AxisArtistHelper:
 
     class _Base:
         """Base class for axis helper."""
-        def __init__(self):
-            self.delta1, self.delta2 = 0.00001, 0.00001
 
         def update_lim(self, axes):
             pass
+
+        delta1 = _api.deprecated("3.6")(
+            property(lambda self: 0.00001, lambda self, value: None))
+        delta2 = _api.deprecated("3.6")(
+            property(lambda self: 0.00001, lambda self, value: None))
 
     class Fixed(_Base):
         """Helper class for a fixed (in the axes coordinate) axis."""
@@ -204,38 +208,32 @@ class AxisArtistHelperRectlinear:
 
         def get_tick_iterators(self, axes):
             """tick_loc, tick_angle, tick_label"""
-
-            loc = self._loc
-
-            if loc in ["bottom", "top"]:
+            if self._loc in ["bottom", "top"]:
                 angle_normal, angle_tangent = 90, 0
             else:
                 angle_normal, angle_tangent = 0, 90
 
             major = self.axis.major
-            majorLocs = major.locator()
-            majorLabels = major.formatter.format_ticks(majorLocs)
+            major_locs = major.locator()
+            major_labels = major.formatter.format_ticks(major_locs)
 
             minor = self.axis.minor
-            minorLocs = minor.locator()
-            minorLabels = minor.formatter.format_ticks(minorLocs)
+            minor_locs = minor.locator()
+            minor_labels = minor.formatter.format_ticks(minor_locs)
 
             tick_to_axes = self.get_tick_transform(axes) - axes.transAxes
 
             def _f(locs, labels):
                 for x, l in zip(locs, labels):
-
                     c = list(self.passthru_pt)  # copy
                     c[self.nth_coord] = x
-
                     # check if the tick point is inside axes
                     c2 = tick_to_axes.transform(c)
-                    if (0 - self.delta1
-                            <= c2[self.nth_coord]
-                            <= 1 + self.delta2):
+                    if mpl.transforms._interval_contains_close(
+                            (0, 1), c2[self.nth_coord]):
                         yield c, angle_normal, angle_tangent, l
 
-            return _f(majorLocs, majorLabels), _f(minorLocs, minorLabels)
+            return _f(major_locs, major_labels), _f(minor_locs, minor_labels)
 
     class Floating(AxisArtistHelper.Floating):
         def __init__(self, axes, nth_coord,
@@ -289,12 +287,12 @@ class AxisArtistHelperRectlinear:
                 angle_normal, angle_tangent = 0, 90
 
             major = self.axis.major
-            majorLocs = major.locator()
-            majorLabels = major.formatter.format_ticks(majorLocs)
+            major_locs = major.locator()
+            major_labels = major.formatter.format_ticks(major_locs)
 
             minor = self.axis.minor
-            minorLocs = minor.locator()
-            minorLabels = minor.formatter.format_ticks(minorLocs)
+            minor_locs = minor.locator()
+            minor_labels = minor.formatter.format_ticks(minor_locs)
 
             data_to_axes = axes.transData - axes.transAxes
 
@@ -303,40 +301,27 @@ class AxisArtistHelperRectlinear:
                     c = [self._value, self._value]
                     c[self.nth_coord] = x
                     c1, c2 = data_to_axes.transform(c)
-                    if (0 <= c1 <= 1 and 0 <= c2 <= 1
-                            and 0 - self.delta1
-                                <= [c1, c2][self.nth_coord]
-                                <= 1 + self.delta2):
+                    if 0 <= c1 <= 1 and 0 <= c2 <= 1:
                         yield c, angle_normal, angle_tangent, l
 
-            return _f(majorLocs, majorLabels), _f(minorLocs, minorLabels)
+            return _f(major_locs, major_labels), _f(minor_locs, minor_labels)
 
 
 class GridHelperBase:
 
     def __init__(self):
-        self._force_update = True  # Remove together with invalidate()/valid().
         self._old_limits = None
         super().__init__()
 
     def update_lim(self, axes):
         x1, x2 = axes.get_xlim()
         y1, y2 = axes.get_ylim()
-        if self._force_update or self._old_limits != (x1, x2, y1, y2):
+        if self._old_limits != (x1, x2, y1, y2):
             self._update_grid(x1, y1, x2, y2)
-            self._force_update = False
             self._old_limits = (x1, x2, y1, y2)
 
     def _update_grid(self, x1, y1, x2, y2):
         """Cache relevant computations when the axes limits have changed."""
-
-    @_api.deprecated("3.4")
-    def invalidate(self):
-        self._force_update = True
-
-    @_api.deprecated("3.4")
-    def valid(self):
-        return not self._force_update
 
     def get_gridlines(self, which, axis):
         """
@@ -514,12 +499,13 @@ class Axes(maxes.Axes):
         # It is done inside the cla.
         self.gridlines = self.new_gridlines(grid_helper)
 
-    def cla(self):
-        # gridlines need to b created before cla() since cla calls grid()
+    def clear(self):
+        # docstring inherited
+        # gridlines need to be created before clear() since clear calls grid()
         self._init_gridlines()
-        super().cla()
+        super().clear()
 
-        # the clip_path should be set after Axes.cla() since that's
+        # the clip_path should be set after Axes.clear() since that's
         # when a patch is created.
         self.gridlines.set_clip_path(self.axes.patch)
 
@@ -554,10 +540,6 @@ class Axes(maxes.Axes):
             children = []
         children.extend(super().get_children())
         return children
-
-    @_api.deprecated("3.4")
-    def invalidate_grid_helper(self):
-        self._grid_helper.invalidate()
 
     def new_fixed_axis(self, loc, offset=None):
         gh = self.get_grid_helper()

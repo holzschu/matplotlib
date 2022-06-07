@@ -17,10 +17,13 @@ at your terminal, followed by::
 
 at the ipython shell prompt.
 
-For the most part, direct use of the object-oriented library is encouraged when
-programming; pyplot is primarily for working interactively.  The exceptions are
-the pyplot functions `.pyplot.figure`, `.pyplot.subplot`, `.pyplot.subplots`,
-and `.pyplot.savefig`, which can greatly simplify scripting.
+For the most part, direct use of the explicit object-oriented library is
+encouraged when programming; the implicit pyplot interface is primarily for
+working interactively. The exceptions to this suggestion are the pyplot
+functions `.pyplot.figure`, `.pyplot.subplot`, `.pyplot.subplots`, and
+`.pyplot.savefig`, which can greatly simplify scripting.  See
+:ref:`api_interfaces` for an explanation of the tradeoffs between the implicit
+and explicit interfaces.
 
 Modules include:
 
@@ -79,6 +82,7 @@ developed and maintained by a host of others.
 
 Occasionally the internal documentation (python docstrings) will refer
 to MATLAB&reg;, a registered trademark of The MathWorks, Inc.
+
 """
 
 import atexit
@@ -106,9 +110,9 @@ from packaging.version import parse as parse_version
 
 # cbook must import matplotlib only within function
 # definitions, so it is safe to import from it here.
-from . import _api, _version, cbook, docstring, rcsetup
-from matplotlib.cbook import MatplotlibDeprecationWarning, sanitize_sequence
-from matplotlib.cbook import mplDeprecation  # deprecated
+from . import _api, _version, cbook, _docstring, rcsetup
+from matplotlib.cbook import sanitize_sequence
+from matplotlib._api import MatplotlibDeprecationWarning
 from matplotlib.rcsetup import validate_backend, cycler
 
 
@@ -196,7 +200,7 @@ def _check_versions():
             ("cycler", "0.10"),
             ("dateutil", "2.7"),
             ("kiwisolver", "1.0.1"),
-            ("numpy", "1.17"),
+            ("numpy", "1.19"),
             ("pyparsing", "2.2.1"),
     ]:
         module = importlib.import_module(modname)
@@ -278,7 +282,7 @@ def _logged_cached(fmt, func=None):
     return wrapper
 
 
-_ExecInfo = namedtuple("_ExecInfo", "executable version")
+_ExecInfo = namedtuple("_ExecInfo", "executable raw_version version")
 
 
 class ExecutableNotFoundError(FileNotFoundError):
@@ -302,8 +306,8 @@ def _get_executable_info(name):
     ----------
     name : str
         The executable to query.  The following values are currently supported:
-        "dvipng", "gs", "inkscape", "magick", "pdftops".  This list is subject
-        to change without notice.
+        "dvipng", "gs", "inkscape", "magick", "pdftocairo", "pdftops".  This
+        list is subject to change without notice.
 
     Returns
     -------
@@ -315,7 +319,10 @@ def _get_executable_info(name):
     ------
     ExecutableNotFoundError
         If the executable is not found or older than the oldest version
-        supported by Matplotlib.
+        supported by Matplotlib.  For debugging purposes, it is also
+        possible to "hide" an executable from Matplotlib by adding it to the
+        :envvar:`_MPLHIDEEXECUTABLES` environment variable (a comma-separated
+        list), which must be set prior to any calls to this function.
     ValueError
         If the executable is not one that we know how to query.
     """
@@ -339,16 +346,20 @@ def _get_executable_info(name):
             raise ExecutableNotFoundError(str(_ose)) from _ose
         match = re.search(regex, output)
         if match:
-            version = parse_version(match.group(1))
+            raw_version = match.group(1)
+            version = parse_version(raw_version)
             if min_ver is not None and version < parse_version(min_ver):
                 raise ExecutableNotFoundError(
                     f"You have {args[0]} version {version} but the minimum "
                     f"version supported by Matplotlib is {min_ver}")
-            return _ExecInfo(args[0], version)
+            return _ExecInfo(args[0], raw_version, version)
         else:
             raise ExecutableNotFoundError(
                 f"Failed to determine the version of {args[0]} from "
                 f"{' '.join(args)}, which output {output}")
+
+    if name in os.environ.get("_MPLHIDEEXECUTABLES", "").split(","):
+        raise ExecutableNotFoundError(f"{name} was hidden")
 
     if name == "dvipng":
         return impl(["dvipng", "-version"], "(?m)^dvipng(?: .*)? (.+)", "1.6")
@@ -401,11 +412,13 @@ def _get_executable_info(name):
         else:
             path = "convert"
         info = impl([path, "--version"], r"^Version: ImageMagick (\S*)")
-        if info.version == parse_version("7.0.10-34"):
+        if info.raw_version == "7.0.10-34":
             # https://github.com/ImageMagick/ImageMagick/issues/2720
             raise ExecutableNotFoundError(
                 f"You have ImageMagick {info.version}, which is unsupported")
         return info
+    elif name == "pdftocairo":
+        return impl(["pdftocairo", "-v"], "pdftocairo version (.*)")
     elif name == "pdftops":
         info = impl(["pdftops", "-v"], "^pdftops version (.*)",
                     ignore_exit_code=True)
@@ -584,7 +597,7 @@ _deprecated_ignore_map = {}
 _deprecated_remain_as_none = {}
 
 
-@docstring.Substitution(
+@_docstring.Substitution(
     "\n".join(map("- {}".format, sorted(rcsetup._validators, key=str.lower)))
 )
 class RcParams(MutableMapping, dict):
@@ -699,7 +712,10 @@ class RcParams(MutableMapping, dict):
                         if pattern_re.search(key))
 
     def copy(self):
-        return {k: dict.__getitem__(self, k) for k in self}
+        rccopy = RcParams()
+        for k in self:  # Skip deprecations and revalidation.
+            dict.__setitem__(rccopy, k, dict.__getitem__(self, k))
+        return rccopy
 
 
 def rc_params(fail_on_error=False):
@@ -738,10 +754,7 @@ def _open_file_or_url(fname):
             yield (line.decode('utf-8') for line in f)
     else:
         fname = os.path.expanduser(fname)
-        encoding = locale.getpreferredencoding(do_setlocale=False)
-        if encoding is None:
-            encoding = "utf-8"
-        with open(fname, encoding=encoding) as f:
+        with open(fname, encoding='utf-8') as f:
             yield f
 
 
@@ -768,7 +781,7 @@ def _rc_params_in_file(fname, transform=lambda x: x, fail_on_error=False):
         try:
             for line_no, line in enumerate(fd, 1):
                 line = transform(line)
-                strippedline = line.split('#', 1)[0].strip()
+                strippedline = cbook._strip_comment(line)
                 if not strippedline:
                     continue
                 tup = strippedline.split(':', 1)
@@ -779,16 +792,15 @@ def _rc_params_in_file(fname, transform=lambda x: x, fail_on_error=False):
                 key, val = tup
                 key = key.strip()
                 val = val.strip()
+                if val.startswith('"') and val.endswith('"'):
+                    val = val[1:-1]  # strip double quotes
                 if key in rc_temp:
                     _log.warning('Duplicate key in file %r, line %d (%r)',
                                  fname, line_no, line.rstrip('\n'))
                 rc_temp[key] = (val, line, line_no)
         except UnicodeDecodeError:
-            _log.warning('Cannot decode configuration file %s with encoding '
-                         '%s, check LANG and LC_* variables.',
-                         fname,
-                         locale.getpreferredencoding(do_setlocale=False)
-                         or 'utf-8 (default)')
+            _log.warning('Cannot decode configuration file %r as utf-8.',
+                         fname)
             raise
 
     config = RcParams()
@@ -877,8 +889,8 @@ dict.setdefault(rcParamsDefault, "backend", rcsetup._auto_backend_sentinel)
 rcParams = RcParams()  # The global instance.
 dict.update(rcParams, dict.items(rcParamsDefault))
 dict.update(rcParams, _rc_params_in_file(matplotlib_fname()))
+rcParamsOrig = rcParams.copy()
 with _api.suppress_matplotlib_deprecation_warning():
-    rcParamsOrig = RcParams(rcParams.copy())
     # This also checks that all rcParams are indeed listed in the template.
     # Assigning to rcsetup.defaultParams is left only for backcompat.
     defaultParams = rcsetup.defaultParams = {
@@ -972,7 +984,7 @@ def rcdefaults():
     Restore the `.rcParams` from Matplotlib's internal default style.
 
     Style-blacklisted `.rcParams` (defined in
-    `matplotlib.style.core.STYLE_BLACKLIST`) are not updated.
+    ``matplotlib.style.core.STYLE_BLACKLIST``) are not updated.
 
     See Also
     --------
@@ -997,7 +1009,7 @@ def rc_file_defaults():
     Restore the `.rcParams` from the original rc file loaded by Matplotlib.
 
     Style-blacklisted `.rcParams` (defined in
-    `matplotlib.style.core.STYLE_BLACKLIST`) are not updated.
+    ``matplotlib.style.core.STYLE_BLACKLIST``) are not updated.
     """
     # Deprecation warnings were already handled when creating rcParamsOrig, no
     # need to reemit them here.
@@ -1012,7 +1024,7 @@ def rc_file(fname, *, use_default_template=True):
     Update `.rcParams` from file.
 
     Style-blacklisted `.rcParams` (defined in
-    `matplotlib.style.core.STYLE_BLACKLIST`) are not updated.
+    ``matplotlib.style.core.STYLE_BLACKLIST``) are not updated.
 
     Parameters
     ----------
@@ -1217,7 +1229,6 @@ def test(verbosity=None, coverage=False, **kwargs):
         return -1
 
     old_backend = get_backend()
-    old_recursionlimit = sys.getrecursionlimit()
     try:
         use('agg')
 
@@ -1433,9 +1444,9 @@ def _preprocess_data(func=None, *, replace_names=None, label_namer=None):
 
 _log.debug('interactive is %s', is_interactive())
 _log.debug('platform is %s', sys.platform)
-_log.debug('loaded modules: %s', list(sys.modules))
 
 
 # workaround: we must defer colormaps import to after loading rcParams, because
 # colormap creation depends on rcParams
 from matplotlib.cm import _colormaps as colormaps
+from matplotlib.colors import _color_sequences as color_sequences

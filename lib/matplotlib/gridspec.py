@@ -5,8 +5,10 @@ r"""
 The `GridSpec` specifies the overall grid structure. Individual cells within
 the grid are referenced by `SubplotSpec`\s.
 
-See the tutorial :doc:`/tutorials/intermediate/gridspec` for a comprehensive
-usage guide.
+Often, users need not access this module directly, and can use higher-level
+methods like `~.pyplot.subplots`, `~.pyplot.subplot_mosaic` and
+`~.Figure.subfigures`. See the tutorial
+:doc:`/tutorials/intermediate/arranging_axes` for a guide.
 """
 
 import copy
@@ -16,7 +18,7 @@ from numbers import Integral
 import numpy as np
 
 import matplotlib as mpl
-from matplotlib import _api, _pylab_helpers, tight_layout, rcParams
+from matplotlib import _api, _pylab_helpers, _tight_layout, rcParams
 from matplotlib.transforms import Bbox
 
 _log = logging.getLogger(__name__)
@@ -39,7 +41,7 @@ class GridSpecBase:
             relative width of ``width_ratios[i] / sum(width_ratios)``.
             If not given, all columns will have the same width.
         height_ratios : array-like of length *nrows*, optional
-            Defines the relative heights of the rows. Each column gets a
+            Defines the relative heights of the rows. Each row gets a
             relative height of ``height_ratios[i] / sum(height_ratios)``.
             If not given, all rows will have the same height.
         """
@@ -342,7 +344,7 @@ class GridSpec(GridSpecBase):
         nrows, ncols : int
             The number of rows and columns of the grid.
 
-        figure : `~.figure.Figure`, optional
+        figure : `.Figure`, optional
             Only used for constrained layout to create a proper layoutgrid.
 
         left, right, top, bottom : float, optional
@@ -369,7 +371,7 @@ class GridSpec(GridSpecBase):
             If not given, all columns will have the same width.
 
         height_ratios : array-like of length *nrows*, optional
-            Defines the relative heights of the rows. Each column gets a
+            Defines the relative heights of the rows. Each row gets a
             relative height of ``height_ratios[i] / sum(height_ratios)``.
             If not given, all rows will have the same height.
 
@@ -464,7 +466,7 @@ class GridSpec(GridSpecBase):
             fit into.
         """
 
-        subplotspec_list = tight_layout.get_subplotspec_list(
+        subplotspec_list = _tight_layout.get_subplotspec_list(
             figure.axes, grid_spec=self)
         if None in subplotspec_list:
             _api.warn_external("This figure includes Axes that are not "
@@ -472,9 +474,9 @@ class GridSpec(GridSpecBase):
                                "might be incorrect.")
 
         if renderer is None:
-            renderer = tight_layout.get_renderer(figure)
+            renderer = figure._get_renderer()
 
-        kwargs = tight_layout.get_tight_layout_figure(
+        kwargs = _tight_layout.get_tight_layout_figure(
             figure, figure.axes, subplotspec_list, renderer,
             pad=pad, h_pad=h_pad, w_pad=w_pad, rect=rect)
         if kwargs:
@@ -621,9 +623,6 @@ class SubplotSpec:
     def num2(self, value):
         self._num2 = value
 
-    def __getstate__(self):
-        return {**self.__dict__}
-
     def get_gridspec(self):
         return self._gridspec
 
@@ -665,8 +664,7 @@ class SubplotSpec:
     def is_last_col(self):
         return self.colspan.stop == self.get_gridspec().ncols
 
-    @_api.delete_parameter("3.4", "return_all")
-    def get_position(self, figure, return_all=False):
+    def get_position(self, figure):
         """
         Update the subplot position from ``figure.subplotpars``.
         """
@@ -680,12 +678,7 @@ class SubplotSpec:
         fig_top = fig_tops[rows].max()
         fig_left = fig_lefts[cols].min()
         fig_right = fig_rights[cols].max()
-        figbox = Bbox.from_extents(fig_left, fig_bottom, fig_right, fig_top)
-
-        if return_all:
-            return figbox, rows[0], cols[0], nrows, ncols
-        else:
-            return figbox
+        return Bbox.from_extents(fig_left, fig_bottom, fig_right, fig_top)
 
     def get_topmost_subplotspec(self):
         """

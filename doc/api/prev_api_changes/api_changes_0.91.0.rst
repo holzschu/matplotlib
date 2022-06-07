@@ -31,12 +31,12 @@ Changes for 0.91.0
   files. In the future the class might actually parse the font to
   allow e.g.,  subsetting.
 
-* :mod:`matplotlib.ft2font` now supports ``FT_Attach_File``. In
+* ``matplotlib.ft2font`` now supports ``FT_Attach_File``. In
   practice this can be used to read an afm file in addition to a
   pfa/pfb file, to get metrics and kerning information for a Type 1
   font.
 
-* The :class:`.AFM` class now supports querying CapHeight and stem
+* The ``AFM`` class now supports querying CapHeight and stem
   widths. The get_name_char method now has an isord kwarg like
   get_width_char.
 

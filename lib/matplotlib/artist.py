@@ -167,7 +167,7 @@ class Artist:
         # Normally, artist classes need to be queried for mouseover info if and
         # only if they override get_cursor_data.
         self._mouseover = type(self).get_cursor_data != Artist.get_cursor_data
-        self._callbacks = cbook.CallbackRegistry()
+        self._callbacks = cbook.CallbackRegistry(signals=["pchanged"])
         try:
             self.axes = None
         except AttributeError:
@@ -185,7 +185,7 @@ class Artist:
     def __getstate__(self):
         d = self.__dict__.copy()
         # remove the unpicklable remove method, this will get re-added on load
-        # (by the axes) if the artist lives on an axes.
+        # (by the Axes) if the artist lives on an Axes.
         d['stale_callback'] = None
         return d
 
@@ -215,10 +215,8 @@ class Artist:
             if hasattr(self, 'axes') and self.axes:
                 # remove from the mouse hit list
                 self.axes._mouseover_set.discard(self)
-                # mark the axes as stale
                 self.axes.stale = True
-                # decouple the artist from the axes
-                self.axes = None
+                self.axes = None  # decouple the artist from the Axes
                 _ax_flag = True
 
             if self.figure:
@@ -237,13 +235,13 @@ class Artist:
     def have_units(self):
         """Return whether units are set on any axis."""
         ax = self.axes
-        return ax and any(axis.have_units() for axis in ax._get_axis_list())
+        return ax and any(axis.have_units() for axis in ax._axis_map.values())
 
     def convert_xunits(self, x):
         """
         Convert *x* using the unit type of the xaxis.
 
-        If the artist is not in contained in an Axes or if the xaxis does not
+        If the artist is not contained in an Axes or if the xaxis does not
         have units, *x* itself is returned.
         """
         ax = getattr(self, 'axes', None)
@@ -255,7 +253,7 @@ class Artist:
         """
         Convert *y* using the unit type of the yaxis.
 
-        If the artist is not in contained in an Axes or if the yaxis does not
+        If the artist is not contained in an Axes or if the yaxis does not
         have units, *y* itself is returned.
         """
         ax = getattr(self, 'axes', None)
@@ -300,7 +298,7 @@ class Artist:
         if val and self.stale_callback is not None:
             self.stale_callback(self, val)
 
-    def get_window_extent(self, renderer):
+    def get_window_extent(self, renderer=None):
         """
         Get the artist's bounding box in display space.
 
@@ -320,24 +318,7 @@ class Artist:
         """
         return Bbox([[0, 0], [0, 0]])
 
-    def _get_clipping_extent_bbox(self):
-        """
-        Return a bbox with the extents of the intersection of the clip_path
-        and clip_box for this artist, or None if both of these are
-        None, or ``get_clip_on`` is False.
-        """
-        bbox = None
-        if self.get_clip_on():
-            clip_box = self.get_clip_box()
-            if clip_box is not None:
-                bbox = clip_box
-            clip_path = self.get_clip_path()
-            if clip_path is not None and bbox is not None:
-                clip_path = clip_path.get_fully_transformed_path()
-                bbox = Bbox.intersection(bbox, clip_path.get_extents())
-        return bbox
-
-    def get_tightbbox(self, renderer):
+    def get_tightbbox(self, renderer=None):
         """
         Like `.Artist.get_window_extent`, but includes any clipping.
 
@@ -358,7 +339,7 @@ class Artist:
             if clip_box is not None:
                 bbox = Bbox.intersection(bbox, clip_box)
             clip_path = self.get_clip_path()
-            if clip_path is not None and bbox is not None:
+            if clip_path is not None:
                 clip_path = clip_path.get_fully_transformed_path()
                 bbox = Bbox.intersection(bbox, clip_path.get_extents())
         return bbox
@@ -528,14 +509,14 @@ class Artist:
 
         # Pick children
         for a in self.get_children():
-            # make sure the event happened in the same axes
+            # make sure the event happened in the same Axes
             ax = getattr(a, 'axes', None)
             if (mouseevent.inaxes is None or ax is None
                     or mouseevent.inaxes == ax):
                 # we need to check if mouseevent.inaxes is None
-                # because some objects associated with an axes (e.g., a
+                # because some objects associated with an Axes (e.g., a
                 # tick label) can be outside the bounding box of the
-                # axes and inaxes will be None
+                # Axes and inaxes will be None
                 # also check that ax is None so that it traverse objects
                 # which do no have an axes property but children might
                 a.pick(mouseevent)
@@ -844,6 +825,30 @@ class Artist:
         """
         return self._in_layout
 
+    def _fully_clipped_to_axes(self):
+        """
+        Return a boolean flag, ``True`` if the artist is clipped to the Axes
+        and can thus be skipped in layout calculations. Requires `get_clip_on`
+        is True, one of `clip_box` or `clip_path` is set, ``clip_box.extents``
+        is equivalent to ``ax.bbox.extents`` (if set), and ``clip_path._patch``
+        is equivalent to ``ax.patch`` (if set).
+        """
+        # Note that ``clip_path.get_fully_transformed_path().get_extents()``
+        # cannot be directly compared to ``axes.bbox.extents`` because the
+        # extents may be undefined (i.e. equivalent to ``Bbox.null()``)
+        # before the associated artist is drawn, and this method is meant
+        # to determine whether ``axes.get_tightbbox()`` may bypass drawing
+        clip_box = self.get_clip_box()
+        clip_path = self.get_clip_path()
+        return (self.axes is not None
+                and self.get_clip_on()
+                and (clip_box is not None or clip_path is not None)
+                and (clip_box is None
+                     or np.all(clip_box.extents == self.axes.bbox.extents))
+                and (clip_path is None
+                     or isinstance(clip_path, TransformedPatchPath)
+                     and clip_path._patch is self.axes.patch))
+
     def get_clip_on(self):
         """Return whether the artist uses clipping."""
         return self._clipon
@@ -870,7 +875,7 @@ class Artist:
         """
         Set whether the artist uses clipping.
 
-        When False artists will be visible outside of the axes which
+        When False artists will be visible outside of the Axes which
         can lead to unexpected results.
 
         Parameters
@@ -929,11 +934,13 @@ class Artist:
         Parameters
         ----------
         filter_func : callable
-            A filter function, which takes a (m, n, 3) float array and a dpi
-            value, and returns a (m, n, 3) array.
+            A filter function, which takes a (m, n, depth) float array
+            and a dpi value, and returns a (m, n, depth) array and two
+            offsets from the bottom left corner of the image
 
             .. ACCEPTS: a filter function, which takes a (m, n, 3) float array
-                and a dpi value, and returns a (m, n, 3) array
+                and a dpi value, and returns a (m, n, 3) array and two offsets
+                from the bottom left corner of the image
         """
         self._agg_filter = filter_func
         self.stale = True
@@ -1043,32 +1050,6 @@ class Artist:
         """
         self._in_layout = in_layout
 
-    def update(self, props):
-        """
-        Update this artist's properties from the dict *props*.
-
-        Parameters
-        ----------
-        props : dict
-        """
-        ret = []
-        with cbook._setattr_cm(self, eventson=False):
-            for k, v in props.items():
-                # Allow attributes we want to be able to update through
-                # art.update, art.set, setp.
-                if k == "axes":
-                    ret.append(setattr(self, k, v))
-                else:
-                    func = getattr(self, f"set_{k}", None)
-                    if not callable(func):
-                        raise AttributeError(f"{type(self).__name__!r} object "
-                                             f"has no property {k!r}")
-                    ret.append(func(v))
-        if ret:
-            self.pchanged()
-            self.stale = True
-        return ret
-
     def get_label(self):
         """Return the label used for this artist in the legend."""
         return self._label
@@ -1156,12 +1137,58 @@ class Artist:
         """Return a dictionary of all the properties of the artist."""
         return ArtistInspector(self).properties()
 
+    def _update_props(self, props, errfmt):
+        """
+        Helper for `.Artist.set` and `.Artist.update`.
+
+        *errfmt* is used to generate error messages for invalid property
+        names; it get formatted with ``type(self)`` and the property name.
+        """
+        ret = []
+        with cbook._setattr_cm(self, eventson=False):
+            for k, v in props.items():
+                # Allow attributes we want to be able to update through
+                # art.update, art.set, setp.
+                if k == "axes":
+                    ret.append(setattr(self, k, v))
+                else:
+                    func = getattr(self, f"set_{k}", None)
+                    if not callable(func):
+                        raise AttributeError(
+                            errfmt.format(cls=type(self), prop_name=k))
+                    ret.append(func(v))
+        if ret:
+            self.pchanged()
+            self.stale = True
+        return ret
+
+    def update(self, props):
+        """
+        Update this artist's properties from the dict *props*.
+
+        Parameters
+        ----------
+        props : dict
+        """
+        return self._update_props(
+            props, "{cls.__name__!r} object has no property {prop_name!r}")
+
+    def _internal_update(self, kwargs):
+        """
+        Update artist properties without prenormalizing them, but generating
+        errors as if calling `set`.
+
+        The lack of prenormalization is to maintain backcompatibility.
+        """
+        return self._update_props(
+            kwargs, "{cls.__name__}.set() got an unexpected keyword argument "
+            "{prop_name!r}")
+
     def set(self, **kwargs):
         # docstring and signature are auto-generated via
         # Artist._update_set_signature_and_docstring() at the end of the
         # module.
-        kwargs = cbook.normalize_kwargs(kwargs, self)
-        return self.update(kwargs)
+        return self._internal_update(cbook.normalize_kwargs(kwargs, self))
 
     @contextlib.contextmanager
     def _cm_set(self, **kwargs):

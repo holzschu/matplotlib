@@ -14,26 +14,44 @@
    :no-members:
    :no-inherited-members:
 
-Classes
--------
+Color norms
+-----------
 
 .. autosummary::
    :toctree: _as_gen/
    :template: autosummary.rst
 
-   BoundaryNorm
-   Colormap
-   CenteredNorm
-   LightSource
-   LinearSegmentedColormap
-   ListedColormap
-   LogNorm
-   NoNorm
    Normalize
+   NoNorm
+   AsinhNorm
+   BoundaryNorm
+   CenteredNorm
+   FuncNorm
+   LogNorm
    PowerNorm
    SymLogNorm
    TwoSlopeNorm
-   FuncNorm
+
+Colormaps
+---------
+
+.. autosummary::
+   :toctree: _as_gen/
+   :template: autosummary.rst
+
+   Colormap
+   LinearSegmentedColormap
+   ListedColormap
+
+Other classes
+-------------
+
+.. autosummary::
+   :toctree: _as_gen/
+   :template: autosummary.rst
+
+   ColorSequenceRegistry
+   LightSource
 
 Functions
 ---------

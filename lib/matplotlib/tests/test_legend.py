@@ -78,6 +78,20 @@ def test_various_labels():
     ax.legend(numpoints=1, loc='best')
 
 
+def test_legend_label_with_leading_underscore():
+    """
+    Test that artists with labels starting with an underscore are not added to
+    the legend, and that a warning is issued if one tries to add them
+    explicitly.
+    """
+    fig, ax = plt.subplots()
+    line, = ax.plot([0, 1], label='_foo')
+    with pytest.warns(UserWarning,
+                      match=r"starts with '_'.*excluded from the legend."):
+        legend = ax.legend(handles=[line])
+    assert len(legend.legendHandles) == 0
+
+
 @image_comparison(['legend_labels_first.png'], remove_text=True)
 def test_labels_first():
     # test labels to left of markers
@@ -481,8 +495,7 @@ def test_linecollection_scaled_dashes():
     h1, h2, h3 = leg.legendHandles
 
     for oh, lh in zip((lc1, lc2, lc3), (h1, h2, h3)):
-        assert oh.get_linestyles()[0][1] == lh._dashSeq
-        assert oh.get_linestyles()[0][0] == lh._dashOffset
+        assert oh.get_linestyles()[0] == lh._dash_pattern
 
 
 def test_handler_numpoints():
@@ -491,6 +504,15 @@ def test_handler_numpoints():
     fig, ax = plt.subplots()
     ax.plot(range(5), label='test')
     ax.legend(numpoints=0.5)
+
+
+def test_text_nohandler_warning():
+    """Test that Text artists with labels raise a warning"""
+    fig, ax = plt.subplots()
+    ax.text(x=0, y=0, s="text", label="label")
+    with pytest.warns(UserWarning) as record:
+        ax.legend()
+    assert len(record) == 1
 
 
 def test_empty_bar_chart_with_legend():
@@ -835,7 +857,7 @@ def test_plot_single_input_multiple_label(label_array):
 
 
 def test_plot_multiple_label_incorrect_length_exception():
-    # check that excepton is raised if multiple labels
+    # check that exception is raised if multiple labels
     # are given, but number of on labels != number of lines
     with pytest.raises(ValueError):
         x = [1, 2, 3]
@@ -880,3 +902,28 @@ def test_subfigure_legend():
     ax.plot([0, 1], [0, 1], label="line")
     leg = subfig.legend()
     assert leg.figure is subfig
+
+
+def test_setting_alpha_keeps_polycollection_color():
+    pc = plt.fill_between([0, 1], [2, 3], color='#123456', label='label')
+    patch = plt.legend().get_patches()[0]
+    patch.set_alpha(0.5)
+    assert patch.get_facecolor()[:3] == tuple(pc.get_facecolor()[0][:3])
+    assert patch.get_edgecolor()[:3] == tuple(pc.get_edgecolor()[0][:3])
+
+
+def test_legend_markers_from_line2d():
+    # Test that markers can be copied for legend lines (#17960)
+    _markers = ['.', '*', 'v']
+    fig, ax = plt.subplots()
+    lines = [mlines.Line2D([0], [0], ls='None', marker=mark)
+             for mark in _markers]
+    labels = ["foo", "bar", "xyzzy"]
+    markers = [line.get_marker() for line in lines]
+    legend = ax.legend(lines, labels)
+
+    new_markers = [line.get_marker() for line in legend.get_lines()]
+    new_labels = [text.get_text() for text in legend.get_texts()]
+
+    assert markers == new_markers == _markers
+    assert labels == new_labels

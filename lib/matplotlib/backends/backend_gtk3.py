@@ -6,13 +6,8 @@ import sys
 
 import matplotlib as mpl
 from matplotlib import _api, backend_tools, cbook
-from matplotlib._pylab_helpers import Gcf
-from matplotlib.backend_bases import (
-    _Backend, FigureCanvasBase, FigureManagerBase, NavigationToolbar2,
-    TimerBase, ToolContainerBase)
+from matplotlib.backend_bases import FigureCanvasBase, ToolContainerBase
 from matplotlib.backend_tools import Cursors
-from matplotlib.figure import Figure
-from matplotlib.widgets import SubplotTool
 
 try:
     import gi
@@ -31,10 +26,10 @@ except ValueError as e:
 from gi.repository import Gio, GLib, GObject, Gtk, Gdk
 from . import _backend_gtk
 from ._backend_gtk import (
-    _create_application, _shutdown_application,
-    backend_version, _BackendGTK, _NavigationToolbar2GTK,
+    _BackendGTK, _FigureManagerGTK, _NavigationToolbar2GTK,
     TimerGTK as TimerGTK3,
 )
+from ._backend_gtk import backend_version  # noqa: F401 # pylint: disable=W0611
 
 
 _log = logging.getLogger(__name__)
@@ -55,7 +50,7 @@ class __getattr__:
                 Cursors.SELECT_REGION: new_cursor("crosshair"),
                 Cursors.WAIT:          new_cursor("wait"),
             }
-        except TypeError as exc:
+        except TypeError:
             return {}
 
     icon_filename = _api.deprecated("3.6", obj_type="")(property(
@@ -68,21 +63,15 @@ class __getattr__:
 
 @functools.lru_cache()
 def _mpl_to_gtk_cursor(mpl_cursor):
-    name = _api.check_getitem({
-        Cursors.MOVE: "move",
-        Cursors.HAND: "pointer",
-        Cursors.POINTER: "default",
-        Cursors.SELECT_REGION: "crosshair",
-        Cursors.WAIT: "wait",
-        Cursors.RESIZE_HORIZONTAL: "ew-resize",
-        Cursors.RESIZE_VERTICAL: "ns-resize",
-    }, cursor=mpl_cursor)
-    return Gdk.Cursor.new_from_name(Gdk.Display.get_default(), name)
+    return Gdk.Cursor.new_from_name(
+        Gdk.Display.get_default(),
+        _backend_gtk.mpl_to_gtk_cursor_name(mpl_cursor))
 
 
 class FigureCanvasGTK3(Gtk.DrawingArea, FigureCanvasBase):
     required_interactive_framework = "gtk3"
     _timer_cls = TimerGTK3
+    manager_class = _api.classproperty(lambda cls: FigureManagerGTK3)
     # Setting this as a static constant prevents
     # this resulting expression from leaking
     event_mask = (Gdk.EventMask.BUTTON_PRESS_MASK
@@ -303,140 +292,10 @@ class FigureCanvasGTK3(Gtk.DrawingArea, FigureCanvasBase):
             context.iteration(True)
 
 
-class FigureManagerGTK3(FigureManagerBase):
-    """
-    Attributes
-    ----------
-    canvas : `FigureCanvas`
-        The FigureCanvas instance
-    num : int or str
-        The Figure number
-    toolbar : Gtk.Toolbar
-        The toolbar
-    vbox : Gtk.VBox
-        The Gtk.VBox containing the canvas and toolbar
-    window : Gtk.Window
-        The Gtk.Window
-
-    """
-    def __init__(self, canvas, num):
-        app = _create_application()
-        self.window = Gtk.Window()
-        app.add_window(self.window)
-        super().__init__(canvas, num)
-
-        self.window.set_wmclass("matplotlib", "Matplotlib")
-        icon_ext = "png" if sys.platform == "win32" else "svg"
-        self.window.set_icon_from_file(
-            str(cbook._get_data_path(f"images/matplotlib.{icon_ext}")))
-
-        self.vbox = Gtk.Box()
-        self.vbox.set_property("orientation", Gtk.Orientation.VERTICAL)
-        self.window.add(self.vbox)
-        self.vbox.show()
-
-        self.canvas.show()
-
-        self.vbox.pack_start(self.canvas, True, True, 0)
-        # calculate size for window
-        w, h = self.canvas.get_width_height()
-
-        self.toolbar = self._get_toolbar()
-
-        if self.toolmanager:
-            backend_tools.add_tools_to_manager(self.toolmanager)
-            if self.toolbar:
-                backend_tools.add_tools_to_container(self.toolbar)
-
-        if self.toolbar is not None:
-            self.toolbar.show()
-            self.vbox.pack_end(self.toolbar, False, False, 0)
-            min_size, nat_size = self.toolbar.get_preferred_size()
-            h += nat_size.height
-
-        self.window.set_default_size(w, h)
-
-        self._destroying = False
-        self.window.connect("destroy", lambda *args: Gcf.destroy(self))
-        self.window.connect("delete_event", lambda *args: Gcf.destroy(self))
-        if mpl.is_interactive():
-            self.window.show()
-            self.canvas.draw_idle()
-
-        self.canvas.grab_focus()
-
-    def destroy(self, *args):
-        if self._destroying:
-            # Otherwise, this can be called twice when the user presses 'q',
-            # which calls Gcf.destroy(self), then this destroy(), then triggers
-            # Gcf.destroy(self) once again via
-            # `connect("destroy", lambda *args: Gcf.destroy(self))`.
-            return
-        self._destroying = True
-        self.vbox.destroy()
-        self.window.destroy()
-        self.canvas.destroy()
-        if self.toolbar:
-            self.toolbar.destroy()
-
-    def show(self):
-        # show the figure window
-        self.window.show()
-        self.canvas.draw()
-        if mpl.rcParams['figure.raise_window']:
-            if self.window.get_window():
-                self.window.present()
-            else:
-                # If this is called by a callback early during init,
-                # self.window (a GtkWindow) may not have an associated
-                # low-level GdkWindow (self.window.get_window()) yet, and
-                # present() would crash.
-                _api.warn_external("Cannot raise window yet to be setup")
-
-    def full_screen_toggle(self):
-        if self.window.get_window().get_state() & Gdk.WindowState.FULLSCREEN:
-            self.window.unfullscreen()
-        else:
-            self.window.fullscreen()
-
-    def _get_toolbar(self):
-        # must be inited after the window, drawingArea and figure
-        # attrs are set
-        if mpl.rcParams['toolbar'] == 'toolbar2':
-            toolbar = NavigationToolbar2GTK3(self.canvas, self.window)
-        elif mpl.rcParams['toolbar'] == 'toolmanager':
-            toolbar = ToolbarGTK3(self.toolmanager)
-        else:
-            toolbar = None
-        return toolbar
-
-    def get_window_title(self):
-        return self.window.get_title()
-
-    def set_window_title(self, title):
-        self.window.set_title(title)
-
-    def resize(self, width, height):
-        """Set the canvas size in pixels."""
-        width = int(width / self.canvas.device_pixel_ratio)
-        height = int(height / self.canvas.device_pixel_ratio)
-        if self.toolbar:
-            toolbar_size = self.toolbar.size_request()
-            height += toolbar_size.height
-        canvas_size = self.canvas.get_allocation()
-        if canvas_size.width == canvas_size.height == 1:
-            # A canvas size of (1, 1) cannot exist in most cases, because
-            # window decorations would prevent such a small window. This call
-            # must be before the window has been mapped and widgets have been
-            # sized, so just change the window's starting size.
-            self.window.set_default_size(width, height)
-        else:
-            self.window.resize(width, height)
-
-
 class NavigationToolbar2GTK3(_NavigationToolbar2GTK, Gtk.Toolbar):
-    def __init__(self, canvas, window):
-        self.win = window
+    @_api.delete_parameter("3.6", "window")
+    def __init__(self, canvas, window=None):
+        self._win = window
         GObject.GObject.__init__(self)
 
         self.set_style(Gtk.ToolbarStyle.ICONS)
@@ -477,11 +336,14 @@ class NavigationToolbar2GTK3(_NavigationToolbar2GTK, Gtk.Toolbar):
         toolitem = Gtk.ToolItem()
         self.insert(toolitem, -1)
         self.message = Gtk.Label()
+        self.message.set_justify(Gtk.Justification.RIGHT)
         toolitem.add(self.message)
 
         self.show_all()
 
-        NavigationToolbar2.__init__(self, canvas)
+        _NavigationToolbar2GTK.__init__(self, canvas)
+
+    win = _api.deprecated("3.6")(property(lambda self: self._win))
 
     def save_figure(self, *args):
         dialog = Gtk.FileChooserDialog(
@@ -540,6 +402,7 @@ class ToolbarGTK3(ToolContainerBase, Gtk.Box):
         Gtk.Box.__init__(self)
         self.set_property('orientation', Gtk.Orientation.HORIZONTAL)
         self._message = Gtk.Label()
+        self._message.set_justify(Gtk.Justification.RIGHT)
         self.pack_end(self._message, False, False, 0)
         self.show_all()
         self._groups = {}
@@ -615,11 +478,8 @@ class ToolbarGTK3(ToolContainerBase, Gtk.Box):
 @backend_tools._register_tool_class(FigureCanvasGTK3)
 class SaveFigureGTK3(backend_tools.SaveFigureBase):
     def trigger(self, *args, **kwargs):
-
-        class PseudoToolbar:
-            canvas = self.figure.canvas
-
-        return NavigationToolbar2GTK3.save_figure(PseudoToolbar())
+        NavigationToolbar2GTK3.save_figure(
+            self._make_classic_style_pseudo_toolbar())
 
 
 @_api.deprecated("3.5", alternative="ToolSetCursor")
@@ -747,7 +607,12 @@ backend_tools._register_tool_class(
     FigureCanvasGTK3, _backend_gtk.RubberbandGTK)
 
 
-@_Backend.export
+class FigureManagerGTK3(_FigureManagerGTK):
+    _toolbar2_class = NavigationToolbar2GTK3
+    _toolmanager_toolbar_class = ToolbarGTK3
+
+
+@_BackendGTK.export
 class _BackendGTK3(_BackendGTK):
     FigureCanvas = FigureCanvasGTK3
     FigureManager = FigureManagerGTK3

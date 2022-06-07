@@ -16,15 +16,15 @@ Pull request guidelines
 Pull requests (PRs) are the mechanism for contributing to Matplotlibs code and
 documentation.
 
-Summary for PR authors
-======================
+Summary for pull request authors
+================================
 
 .. note::
 
    * We value contributions from people with all levels of experience. In
      particular if this is your first PR not everything has to be perfect.
      We'll guide you through the PR process.
-   * Nevertheless, try to follow the guidelines below as well as you can to
+   * Nevertheless, please try to follow the guidelines below as well as you can to
      help make the PR process quick and smooth.
    * Be patient with reviewers. We try our best to respond quickly, but we
      have limited bandwidth. If there is no feedback within a couple of days,
@@ -54,8 +54,8 @@ When making a PR, pay attention to:
 
 See also :ref:`contributing` for how to make a PR.
 
-Summary for PR reviewers
-========================
+Summary for pull request reviewers
+==================================
 
 .. note::
 
@@ -123,6 +123,8 @@ Labels
 
 * If you have the rights to set labels, tag the PR with descriptive labels.
   See the `list of labels <https://github.com/matplotlib/matplotlib/labels>`__.
+* If the PR makes changes to the wheel building Action, add the
+  "Run cibuildwheel" label to enable testing wheels.
 
 .. _pr-milestones:
 
@@ -269,11 +271,11 @@ The current active branches are
 
 *main*
   The current development version. Future minor releases (*v3.N.0*) will be
-  branched from this. Supports Python 3.7+.
+  branched from this.
 
 *v3.N.x*
   Maintenance branch for Matplotlib 3.N. Future patch releases will be
-  branched from this.  Supports Python 3.6+.
+  branched from this.
 
 *v3.N.M-doc*
   Documentation for the current release.  On a patch release, this will be

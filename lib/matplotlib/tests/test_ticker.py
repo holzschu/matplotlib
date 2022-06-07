@@ -443,6 +443,112 @@ class TestSymmetricalLogLocator:
         assert sym.numticks == 8
 
 
+class TestAsinhLocator:
+    def test_init(self):
+        lctr = mticker.AsinhLocator(linear_width=2.718, numticks=19)
+        assert lctr.linear_width == 2.718
+        assert lctr.numticks == 19
+        assert lctr.base == 10
+
+    def test_set_params(self):
+        lctr = mticker.AsinhLocator(linear_width=5,
+                                    numticks=17, symthresh=0.125,
+                                    base=4, subs=(2.5, 3.25))
+        assert lctr.numticks == 17
+        assert lctr.symthresh == 0.125
+        assert lctr.base == 4
+        assert lctr.subs == (2.5, 3.25)
+
+        lctr.set_params(numticks=23)
+        assert lctr.numticks == 23
+        lctr.set_params(None)
+        assert lctr.numticks == 23
+
+        lctr.set_params(symthresh=0.5)
+        assert lctr.symthresh == 0.5
+        lctr.set_params(symthresh=None)
+        assert lctr.symthresh == 0.5
+
+        lctr.set_params(base=7)
+        assert lctr.base == 7
+        lctr.set_params(base=None)
+        assert lctr.base == 7
+
+        lctr.set_params(subs=(2, 4.125))
+        assert lctr.subs == (2, 4.125)
+        lctr.set_params(subs=None)
+        assert lctr.subs == (2, 4.125)
+        lctr.set_params(subs=[])
+        assert lctr.subs is None
+
+    def test_linear_values(self):
+        lctr = mticker.AsinhLocator(linear_width=100, numticks=11, base=0)
+
+        assert_almost_equal(lctr.tick_values(-1, 1),
+                            np.arange(-1, 1.01, 0.2))
+        assert_almost_equal(lctr.tick_values(-0.1, 0.1),
+                            np.arange(-0.1, 0.101, 0.02))
+        assert_almost_equal(lctr.tick_values(-0.01, 0.01),
+                            np.arange(-0.01, 0.0101, 0.002))
+
+    def test_wide_values(self):
+        lctr = mticker.AsinhLocator(linear_width=0.1, numticks=11, base=0)
+
+        assert_almost_equal(lctr.tick_values(-100, 100),
+                            [-100, -20, -5, -1, -0.2,
+                             0, 0.2, 1, 5, 20, 100])
+        assert_almost_equal(lctr.tick_values(-1000, 1000),
+                            [-1000, -100, -20, -3, -0.4,
+                             0, 0.4, 3, 20, 100, 1000])
+
+    def test_near_zero(self):
+        """Check that manually injected zero will supersede nearby tick"""
+        lctr = mticker.AsinhLocator(linear_width=100, numticks=3, base=0)
+
+        assert_almost_equal(lctr.tick_values(-1.1, 0.9), [-1.0, 0.0, 0.9])
+
+    def test_fallback(self):
+        lctr = mticker.AsinhLocator(1.0, numticks=11)
+
+        assert_almost_equal(lctr.tick_values(101, 102),
+                            np.arange(101, 102.01, 0.1))
+
+    def test_symmetrizing(self):
+        class DummyAxis:
+            bounds = (-1, 1)
+            @classmethod
+            def get_view_interval(cls): return cls.bounds
+
+        lctr = mticker.AsinhLocator(linear_width=1, numticks=3,
+                                    symthresh=0.25, base=0)
+        lctr.axis = DummyAxis
+
+        DummyAxis.bounds = (-1, 2)
+        assert_almost_equal(lctr(), [-1, 0, 2])
+
+        DummyAxis.bounds = (-1, 0.9)
+        assert_almost_equal(lctr(), [-1, 0, 1])
+
+        DummyAxis.bounds = (-0.85, 1.05)
+        assert_almost_equal(lctr(), [-1, 0, 1])
+
+        DummyAxis.bounds = (1, 1.1)
+        assert_almost_equal(lctr(), [1, 1.05, 1.1])
+
+    def test_base_rounding(self):
+        lctr10 = mticker.AsinhLocator(linear_width=1, numticks=8,
+                                      base=10, subs=(1, 3, 5))
+        assert_almost_equal(lctr10.tick_values(-110, 110),
+                            [-500, -300, -100, -50, -30, -10, -5, -3, -1,
+                             -0.5, -0.3, -0.1, 0, 0.1, 0.3, 0.5,
+                             1, 3, 5, 10, 30, 50, 100, 300, 500])
+
+        lctr5 = mticker.AsinhLocator(linear_width=1, numticks=20, base=5)
+        assert_almost_equal(lctr5.tick_values(-1050, 1050),
+                            [-625, -125, -25, -5, -1, -0.2, 0,
+                             0.2, 1, 5, 25, 125, 625])
+
+
 class TestScalarFormatter:
     offset_data = [
         (123, 189, 0),
@@ -498,6 +604,13 @@ class TestScalarFormatter:
         [0.123, "0.123"],
         [1.23,  "1.230"],
         [12.3, "12.300"],
+    ]
+
+    format_data = [
+        (.1, "1e-1"),
+        (.11, "1.1e-1"),
+        (1e8, "1e8"),
+        (1.1e8, "1.1e8"),
     ]
 
     @pytest.mark.parametrize('unicode_minus, result',
@@ -560,6 +673,12 @@ class TestScalarFormatter:
 
         tmp_form.set_locs(ax.yaxis.get_majorticklocs())
         assert orderOfMag == tmp_form.orderOfMagnitude
+
+    @pytest.mark.parametrize('value, expected', format_data)
+    def test_format_data(self, value, expected):
+        mpl.rcParams['axes.unicode_minus'] = False
+        sf = mticker.ScalarFormatter()
+        assert sf.format_data(value) == expected
 
     @pytest.mark.parametrize('data, expected', cursor_data)
     def test_cursor_precision(self, data, expected):
@@ -624,6 +743,7 @@ class TestLogFormatterExponent:
         formatter.axis = FakeAxis(1, base**exponent)
         vals = base**locs
         labels = [formatter(x, pos) for (x, pos) in zip(vals, positions)]
+        expected = [label.replace('-', '\N{Minus Sign}') for label in expected]
         assert labels == expected
 
     def test_blank(self):
@@ -649,7 +769,7 @@ class TestLogFormatterMathtext:
     @pytest.mark.parametrize('min_exponent, value, expected', test_data)
     def test_min_exponent(self, min_exponent, value, expected):
         with mpl.rc_context({'axes.formatter.min_exponent': min_exponent}):
-            assert self.fmt(value) == expected
+            assert self.fmt(value) == expected.replace('-', '\N{Minus Sign}')
 
 
 class TestLogFormatterSciNotation:
@@ -678,7 +798,7 @@ class TestLogFormatterSciNotation:
         formatter = mticker.LogFormatterSciNotation(base=base)
         formatter.sublabel = {1, 2, 5, 1.2}
         with mpl.rc_context({'text.usetex': False}):
-            assert formatter(value) == expected
+            assert formatter(value) == expected.replace('-', '\N{Minus Sign}')
 
 
 class TestLogFormatter:
@@ -896,17 +1016,18 @@ class TestLogitFormatter:
         """
         match = re.match(
             r"[^\d]*"
-            r"(?P<comp>1-)?"
+            r"(?P<comp>1[-\N{Minus Sign}])?"
             r"(?P<mant>\d*\.?\d*)?"
             r"(?:\\cdot)?"
-            r"(?:10\^\{(?P<expo>-?\d*)})?"
+            r"(?:10\^\{(?P<expo>[-\N{Minus Sign}]?\d*)})?"
             r"[^\d]*$",
             string,
         )
         if match:
             comp = match["comp"] is not None
             mantissa = float(match["mant"]) if match["mant"] else 1
-            expo = int(match["expo"]) if match["expo"] is not None else 0
+            expo = (int(match["expo"].replace("\N{Minus Sign}", "-"))
+                    if match["expo"] is not None else 0)
             value = mantissa * 10 ** expo
             if match["mant"] or match["expo"] is not None:
                 if comp:
@@ -1031,8 +1152,8 @@ class TestLogitFormatter:
         Test the parameter use_overline
         """
         x = 1 - 1e-2
-        fx1 = r"$\mathdefault{1-10^{-2}}$"
-        fx2 = r"$\mathdefault{\overline{10^{-2}}}$"
+        fx1 = "$\\mathdefault{1\N{Minus Sign}10^{\N{Minus Sign}2}}$"
+        fx2 = "$\\mathdefault{\\overline{10^{\N{Minus Sign}2}}}$"
         form = mticker.LogitFormatter(use_overline=False)
         assert form(x) == fx1
         form.use_overline(True)
@@ -1167,7 +1288,7 @@ class TestEngFormatter:
             assert _formatter(input) == _exp_output
 
         # Test several non default separators: no separator, a narrow
-        # no-break space (unicode character) and an extravagant string.
+        # no-break space (Unicode character) and an extravagant string.
         for _sep in ("", "\N{NARROW NO-BREAK SPACE}", "@_@"):
             # Case 2: unit=UNIT and sep=_sep.
             # Replace the default space separator from the reference case

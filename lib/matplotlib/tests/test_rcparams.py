@@ -20,6 +20,7 @@ from matplotlib.rcsetup import (
     _validate_color_or_linecolor,
     validate_cycler,
     validate_float,
+    validate_fontstretch,
     validate_fontweight,
     validate_hatch,
     validate_hist_bins,
@@ -38,7 +39,7 @@ def test_rcparams(tmpdir):
     linewidth = mpl.rcParams['lines.linewidth']
 
     rcpath = Path(tmpdir) / 'test_rcparams.rc'
-    rcpath.write_text('lines.linewidth: 33')
+    rcpath.write_text('lines.linewidth: 33', encoding='utf-8')
 
     # test context given dictionary
     with mpl.rc_context(rc={'text.usetex': not usetex}):
@@ -190,7 +191,7 @@ def test_axes_titlecolor_rcparams():
 
 def test_Issue_1713(tmpdir):
     rcpath = Path(tmpdir) / 'test_rcparams.rc'
-    rcpath.write_text('timezone: UTC', encoding='UTF-32-BE')
+    rcpath.write_text('timezone: UTC', encoding='utf-8')
     with mock.patch('locale.getpreferredencoding', return_value='UTF-32-BE'):
         rc = mpl.rc_params_from_file(rcpath, True, False)
     assert rc.get('timezone') == 'UTC'
@@ -469,6 +470,26 @@ def test_validate_fontweight(weight, parsed_weight):
         assert validate_fontweight(weight) == parsed_weight
 
 
+@pytest.mark.parametrize('stretch, parsed_stretch', [
+    ('expanded', 'expanded'),
+    ('EXPANDED', ValueError),  # stretch is case-sensitive
+    (100, 100),
+    ('100', 100),
+    (np.array(100), 100),
+    # fractional fontweights are not defined. This should actually raise a
+    # ValueError, but historically did not.
+    (20.6, 20),
+    ('20.6', ValueError),
+    ([100], ValueError),
+])
+def test_validate_fontstretch(stretch, parsed_stretch):
+    if parsed_stretch is ValueError:
+        with pytest.raises(ValueError):
+            validate_fontstretch(stretch)
+    else:
+        assert validate_fontstretch(stretch) == parsed_stretch
+
+
 def test_keymaps():
     key_list = [k for k in mpl.rcParams if 'keymap' in k]
     for k in key_list:
@@ -497,7 +518,8 @@ def test_backend_fallback_headless(tmpdir):
             [sys.executable, "-c",
              "import matplotlib;"
              "matplotlib.use('tkagg');"
-             "import matplotlib.pyplot"
+             "import matplotlib.pyplot;"
+             "matplotlib.pyplot.plot(42);"
              ],
             env=env, check=True, stderr=subprocess.DEVNULL)
 
@@ -557,3 +579,8 @@ def test_deprecation(monkeypatch):
         mpl.rcParams["svg.hashsalt"] = "foobar"
     assert mpl.rcParams["svg.hashsalt"] == "foobar"  # Doesn't warn.
     mpl.rcParams["svg.hashsalt"] = None  # Doesn't warn.
+
+    mpl.rcParams.update(mpl.rcParams.copy())  # Doesn't warn.
+    # Note that the warning suppression actually arises from the
+    # iteration over the updater rcParams being protected by
+    # suppress_matplotlib_deprecation_warning, rather than any explicit check.

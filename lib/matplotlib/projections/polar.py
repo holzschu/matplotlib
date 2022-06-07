@@ -193,7 +193,7 @@ class ThetaFormatter(mticker.Formatter):
         vmin, vmax = self.axis.get_view_interval()
         d = np.rad2deg(abs(vmax - vmin))
         digits = max(-int(np.log10(d) - 1.5), 0)
-        # Use unicode rather than mathtext with \circ, so that it will work
+        # Use Unicode rather than mathtext with \circ, so that it will work
         # correctly with any arbitrary font (assuming it has a degree sign),
         # whereas $5\circ$ will only work correctly with one of the supported
         # math fonts (Computer Modern and STIX).
@@ -358,13 +358,7 @@ class ThetaAxis(maxis.XAxis):
     """
     __name__ = 'thetaaxis'
     axis_name = 'theta'  #: Read-only name identifying the axis.
-
-    def _get_tick(self, major):
-        if major:
-            tick_kw = self._major_tick_kw
-        else:
-            tick_kw = self._minor_tick_kw
-        return ThetaTick(self.axes, 0, major=major, **tick_kw)
+    _tick_class = ThetaTick
 
     def _wrap_locator_formatter(self):
         self.set_major_locator(ThetaLocator(self.get_major_locator()))
@@ -373,13 +367,10 @@ class ThetaAxis(maxis.XAxis):
         self.isDefault_majfmt = True
 
     def clear(self):
+        # docstring inherited
         super().clear()
         self.set_ticks_position('none')
         self._wrap_locator_formatter()
-
-    @_api.deprecated("3.4", alternative="ThetaAxis.clear()")
-    def cla(self):
-        self.clear()
 
     def _set_scale(self, value, **kwargs):
         if value != 'linear':
@@ -653,17 +644,11 @@ class RadialAxis(maxis.YAxis):
     """
     __name__ = 'radialaxis'
     axis_name = 'radius'  #: Read-only name identifying the axis.
+    _tick_class = RadialTick
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.sticky_edges.y.append(0)
-
-    def _get_tick(self, major):
-        if major:
-            tick_kw = self._major_tick_kw
-        else:
-            tick_kw = self._minor_tick_kw
-        return RadialTick(self.axes, 0, major=major, **tick_kw)
 
     def _wrap_locator_formatter(self):
         self.set_major_locator(RadialLocator(self.get_major_locator(),
@@ -671,13 +656,10 @@ class RadialAxis(maxis.YAxis):
         self.isDefault_majloc = True
 
     def clear(self):
+        # docstring inherited
         super().clear()
         self.set_ticks_position('none')
         self._wrap_locator_formatter()
-
-    @_api.deprecated("3.4", alternative="RadialAxis.clear()")
-    def cla(self):
-        self.clear()
 
     def _set_scale(self, value, **kwargs):
         super()._set_scale(value, **kwargs)
@@ -776,10 +758,11 @@ class PolarAxes(Axes):
         super().__init__(*args, **kwargs)
         self.use_sticky_edges = True
         self.set_aspect('equal', adjustable='box', anchor='C')
-        self.cla()
+        self.clear()
 
-    def cla(self):
-        super().cla()
+    def clear(self):
+        # docstring inherited
+        super().clear()
 
         self.title.set_y(1.05)
 
@@ -1024,7 +1007,7 @@ class PolarAxes(Axes):
         where minval and maxval are the minimum and maximum limits. Values are
         wrapped in to the range :math:`[0, 2\pi]` (in radians), so for example
         it is possible to do ``set_thetalim(-np.pi / 2, np.pi / 2)`` to have
-        an axes symmetric around 0. A ValueError is raised if the absolute
+        an axis symmetric around 0. A ValueError is raised if the absolute
         angle difference is larger than a full circle.
         """
         orig_lim = self.get_xlim()  # in radians
@@ -1172,9 +1155,17 @@ class PolarAxes(Axes):
     def get_rsign(self):
         return np.sign(self._originViewLim.y1 - self._originViewLim.y0)
 
+    @_api.make_keyword_only("3.6", "emit")
     def set_rlim(self, bottom=None, top=None, emit=True, auto=False, **kwargs):
         """
-        See `~.polar.PolarAxes.set_ylim`.
+        Set the radial axis view limits.
+
+        This function behaves like `.Axes.set_ylim`, but additionally supports
+        *rmin* and *rmax* as aliases for *bottom* and *top*.
+
+        See Also
+        --------
+        .Axes.set_ylim
         """
         if 'rmin' in kwargs:
             if bottom is None:
@@ -1190,58 +1181,6 @@ class PolarAxes(Axes):
                                  'argument and kwarg "rmax"')
         return self.set_ylim(bottom=bottom, top=top, emit=emit, auto=auto,
                              **kwargs)
-
-    def set_ylim(self, bottom=None, top=None, emit=True, auto=False,
-                 *, ymin=None, ymax=None):
-        """
-        Set the data limits for the radial axis.
-
-        Parameters
-        ----------
-        bottom : float, optional
-            The bottom limit (default: None, which leaves the bottom
-            limit unchanged).
-            The bottom and top ylims may be passed as the tuple
-            (*bottom*, *top*) as the first positional argument (or as
-            the *bottom* keyword argument).
-
-        top : float, optional
-            The top limit (default: None, which leaves the top limit
-            unchanged).
-
-        emit : bool, default: True
-            Whether to notify observers of limit change.
-
-        auto : bool or None, default: False
-            Whether to turn on autoscaling of the y-axis. True turns on,
-            False turns off, None leaves unchanged.
-
-        ymin, ymax : float, optional
-            These arguments are deprecated and will be removed in a future
-            version.  They are equivalent to *bottom* and *top* respectively,
-            and it is an error to pass both *ymin* and *bottom* or
-            *ymax* and *top*.
-
-        Returns
-        -------
-        bottom, top : (float, float)
-            The new y-axis limits in data coordinates.
-        """
-        if ymin is not None:
-            if bottom is not None:
-                raise ValueError('Cannot supply both positional "bottom" '
-                                 'argument and kwarg "ymin"')
-            else:
-                bottom = ymin
-        if ymax is not None:
-            if top is not None:
-                raise ValueError('Cannot supply both positional "top" '
-                                 'argument and kwarg "ymax"')
-            else:
-                top = ymax
-        if top is None and np.iterable(bottom):
-            bottom, top = bottom[0], bottom[1]
-        return super().set_ylim(bottom=bottom, top=top, emit=emit, auto=auto)
 
     def get_rlabel_position(self):
         """
@@ -1321,7 +1260,7 @@ class PolarAxes(Axes):
         elif fmt is not None:
             self.xaxis.set_major_formatter(mticker.FormatStrFormatter(fmt))
         for t in self.xaxis.get_ticklabels():
-            t.update(kwargs)
+            t._internal_update(kwargs)
         return self.xaxis.get_ticklines(), self.xaxis.get_ticklabels()
 
     def set_rgrids(self, radii, labels=None, angle=None, fmt=None, **kwargs):
@@ -1376,7 +1315,7 @@ class PolarAxes(Axes):
             angle = self.get_rlabel_position()
         self.set_rlabel_position(angle)
         for t in self.yaxis.get_ticklabels():
-            t.update(kwargs)
+            t._internal_update(kwargs)
         return self.yaxis.get_gridlines(), self.yaxis.get_ticklabels()
 
     def format_coord(self, theta, r):
@@ -1488,9 +1427,12 @@ class PolarAxes(Axes):
             self.set_rmax(p.rmax / scale)
 
 
-# to keep things all self contained, we can put aliases to the Polar classes
+# To keep things all self-contained, we can put aliases to the Polar classes
 # defined above. This isn't strictly necessary, but it makes some of the
-# code more readable (and provides a backwards compatible Polar API)
+# code more readable, and provides a backwards compatible Polar API. In
+# particular, this is used by the :doc:`/gallery/specialty_plots/radar_chart`
+# example to override PolarTransform on a PolarAxes subclass, so make sure that
+# that example is unaffected before changing this.
 PolarAxes.PolarTransform = PolarTransform
 PolarAxes.PolarAffine = PolarAffine
 PolarAxes.InvertedPolarTransform = InvertedPolarTransform

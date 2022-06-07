@@ -222,9 +222,6 @@ class MarkerStyle:
     fillstyles = ('full', 'left', 'right', 'bottom', 'top', 'none')
     _half_fillstyles = ('left', 'right', 'bottom', 'top')
 
-    # TODO: Is this ever used as a non-constant?
-    _point_size_reduction = 0.5
-
     _unset = object()  # For deprecation of MarkerStyle(<noargs>).
 
     def __init__(self, marker=_unset, fillstyle=None,
@@ -301,10 +298,6 @@ class MarkerStyle:
     def get_fillstyle(self):
         return self._fillstyle
 
-    @_api.deprecated("3.4", alternative="a new marker")
-    def set_fillstyle(self, fillstyle):
-        return self._set_fillstyle(fillstyle)
-
     def _set_fillstyle(self, fillstyle):
         """
         Set the fillstyle.
@@ -322,17 +315,13 @@ class MarkerStyle:
         self._recache()
 
     def get_joinstyle(self):
-        return self._joinstyle
+        return self._joinstyle.name
 
     def get_capstyle(self):
-        return self._capstyle
+        return self._capstyle.name
 
     def get_marker(self):
         return self._marker
-
-    @_api.deprecated("3.4", alternative="a new marker")
-    def set_marker(self, marker):
-        return self._set_marker(marker)
 
     def _set_marker(self, marker):
         """
@@ -530,7 +519,7 @@ class MarkerStyle:
 
         Submitted by tcb
         """
-        from matplotlib.text import TextPath
+        from matplotlib.textpath import TextPath
 
         # again, the properties could be initialised just once outside
         # this function
@@ -553,8 +542,8 @@ class MarkerStyle:
     def _half_fill(self):
         return self.get_fillstyle() in self._half_fillstyles
 
-    def _set_circle(self, reduction=1.0):
-        self._transform = Affine2D().scale(0.5 * reduction)
+    def _set_circle(self, size=1.0):
+        self._transform = Affine2D().scale(0.5 * size)
         self._snap_threshold = np.inf
         if not self._half_fill():
             self._path = Path.unit_circle()
@@ -564,6 +553,9 @@ class MarkerStyle:
             self._transform.rotate_deg(
                 {'right': 0, 'top': 90, 'left': 180, 'bottom': 270}[fs])
             self._alt_transform = self._transform.frozen().rotate_deg(180.)
+
+    def _set_point(self):
+        self._set_circle(size=0.5)
 
     def _set_pixel(self):
         self._path = Path.unit_rectangle()
@@ -578,9 +570,6 @@ class MarkerStyle:
         # beyond just its path data.
         self._transform = Affine2D().translate(-0.49999, -0.49999)
         self._snap_threshold = None
-
-    def _set_point(self):
-        self._set_circle(reduction=self._point_size_reduction)
 
     _triangle_path = Path([[0, 1], [-1, -1], [1, -1], [0, 1]], closed=True)
     # Going down halfway looks to small.  Golden ratio is too far.

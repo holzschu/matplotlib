@@ -8,7 +8,7 @@ from matplotlib.backend_bases import MouseEvent
 from matplotlib.colors import LogNorm
 from matplotlib.transforms import Bbox, TransformedBbox
 from matplotlib.testing.decorators import (
-    image_comparison, remove_ticks_and_titles)
+    check_figures_equal, image_comparison, remove_ticks_and_titles)
 
 from mpl_toolkits.axes_grid1 import (
     axes_size as Size,
@@ -16,7 +16,8 @@ from mpl_toolkits.axes_grid1 import (
     Grid, AxesGrid, ImageGrid)
 from mpl_toolkits.axes_grid1.anchored_artists import (
     AnchoredSizeBar, AnchoredDirectionArrows)
-from mpl_toolkits.axes_grid1.axes_divider import HBoxDivider
+from mpl_toolkits.axes_grid1.axes_divider import (
+    HBoxDivider, make_axes_area_auto_adjustable)
 from mpl_toolkits.axes_grid1.inset_locator import (
     zoomed_inset_axes, mark_inset, inset_axes, BboxConnectorPatch)
 import mpl_toolkits.axes_grid1.mpl_axes
@@ -97,6 +98,18 @@ def test_axesgrid_colorbar_log_smoketest():
     im = grid[0].imshow(Z, interpolation="nearest", norm=LogNorm())
 
     grid.cbar_axes[0].colorbar(im)
+
+
+def test_inset_colorbar_tight_layout_smoketest():
+    fig, ax = plt.subplots(1, 1)
+    pts = ax.scatter([0, 1], [0, 1], c=[1, 5])
+
+    cax = inset_axes(ax, width="3%", height="70%")
+    plt.colorbar(pts, cax=cax)
+
+    with pytest.warns(UserWarning, match="This figure includes Axes"):
+        # Will warn, but not raise an error
+        plt.tight_layout()
 
 
 @image_comparison(['inset_locator.png'], style='default', remove_text=True)
@@ -494,3 +507,32 @@ def test_grid_axes_position(direction):
     assert loc[1]._nx > loc[0]._nx and loc[2]._ny < loc[0]._ny
     assert loc[0]._nx == loc[2]._nx and loc[0]._ny == loc[1]._ny
     assert loc[3]._nx == loc[1]._nx and loc[3]._ny == loc[2]._ny
+
+
+@check_figures_equal(extensions=["png"])
+def test_mark_inset_unstales_viewlim(fig_test, fig_ref):
+    inset, full = fig_test.subplots(1, 2)
+    full.plot([0, 5], [0, 5])
+    inset.set(xlim=(1, 2), ylim=(1, 2))
+    # Check that mark_inset unstales full's viewLim before drawing the marks.
+    mark_inset(full, inset, 1, 4)
+
+    inset, full = fig_ref.subplots(1, 2)
+    full.plot([0, 5], [0, 5])
+    inset.set(xlim=(1, 2), ylim=(1, 2))
+    mark_inset(full, inset, 1, 4)
+    # Manually unstale the full's viewLim.
+    fig_ref.canvas.draw()
+
+
+def test_auto_adjustable():
+    fig = plt.figure()
+    ax = fig.add_axes([0, 0, 1, 1])
+    pad = 0.1
+    make_axes_area_auto_adjustable(ax, pad=pad)
+    fig.canvas.draw()
+    tbb = ax.get_tightbbox(fig._cachedRenderer)
+    assert tbb.x0 == pytest.approx(pad * fig.dpi)
+    assert tbb.x1 == pytest.approx(fig.bbox.width - pad * fig.dpi)
+    assert tbb.y0 == pytest.approx(pad * fig.dpi)
+    assert tbb.y1 == pytest.approx(fig.bbox.height - pad * fig.dpi)

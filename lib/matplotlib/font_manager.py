@@ -1,7 +1,7 @@
 """
 A module for finding, managing, and using fonts across platforms.
 
-This module provides a single `FontManager` instance that can
+This module provides a single `FontManager` instance, ``fontManager``, that can
 be shared across backends and platforms.  The `findfont`
 function returns the best TrueType (TTF) font file in the local or
 system font path that matches the specified `FontProperties`
@@ -23,8 +23,11 @@ Future versions may implement the Level 2 or 2.1 specifications.
 #   - setWeights function needs improvement
 #   - 'light' is an invalid weight value, remove it.
 
+from base64 import b64encode
+import copy
 import dataclasses
 from functools import lru_cache
+from io import BytesIO
 import json
 import logging
 from numbers import Number
@@ -33,16 +36,11 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-try:
-    import threading
-    from threading import Timer
-except ImportError:
-    import dummy_threading as threading
-    from dummy_threading import Timer
+import threading
 
 import matplotlib as mpl
-from matplotlib import _api, afm, cbook, ft2font, rcParams
-from matplotlib.fontconfig_pattern import (
+from matplotlib import _api, _afm, cbook, ft2font, rcParams
+from matplotlib._fontconfig_pattern import (
     parse_fontconfig_pattern, generate_fontconfig_pattern)
 from matplotlib.rcsetup import _validators
 
@@ -176,7 +174,7 @@ def _cached_realpath(path):
 
 def get_fontext_synonyms(fontext):
     """
-    Return a list of file extensions extensions that are synonyms for
+    Return a list of file extensions that are synonyms for
     the given file extension *fileext*.
     """
     return {
@@ -193,11 +191,16 @@ def list_fonts(directory, extensions):
     recursively under the directory.
     """
     extensions = ["." + ext for ext in extensions]
-    return [os.path.join(dirpath, filename)
-            # os.walk ignores access errors, unlike Path.glob.
-            for dirpath, _, filenames in os.walk(directory)
-            for filename in filenames
-            if Path(filename).suffix.lower() in extensions]
+    if sys.platform == 'win32' and directory == win32FontDirectory():
+        return [os.path.join(directory, filename)
+                for filename in os.listdir(directory)
+                if os.path.isfile(filename)]
+    else:
+        return [os.path.join(dirpath, filename)
+                # os.walk ignores access errors, unlike Path.glob.
+                for dirpath, _, filenames in os.walk(directory)
+                for filename in filenames
+                if Path(filename).suffix.lower() in extensions]
 
 
 def win32FontDirectory():
@@ -334,7 +337,7 @@ def _get_win32_installed_fonts():
 
 @lru_cache()
 def _get_fontconfig_fonts():
-    """Cache and list the font paths known to `fc-list`."""
+    """Cache and list the font paths known to ``fc-list``."""
     try:
         if b'--format' not in subprocess.check_output(['fc-list', '--help']):
             _log.warning(  # fontconfig 2.7 implemented --format.
@@ -348,7 +351,7 @@ def _get_fontconfig_fonts():
 
 @_api.deprecated("3.5")
 def get_fontconfig_fonts(fontext='ttf'):
-    """List font filenames known to `fc-list` having the given extension."""
+    """List font filenames known to ``fc-list`` having the given extension."""
     fontext = ['.' + ext for ext in get_fontext_synonyms(fontext)]
     return [str(path) for path in _get_fontconfig_fonts()
             if path.suffix.lower() in fontext]
@@ -392,6 +395,22 @@ def findSystemFonts(fontpaths=None, fontext='ttf'):
     return [fname for fname in fontfiles if os.path.exists(fname)]
 
 
+def _fontentry_helper_repr_png(fontent):
+    from matplotlib.figure import Figure  # Circular import.
+    fig = Figure()
+    font_path = Path(fontent.fname) if fontent.fname != '' else None
+    fig.text(0, 0, fontent.name, font=font_path)
+    with BytesIO() as buf:
+        fig.savefig(buf, bbox_inches='tight', transparent=True)
+        return buf.getvalue()
+
+
+def _fontentry_helper_repr_html(fontent):
+    png_stream = _fontentry_helper_repr_png(fontent)
+    png_b64 = b64encode(png_stream).decode()
+    return f"<img src=\"data:image/png;base64, {png_b64}\" />"
+
+
 FontEntry = dataclasses.make_dataclass(
     'FontEntry', [
         ('fname', str, dataclasses.field(default='')),
@@ -407,7 +426,11 @@ FontEntry = dataclasses.make_dataclass(
     A class for storing Font properties.
 
     It is used when populating the font lookup dictionary.
-    """})
+    """,
+        '_repr_html_': lambda self: _fontentry_helper_repr_html(self),
+        '_repr_png_': lambda self: _fontentry_helper_repr_png(self),
+    }
+)
 
 
 def ttfFontProperty(font):
@@ -543,7 +566,7 @@ def afmFontProperty(fontpath, font):
 
     Parameters
     ----------
-    font : `.AFM`
+    font : AFM
         The AFM font file from which information will be extracted.
 
     Returns
@@ -616,32 +639,33 @@ class FontProperties:
 
     - family: A list of font names in decreasing order of priority.
       The items may include a generic font family name, either
-      'sans-serif' (default), 'serif', 'cursive', 'fantasy', or 'monospace'.
+      'sans-serif', 'serif', 'cursive', 'fantasy', or 'monospace'.
       In that case, the actual font to be used will be looked up
-      from the associated rcParam.
+      from the associated rcParam. Default: :rc:`font.family`
 
-    - style: Either 'normal' (default), 'italic' or 'oblique'.
+    - style: Either 'normal', 'italic' or 'oblique'.
+      Default: :rc:`font.style`
 
-    - variant: Either 'normal' (default) or 'small-caps'.
+    - variant: Either 'normal' or 'small-caps'.
+      Default: :rc:`font.variant`
 
     - stretch: A numeric value in the range 0-1000 or one of
       'ultra-condensed', 'extra-condensed', 'condensed',
-      'semi-condensed', 'normal' (default), 'semi-expanded', 'expanded',
-      'extra-expanded' or 'ultra-expanded'.
+      'semi-condensed', 'normal', 'semi-expanded', 'expanded',
+      'extra-expanded' or 'ultra-expanded'. Default: :rc:`font.stretch`
 
     - weight: A numeric value in the range 0-1000 or one of
-      'ultralight', 'light', 'normal' (default), 'regular', 'book', 'medium',
+      'ultralight', 'light', 'normal', 'regular', 'book', 'medium',
       'roman', 'semibold', 'demibold', 'demi', 'bold', 'heavy',
-      'extra bold', 'black'.
+      'extra bold', 'black'. Default: :rc:`font.weight`
 
     - size: Either an relative value of 'xx-small', 'x-small',
       'small', 'medium', 'large', 'x-large', 'xx-large' or an
-      absolute font size, e.g., 10 (default).
+      absolute font size, e.g., 10. Default: :rc:`font.size`
 
-    - math_fontfamily: The family of fonts used to render math text; overrides
-      :rc:`mathtext.fontset`. Supported values are the same as the ones
-      supported by :rc:`mathtext.fontset`: 'dejavusans', 'dejavuserif', 'cm',
-      'stix', 'stixsans' and 'custom'.
+    - math_fontfamily: The family of fonts used to render math text.
+      Supported values are: 'dejavusans', 'dejavuserif', 'cm',
+      'stix', 'stixsans' and 'custom'. Default: :rc:`mathtext.fontset`
 
     Alternatively, a font may be specified using the absolute path to a font
     file, by using the *fname* kwarg.  However, in this case, it is typically
@@ -671,23 +695,6 @@ class FontProperties:
                  stretch=None, size=None,
                  fname=None,  # if set, it's a hardcoded filename to use
                  math_fontfamily=None):
-        self._family = _normalize_font_family(rcParams['font.family'])
-        self._slant = rcParams['font.style']
-        self._variant = rcParams['font.variant']
-        self._weight = rcParams['font.weight']
-        self._stretch = rcParams['font.stretch']
-        self._size = rcParams['font.size']
-        self._file = None
-        self.set_math_fontfamily(math_fontfamily)
-
-        if isinstance(family, str):
-            # Treat family as a fontconfig pattern if it is the only
-            # parameter provided.
-            if (style is None and variant is None and weight is None and
-                    stretch is None and size is None and fname is None):
-                self.set_fontconfig_pattern(family)
-                return
-
         self.set_family(family)
         self.set_style(style)
         self.set_variant(variant)
@@ -695,6 +702,14 @@ class FontProperties:
         self.set_stretch(stretch)
         self.set_file(fname)
         self.set_size(size)
+        self.set_math_fontfamily(math_fontfamily)
+        # Treat family as a fontconfig pattern if it is the only parameter
+        # provided.  Even in that case, call the other setters first to set
+        # attributes not specified by the pattern to the rcParams defaults.
+        if (isinstance(family, str)
+                and style is None and variant is None and weight is None
+                and stretch is None and size is None and fname is None):
+            self.set_fontconfig_pattern(family)
 
     @classmethod
     def _from_any(cls, arg):
@@ -725,7 +740,7 @@ class FontProperties:
              self.get_variant(),
              self.get_weight(),
              self.get_stretch(),
-             self.get_size_in_points(),
+             self.get_size(),
              self.get_file(),
              self.get_math_fontfamily())
         return hash(l)
@@ -753,7 +768,6 @@ class FontProperties:
         Return the font style.  Values are: 'normal', 'italic' or 'oblique'.
         """
         return self._slant
-    get_slant = get_style
 
     def get_variant(self):
         """
@@ -784,9 +798,6 @@ class FontProperties:
         """
         return self._size
 
-    def get_size_in_points(self):
-        return self._size
-
     def get_file(self):
         """
         Return the filename of the associated font.
@@ -809,26 +820,34 @@ class FontProperties:
         is CSS parlance), such as: 'serif', 'sans-serif', 'cursive',
         'fantasy', or 'monospace', a real font name or a list of real
         font names.  Real font names are not supported when
-        :rc:`text.usetex` is `True`.
+        :rc:`text.usetex` is `True`. Default: :rc:`font.family`
         """
         if family is None:
             family = rcParams['font.family']
-        self._family = _normalize_font_family(family)
-    set_name = set_family
+        if isinstance(family, str):
+            family = [family]
+        self._family = family
 
     def set_style(self, style):
         """
-        Set the font style.  Values are: 'normal', 'italic' or 'oblique'.
+        Set the font style.
+
+        Parameters
+        ----------
+        style : {'normal', 'italic', 'oblique'}, default: :rc:`font.style`
         """
         if style is None:
             style = rcParams['font.style']
         _api.check_in_list(['normal', 'italic', 'oblique'], style=style)
         self._slant = style
-    set_slant = set_style
 
     def set_variant(self, variant):
         """
-        Set the font variant.  Values are: 'normal' or 'small-caps'.
+        Set the font variant.
+
+        Parameters
+        ----------
+        variant : {'normal', 'small-caps'}, default: :rc:`font.variant`
         """
         if variant is None:
             variant = rcParams['font.variant']
@@ -837,45 +856,66 @@ class FontProperties:
 
     def set_weight(self, weight):
         """
-        Set the font weight.  May be either a numeric value in the
-        range 0-1000 or one of 'ultralight', 'light', 'normal',
-        'regular', 'book', 'medium', 'roman', 'semibold', 'demibold',
-        'demi', 'bold', 'heavy', 'extra bold', 'black'
+        Set the font weight.
+
+        Parameters
+        ----------
+        weight : int or {'ultralight', 'light', 'normal', 'regular', 'book', \
+'medium', 'roman', 'semibold', 'demibold', 'demi', 'bold', 'heavy', \
+'extra bold', 'black'}, default: :rc:`font.weight`
+            If int, must be in the range  0-1000.
         """
         if weight is None:
             weight = rcParams['font.weight']
+        if weight in weight_dict:
+            self._weight = weight
+            return
         try:
             weight = int(weight)
-            if weight < 0 or weight > 1000:
-                raise ValueError()
         except ValueError:
-            if weight not in weight_dict:
-                raise ValueError("weight is invalid")
-        self._weight = weight
+            pass
+        else:
+            if 0 <= weight <= 1000:
+                self._weight = weight
+                return
+        raise ValueError(f"{weight=} is invalid")
 
     def set_stretch(self, stretch):
         """
-        Set the font stretch or width.  Options are: 'ultra-condensed',
-        'extra-condensed', 'condensed', 'semi-condensed', 'normal',
-        'semi-expanded', 'expanded', 'extra-expanded' or
-        'ultra-expanded', or a numeric value in the range 0-1000.
+        Set the font stretch or width.
+
+        Parameters
+        ----------
+        stretch : int or {'ultra-condensed', 'extra-condensed', 'condensed', \
+'semi-condensed', 'normal', 'semi-expanded', 'expanded', 'extra-expanded', \
+'ultra-expanded'}, default: :rc:`font.stretch`
+            If int, must be in the range  0-1000.
         """
         if stretch is None:
             stretch = rcParams['font.stretch']
+        if stretch in stretch_dict:
+            self._stretch = stretch
+            return
         try:
             stretch = int(stretch)
-            if stretch < 0 or stretch > 1000:
-                raise ValueError()
         except ValueError as err:
-            if stretch not in stretch_dict:
-                raise ValueError("stretch is invalid") from err
-        self._stretch = stretch
+            pass
+        else:
+            if 0 <= stretch <= 1000:
+                self._stretch = stretch
+                return
+        raise ValueError(f"{stretch=} is invalid")
 
     def set_size(self, size):
         """
-        Set the font size.  Either an relative value of 'xx-small',
-        'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'
-        or an absolute font size, e.g., 12.
+        Set the font size.
+
+        Parameters
+        ----------
+        size : float or {'xx-small', 'x-small', 'small', 'medium', \
+'large', 'x-large', 'xx-large'}, default: :rc:`font.size`
+            If float, the font size in points. The string values denote sizes
+            relative to the default font size.
         """
         if size is None:
             size = rcParams['font.size']
@@ -954,9 +994,13 @@ class FontProperties:
 
     def copy(self):
         """Return a copy of self."""
-        new = type(self)()
-        vars(new).update(vars(self))
-        return new
+        return copy.copy(self)
+
+    # Aliases
+    set_name = set_family
+    get_slant = get_style
+    set_slant = set_style
+    get_size_in_points = get_size
 
 
 class _JSONEncoder(json.JSONEncoder):
@@ -1027,14 +1071,8 @@ def json_load(filename):
     --------
     json_dump
     """
-    with open(filename, 'r') as fh:
+    with open(filename) as fh:
         return json.load(fh, object_hook=_json_decode)
-
-
-def _normalize_font_family(family):
-    if isinstance(family, str):
-        family = [family]
-    return family
 
 
 class FontManager:
@@ -1069,7 +1107,7 @@ class FontManager:
         self.ttflist = []
 
         # Delay the warning by 5s.
-        timer = Timer(5, lambda: _log.warning(
+        timer = threading.Timer(5, lambda: _log.warning(
             'Matplotlib is building the font cache; this may take a moment.'))
         timer.start()
         try:
@@ -1095,9 +1133,12 @@ class FontManager:
         ----------
         path : str or path-like
         """
+        # Convert to string in case of a path as
+        # afmFontProperty and FT2Font expect this
+        path = os.fsdecode(path)
         if Path(path).suffix.lower() == ".afm":
             with open(path, "rb") as fh:
-                font = afm.AFM(fh)
+                font = _afm.AFM(fh)
             prop = afmFontProperty(path, font)
             self.afmlist.append(prop)
         else:
@@ -1321,6 +1362,10 @@ class FontManager:
             prop, fontext, directory, fallback_to_default, rebuild_if_missing,
             rc_params)
 
+    def get_font_names(self):
+        """Return the list of available fonts."""
+        return list(set([font.name for font in self.ttflist]))
+
     @lru_cache()
     def _findfont_cached(self, prop, fontext, directory, fallback_to_default,
                          rebuild_if_missing, rc_params):
@@ -1422,7 +1467,8 @@ def _get_font(filename, hinting_factor, *, _kerning_factor, thread_id):
 # FT2Font objects cannot be used across fork()s because they reference the same
 # FT_Library object.  While invalidating *all* existing FT2Fonts after a fork
 # would be too complicated to be worth it, the main way FT2Fonts get reused is
-# via the cache of _get_font, which we can empty upon forking (in Py3.7+).
+# via the cache of _get_font, which we can empty upon forking (not on Windows,
+# which has no fork() or register_at_fork()).
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_get_font.cache_clear)
 
@@ -1459,3 +1505,4 @@ def _load_fontmanager(*, try_read_cache=True):
 
 fontManager = _load_fontmanager()
 findfont = fontManager.findfont
+get_font_names = fontManager.get_font_names

@@ -24,12 +24,12 @@ def swirl_velocity_field():
 
 
 @image_comparison(['streamplot_startpoints'], remove_text=True, style='mpl20',
-                  tol=0.513)
+                  extensions=['png'])
 def test_startpoints():
     X, Y, U, V = velocity_field()
-    start_x = np.linspace(X.min(), X.max(), 10)
-    start_y = np.linspace(Y.min(), Y.max(), 10)
-    start_points = np.column_stack([start_x, start_y])
+    start_x, start_y = np.meshgrid(np.linspace(X.min(), X.max(), 5),
+                                   np.linspace(Y.min(), Y.max(), 5))
+    start_points = np.column_stack([start_x.ravel(), start_y.ravel()])
     plt.streamplot(X, Y, U, V, start_points=start_points)
     plt.plot(start_x, start_y, 'ok')
 
@@ -77,8 +77,20 @@ def test_maxlength():
     ax.set(xlim=(None, 3.2555988021882305), ylim=(None, 3.078326760195413))
 
 
+@image_comparison(['streamplot_maxlength_no_broken.png'],
+                  remove_text=True, style='mpl20', tol=0.302)
+def test_maxlength_no_broken():
+    x, y, U, V = swirl_velocity_field()
+    ax = plt.figure().subplots()
+    ax.streamplot(x, y, U, V, maxlength=10., start_points=[[0., 1.5]],
+                  linewidth=2, density=2, broken_streamlines=False)
+    assert ax.get_xlim()[-1] == ax.get_ylim()[-1] == 3
+    # Compatibility for old test image
+    ax.set(xlim=(None, 3.2555988021882305), ylim=(None, 3.078326760195413))
+
+
 @image_comparison(['streamplot_direction.png'],
-                  remove_text=True, style='mpl20', tol=0.056)
+                  remove_text=True, style='mpl20', tol=0.073)
 def test_direction():
     x, y, U, V = swirl_velocity_field()
     plt.streamplot(x, y, U, V, integration_direction='backward',

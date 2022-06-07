@@ -9,7 +9,7 @@ import numpy as np
 from numpy import ma
 
 import matplotlib as mpl
-from matplotlib import _api, docstring
+from matplotlib import _api, _docstring
 from matplotlib.backend_bases import MouseButton
 import matplotlib.path as mpath
 import matplotlib.ticker as ticker
@@ -67,7 +67,7 @@ def _contour_labeler_event_handler(cs, inline, inline_spacing, event):
     elif (is_button and event.button == MouseButton.LEFT
           # On macOS/gtk, some keys return None.
           or is_key and event.key is not None):
-        if event.inaxes == cs.ax:
+        if event.inaxes == cs.axes:
             cs.add_label_near(event.x, event.y, transform=False,
                               inline=inline, inline_spacing=inline_spacing)
             canvas.draw()
@@ -248,41 +248,17 @@ class ContourLabeler:
         return any((x - loc[0]) ** 2 + (y - loc[1]) ** 2 < thresh
                    for loc in self.labelXYs)
 
-    @_api.deprecated("3.4")
-    def get_label_coords(self, distances, XX, YY, ysize, lw):
-        """
-        Return x, y, and the index of a label location.
-
-        Labels are plotted at a location with the smallest
-        deviation of the contour from a straight line
-        unless there is another label nearby, in which case
-        the next best place on the contour is picked up.
-        If all such candidates are rejected, the beginning
-        of the contour is chosen.
-        """
-        hysize = int(ysize / 2)
-        adist = np.argsort(distances)
-
-        for ind in adist:
-            x, y = XX[ind][hysize], YY[ind][hysize]
-            if self.too_close(x, y, lw):
-                continue
-            return x, y, ind
-
-        ind = adist[0]
-        x, y = XX[ind][hysize], YY[ind][hysize]
-        return x, y, ind
-
     def _get_nth_label_width(self, nth):
         """Return the width of the *nth* label, in pixels."""
         fig = self.axes.figure
+        renderer = fig._get_renderer()
         return (
             text.Text(0, 0,
                       self.get_text(self.labelLevelList[nth], self.labelFmt),
                       figure=fig,
                       size=self.labelFontSizeList[nth],
                       fontproperties=self.labelFontProps)
-            .get_window_extent(mpl.tight_layout.get_renderer(fig)).width)
+            .get_window_extent(renderer).width)
 
     @_api.deprecated("3.5")
     def get_label_width(self, lev, fmt, fsize):
@@ -290,9 +266,10 @@ class ContourLabeler:
         if not isinstance(lev, str):
             lev = self.get_text(lev, fmt)
         fig = self.axes.figure
+        renderer = fig._get_renderer()
         width = (text.Text(0, 0, lev, figure=fig,
                            size=fsize, fontproperties=self.labelFontProps)
-                 .get_window_extent(mpl.tight_layout.get_renderer(fig)).width)
+                 .get_window_extent(renderer).width)
         width *= 72 / fig.dpi
         return width
 
@@ -656,7 +633,7 @@ def _find_closest_point_on_path(xys, p):
     return (d2s[imin], projs[imin], (imin, imin+1))
 
 
-docstring.interpd.update(contour_set_attributes=r"""
+_docstring.interpd.update(contour_set_attributes=r"""
 Attributes
 ----------
 ax : `~matplotlib.axes.Axes`
@@ -675,7 +652,7 @@ layers : array
 """)
 
 
-@docstring.dedent_interpd
+@_docstring.dedent_interpd
 class ContourSet(cm.ScalarMappable, ContourLabeler):
     """
     Store a set of contour lines or filled regions.
@@ -928,10 +905,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
             )
 
     def get_transform(self):
-        """
-        Return the :class:`~matplotlib.transforms.Transform`
-        instance used by this ContourSet.
-        """
+        """Return the `.Transform` instance used by this ContourSet."""
         if self._transform is None:
             self._transform = self.axes.transData
         elif (not isinstance(self._transform, mtransforms.Transform)
@@ -1337,6 +1311,8 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
         """
         Find the point in the contour plot that is closest to ``(x, y)``.
 
+        This method does not support filled contours.
+
         Parameters
         ----------
         x, y : float
@@ -1373,8 +1349,11 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
         # sufficiently well that the time is not noticeable.
         # Nonetheless, improvements could probably be made.
 
+        if self.filled:
+            raise ValueError("Method does not support filled contours.")
+
         if indices is None:
-            indices = range(len(self.levels))
+            indices = range(len(self.collections))
 
         d2min = np.inf
         conmin = None
@@ -1407,7 +1386,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
         return (conmin, segmin, imin, xmin, ymin, d2min)
 
 
-@docstring.dedent_interpd
+@_docstring.dedent_interpd
 class QuadContourSet(ContourSet):
     """
     Create and store a set of contour lines or filled regions.
@@ -1418,7 +1397,7 @@ class QuadContourSet(ContourSet):
     %(contour_set_attributes)s
     """
 
-    def _process_args(self, *args, corner_mask=None, **kwargs):
+    def _process_args(self, *args, corner_mask=None, algorithm=None, **kwargs):
         """
         Process args and kwargs.
         """
@@ -1431,21 +1410,31 @@ class QuadContourSet(ContourSet):
             contour_generator = args[0]._contour_generator
             self._mins = args[0]._mins
             self._maxs = args[0]._maxs
+            self._algorithm = args[0]._algorithm
         else:
-            import matplotlib._contour as _contour
+            import contourpy
+
+            if algorithm is None:
+                algorithm = mpl.rcParams['contour.algorithm']
+            mpl.rcParams.validate["contour.algorithm"](algorithm)
+            self._algorithm = algorithm
 
             if corner_mask is None:
-                corner_mask = mpl.rcParams['contour.corner_mask']
+                if self._algorithm == "mpl2005":
+                    # mpl2005 does not support corner_mask=True so if not
+                    # specifically requested then disable it.
+                    corner_mask = False
+                else:
+                    corner_mask = mpl.rcParams['contour.corner_mask']
             self._corner_mask = corner_mask
 
             x, y, z = self._contour_args(args, kwargs)
 
-            _mask = ma.getmask(z)
-            if _mask is ma.nomask or not _mask.any():
-                _mask = None
-
-            contour_generator = _contour.QuadContourGenerator(
-                x, y, z.filled(), _mask, self._corner_mask, self.nchunk)
+            contour_generator = contourpy.contour_generator(
+                x, y, z, name=self._algorithm, corner_mask=self._corner_mask,
+                line_type=contourpy.LineType.SeparateCode,
+                fill_type=contourpy.FillType.OuterCode,
+                chunk_size=self.nchunk)
 
             t = self.get_transform()
 
@@ -1578,7 +1567,7 @@ class QuadContourSet(ContourSet):
         return np.meshgrid(x, y)
 
 
-docstring.interpd.update(contour_doc="""
+_docstring.interpd.update(contour_doc="""
 `.contour` and `.contourf` draw contour lines and filled contours,
 respectively.  Except as noted, function signatures and return values
 are the same for both versions.
@@ -1770,6 +1759,15 @@ hatches : list[str], optional
     Hatching is supported in the PostScript, PDF, SVG and Agg
     backends only.
 
+algorithm : {'mpl2005', 'mpl2014', 'serial', 'threaded'}, optional
+    Which contouring algorithm to use to calculate the contour lines and
+    polygons. The algorithms are implemented in
+    `ContourPy <https://github.com/contourpy/contourpy>`_, consult the
+    `ContourPy documentation <https://contourpy.readthedocs.io>`_ for
+    further information.
+
+    The default is taken from :rc:`contour.algorithm`.
+
 data : indexable object, optional
     DATA_PARAMETER_PLACEHOLDER
 
@@ -1790,5 +1788,5 @@ Notes
 3. `.contour` and `.contourf` use a `marching squares
    <https://en.wikipedia.org/wiki/Marching_squares>`_ algorithm to
    compute contour locations.  More information can be found in
-   the source ``src/_contour.h``.
+   `ContourPy documentation <https://contourpy.readthedocs.io>`_.
 """)

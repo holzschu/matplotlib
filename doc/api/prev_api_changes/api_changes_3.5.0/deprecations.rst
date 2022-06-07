@@ -62,7 +62,7 @@ These methods convert from unix timestamps to matplotlib floats, but are not
 used internally to matplotlib, and should not be needed by end users. To
 convert a unix timestamp to datetime, simply use
 `datetime.datetime.utcfromtimestamp`, or to use NumPy `~numpy.datetime64`
-``dt = np.datetim64(e*1e6, 'us')``.
+``dt = np.datetime64(e*1e6, 'us')``.
 
 Auto-removal of grids by `~.Axes.pcolor` and `~.Axes.pcolormesh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -269,6 +269,10 @@ Miscellaneous deprecations
 - ``cm.LUTSIZE`` is deprecated. Use :rc:`image.lut` instead. This value only
   affects colormap quantization levels for default colormaps generated at
   module import time.
+- ``Collection.__init__`` previously ignored *transOffset* without *offsets* also
+  being specified. In the future, *transOffset* will begin having an effect
+  regardless of *offsets*. In the meantime, if you wish to set *transOffset*,
+  call `.Collection.set_offset_transform` explicitly.
 - ``Colorbar.patch`` is deprecated; this attribute is not correctly updated
   anymore.
 - ``ContourLabeler.get_label_width`` is deprecated.

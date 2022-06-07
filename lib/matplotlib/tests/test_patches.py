@@ -6,8 +6,8 @@ from numpy.testing import assert_almost_equal, assert_array_equal
 import pytest
 
 import matplotlib as mpl
-from matplotlib.patches import (Annulus, Patch, Polygon, Rectangle,
-                                FancyArrowPatch)
+from matplotlib.patches import (Annulus, Ellipse, Patch, Polygon, Rectangle,
+                                FancyArrowPatch, FancyArrow, BoxStyle)
 from matplotlib.testing.decorators import image_comparison, check_figures_equal
 from matplotlib.transforms import Bbox
 import matplotlib.pyplot as plt
@@ -31,6 +31,7 @@ def test_Polygon_close():
 
     # start with open path and close it:
     p = Polygon(xy, closed=True)
+    assert p.get_closed()
     assert_array_equal(p.get_xy(), xyclosed)
     p.set_xy(xy)
     assert_array_equal(p.get_xy(), xyclosed)
@@ -43,6 +44,7 @@ def test_Polygon_close():
 
     # start with open path and leave it open:
     p = Polygon(xy, closed=False)
+    assert not p.get_closed()
     assert_array_equal(p.get_xy(), xy)
     p.set_xy(xy)
     assert_array_equal(p.get_xy(), xy)
@@ -52,6 +54,54 @@ def test_Polygon_close():
     assert_array_equal(p.get_xy(), xyclosed)
     p.set_xy(xyclosed)
     assert_array_equal(p.get_xy(), xyclosed)
+
+
+def test_corner_center():
+    loc = [10, 20]
+    width = 1
+    height = 2
+
+    # Rectangle
+    # No rotation
+    corners = ((10, 20), (11, 20), (11, 22), (10, 22))
+    rect = Rectangle(loc, width, height)
+    assert_array_equal(rect.get_corners(), corners)
+    assert_array_equal(rect.get_center(), (10.5, 21))
+
+    # 90 deg rotation
+    corners_rot = ((10, 20), (10, 21), (8, 21), (8, 20))
+    rect.set_angle(90)
+    assert_array_equal(rect.get_corners(), corners_rot)
+    assert_array_equal(rect.get_center(), (9, 20.5))
+
+    # Rotation not a multiple of 90 deg
+    theta = 33
+    t = mtransforms.Affine2D().rotate_around(*loc, np.deg2rad(theta))
+    corners_rot = t.transform(corners)
+    rect.set_angle(theta)
+    assert_almost_equal(rect.get_corners(), corners_rot)
+
+    # Ellipse
+    loc = [loc[0] + width / 2,
+           loc[1] + height / 2]
+    ellipse = Ellipse(loc, width, height)
+
+    # No rotation
+    assert_array_equal(ellipse.get_corners(), corners)
+
+    # 90 deg rotation
+    corners_rot = ((11.5, 20.5), (11.5, 21.5), (9.5, 21.5), (9.5, 20.5))
+    ellipse.set_angle(90)
+    assert_array_equal(ellipse.get_corners(), corners_rot)
+    # Rotation shouldn't change ellipse center
+    assert_array_equal(ellipse.get_center(), loc)
+
+    # Rotation not a multiple of 90 deg
+    theta = 33
+    t = mtransforms.Affine2D().rotate_around(*loc, np.deg2rad(theta))
+    corners_rot = t.transform(corners)
+    ellipse.set_angle(theta)
+    assert_almost_equal(ellipse.get_corners(), corners_rot)
 
 
 def test_rotate_rect():
@@ -90,7 +140,7 @@ def test_rotate_rect_draw(fig_test, fig_ref):
     ax_ref.add_patch(rect_ref)
     assert rect_ref.get_angle() == angle
 
-    # Check that when the angle is updated after adding to an axes, that the
+    # Check that when the angle is updated after adding to an Axes, that the
     # patch is marked stale and redrawn in the correct location
     rect_test = Rectangle(loc, width, height)
     assert rect_test.get_angle() == 0
@@ -487,7 +537,7 @@ def test_datetime_datetime_fails():
     from datetime import datetime
 
     start = datetime(2017, 1, 1, 0, 0, 0)
-    dt_delta = datetime(1970, 1, 5)    # Will be 5 days if units are done wrong
+    dt_delta = datetime(1970, 1, 5)  # Will be 5 days if units are done wrong.
 
     with pytest.raises(TypeError):
         mpatches.Rectangle((start, 0), dt_delta, 1)
@@ -642,6 +692,20 @@ def test_rotated_arcs():
         ax.set_aspect("equal")
 
 
+def test_fancyarrow_shape_error():
+    with pytest.raises(ValueError, match="Got unknown shape: 'foo'"):
+        FancyArrow(0, 0, 0.2, 0.2, shape='foo')
+
+
+@pytest.mark.parametrize('fmt, match', (
+    ("foo", "Unknown style: 'foo'"),
+    ("Round,foo", "Incorrect style argument: 'Round,foo'"),
+))
+def test_boxstyle_errors(fmt, match):
+    with pytest.raises(ValueError, match=match):
+        BoxStyle(fmt)
+
+
 @image_comparison(baseline_images=['annulus'], extensions=['png'])
 def test_annulus():
 
@@ -671,6 +735,31 @@ def test_annulus_setters():
 
     ell.center = (0.5, 0.5)
     ell.radii = (0.5, 0.3)
+    ell.width = 0.1
+    ell.angle = 45
+
+
+@image_comparison(baseline_images=['annulus'], extensions=['png'])
+def test_annulus_setters2():
+
+    fig, ax = plt.subplots()
+    cir = Annulus((0., 0.), 0.2, 0.01, fc='g')   # circular annulus
+    ell = Annulus((0., 0.), (1, 2), 0.1, 0,      # elliptical
+                  fc='m', ec='b', alpha=0.5, hatch='xxx')
+    ax.add_patch(cir)
+    ax.add_patch(ell)
+    ax.set_aspect('equal')
+
+    cir.center = (0.5, 0.5)
+    cir.set_semimajor(0.2)
+    cir.set_semiminor(0.2)
+    assert cir.radii == (0.2, 0.2)
+    cir.width = 0.05
+
+    ell.center = (0.5, 0.5)
+    ell.set_semimajor(0.5)
+    ell.set_semiminor(0.3)
+    assert ell.radii == (0.5, 0.3)
     ell.width = 0.1
     ell.angle = 45
 

@@ -90,7 +90,7 @@ def _test_sigint_impl(backend, target_name, kwargs):
     plt.switch_backend(backend)
     from matplotlib.backends.qt_compat import QtCore
 
-    def interupter():
+    def interrupter():
         if sys.platform == 'win32':
             import win32api
             win32api.GenerateConsoleCtrlEvent(0, 0)
@@ -99,7 +99,7 @@ def _test_sigint_impl(backend, target_name, kwargs):
             os.kill(os.getpid(), signal.SIGINT)
 
     target = getattr(plt, target_name)
-    timer = threading.Timer(1, interupter)
+    timer = threading.Timer(1, interrupter)
     fig = plt.figure()
     fig.canvas.mpl_connect(
         'draw_event',
@@ -193,7 +193,7 @@ def test_other_signal_before_sigint(target, kwargs):
     plt.figure()
 
 
-@pytest.mark.backend('Qt5Agg')
+@pytest.mark.backend('Qt5Agg', skip_on_importerror=True)
 def test_fig_sigint_override(qt_core):
     from matplotlib.backends.backend_qt5 import _BackendQT5
     # Create a figure
@@ -512,7 +512,7 @@ def _test_enums_impl():
 
     _enum("QtGui.QImage.Format").Format_ARGB32_Premultiplied
     _enum("QtGui.QImage.Format").Format_ARGB32_Premultiplied
-    # SPECIAL_KEYS are Qt::Key that do *not* return their unicode name instead
+    # SPECIAL_KEYS are Qt::Key that do *not* return their Unicode name instead
     # they have manually specified names.
     SPECIAL_KEYS = {
         _to_int(getattr(_enum("QtCore.Qt.Key"), k)): v

@@ -1286,7 +1286,7 @@ class _Sparse_Matrix_coo:
 def _cg(A, b, x0=None, tol=1.e-10, maxiter=1000):
     """
     Use Preconditioned Conjugate Gradient iteration to solve A x = b
-    A simple Jacobi (diagonal) preconditionner is used.
+    A simple Jacobi (diagonal) preconditioner is used.
 
     Parameters
     ----------
@@ -1406,8 +1406,7 @@ def _safe_inv22_vectorized(M):
 
     *M* : array of (2, 2) matrices to inverse, shape (n, 2, 2)
     """
-    assert M.ndim == 3
-    assert M.shape[-2:] == (2, 2)
+    _api.check_shape((None, 2, 2), M=M)
     M_inv = np.empty_like(M)
     prod1 = M[:, 0, 0]*M[:, 1, 1]
     delta = prod1 - M[:, 0, 1]*M[:, 1, 0]
@@ -1441,8 +1440,7 @@ def _pseudo_inv22sym_vectorized(M):
 
     *M* : array of (2, 2) matrices to inverse, shape (n, 2, 2)
     """
-    assert M.ndim == 3
-    assert M.shape[-2:] == (2, 2)
+    _api.check_shape((None, 2, 2), M=M)
     M_inv = np.empty_like(M)
     prod1 = M[:, 0, 0]*M[:, 1, 1]
     delta = prod1 - M[:, 0, 1]*M[:, 1, 0]

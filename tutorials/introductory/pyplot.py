@@ -3,19 +3,21 @@
 Pyplot tutorial
 ===============
 
-An introduction to the pyplot interface.
+An introduction to the pyplot interface.  Please also see
+:doc:`/tutorials/introductory/quick_start` for an overview of how Matplotlib
+works and :ref:`api_interfaces` for an explanation of the trade-offs between the
+supported user APIs.
+
 """
 
 ###############################################################################
 # Intro to pyplot
 # ===============
 #
-# :mod:`matplotlib.pyplot` is a collection of functions
-# that make matplotlib work like MATLAB.
-# Each ``pyplot`` function makes
-# some change to a figure: e.g., creates a figure, creates a plotting area
-# in a figure, plots some lines in a plotting area, decorates the plot
-# with labels, etc.
+# :mod:`matplotlib.pyplot` is a collection of functions that make matplotlib
+# work like MATLAB.  Each ``pyplot`` function makes some change to a figure:
+# e.g., creates a figure, creates a plotting area in a figure, plots some lines
+# in a plotting area, decorates the plot with labels, etc.
 #
 # In :mod:`matplotlib.pyplot` various states are preserved
 # across function calls, so that it keeps track of things like
@@ -27,10 +29,11 @@ An introduction to the pyplot interface.
 #
 # .. note::
 #
-#    the pyplot API is generally less-flexible than the object-oriented API.
-#    Most of the function calls you see here can also be called as methods
-#    from an ``Axes`` object. We recommend browsing the tutorials and
-#    examples to see how this works.
+#    the implicit pyplot API is generally less verbose but also not as flexible as the
+#    explicit API.  Most of the function calls you see here can also be called
+#    as methods from an ``Axes`` object. We recommend browsing the tutorials
+#    and examples to see how this works. See :ref:`api_interfaces` for an
+#    explanation of the trade off of the supported user APIs.
 #
 # Generating visualizations with pyplot is very quick:
 
@@ -259,7 +262,7 @@ plt.show()
 
 ###############################################################################
 # The `~.pyplot.figure` call here is optional because a figure will be created
-# if none exists, just as an axes will be created (equivalent to an explicit
+# if none exists, just as an Axes will be created (equivalent to an explicit
 # ``subplot()`` call) if none exists.
 # The `~.pyplot.subplot` call specifies ``numrows,
 # numcols, plot_number`` where ``plot_number`` ranges from 1 to
@@ -268,7 +271,7 @@ plt.show()
 # to ``subplot(2, 1, 1)``.
 #
 # You can create an arbitrary number of subplots
-# and axes.  If you want to place an axes manually, i.e., not on a
+# and axes.  If you want to place an Axes manually, i.e., not on a
 # rectangular grid, use `~.pyplot.axes`,
 # which allows you to specify the location as ``axes([left, bottom,
 # width, height])`` where all values are in fractional (0 to 1)
@@ -300,7 +303,7 @@ plt.show()
 # and the current axes with `~.pyplot.cla`.  If you find
 # it annoying that states (specifically the current image, figure and axes)
 # are being maintained for you behind the scenes, don't despair: this is just a thin
-# stateful wrapper around an object oriented API, which you can use
+# stateful wrapper around an object-oriented API, which you can use
 # instead (see :doc:`/tutorials/intermediate/artists`)
 #
 # If you are making lots of figures, you need to be aware of one
@@ -326,7 +329,7 @@ mu, sigma = 100, 15
 x = mu + sigma * np.random.randn(10000)
 
 # the histogram of the data
-n, bins, patches = plt.hist(x, 50, density=1, facecolor='g', alpha=0.75)
+n, bins, patches = plt.hist(x, 50, density=True, facecolor='g', alpha=0.75)
 
 
 plt.xlabel('Smarts')

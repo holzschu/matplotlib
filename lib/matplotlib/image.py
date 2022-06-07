@@ -7,22 +7,21 @@ import math
 import os
 import logging
 from pathlib import Path
+import warnings
 
 import numpy as np
 import PIL.PngImagePlugin
 
 import matplotlib as mpl
-from matplotlib import _api
+from matplotlib import _api, cbook, cm
+# For clarity, names from _image are given explicitly in this module
+from matplotlib import _image
+# For user convenience, the names from _image are also imported into
+# the image namespace
+from matplotlib._image import *
 import matplotlib.artist as martist
 from matplotlib.backend_bases import FigureCanvasBase
 import matplotlib.colors as mcolors
-import matplotlib.cm as cm
-import matplotlib.cbook as cbook
-# For clarity, names from _image are given explicitly in this module:
-import matplotlib._image as _image
-# For user convenience, the names from _image are also imported into
-# the image namespace:
-from matplotlib._image import *
 from matplotlib.transforms import (
     Affine2D, BboxBase, Bbox, BboxTransform, BboxTransformTo,
     IdentityTransform, TransformedBbox)
@@ -166,7 +165,22 @@ def _resample(
     allocating the output array and fetching the relevant properties from the
     Image object *image_obj*.
     """
-
+    # AGG can only handle coordinates smaller than 24-bit signed integers,
+    # so raise errors if the input data is larger than _image.resample can
+    # handle.
+    msg = ('Data with more than {n} cannot be accurately displayed. '
+           'Downsampling to less than {n} before displaying. '
+           'To remove this warning, manually downsample your data.')
+    if data.shape[1] > 2**23:
+        warnings.warn(msg.format(n='2**23 columns'))
+        step = int(np.ceil(data.shape[1] / 2**23))
+        data = data[:, ::step]
+        transform = Affine2D().scale(step, 1) + transform
+    if data.shape[0] > 2**24:
+        warnings.warn(msg.format(n='2**24 rows'))
+        step = int(np.ceil(data.shape[0] / 2**24))
+        data = data[::step, :]
+        transform = Affine2D().scale(1, step) + transform
     # decide if we need to apply anti-aliasing if the data is upsampled:
     # compare the number of displayed pixels to the number of
     # the data pixels.
@@ -257,13 +271,18 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
 
         self._imcache = None
 
-        self.update(kwargs)
+        self._internal_update(kwargs)
+
+    def __str__(self):
+        try:
+            size = self.get_size()
+            return f"{type(self).__name__}(size={size!r})"
+        except RuntimeError:
+            return type(self).__name__
 
     def __getstate__(self):
-        state = super().__getstate__()
-        # We can't pickle the C Image cached object.
-        state['_imcache'] = None
-        return state
+        # Save some space on the pickle by not saving the cache.
+        return {**super().__getstate__(), "_imcache": None}
 
     def get_size(self):
         """Return the size of the image as tuple (numrows, numcols)."""
@@ -304,7 +323,6 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
         Call this whenever the mappable is changed so observers can update.
         """
         self._imcache = None
-        self._rgbacache = None
         cm.ScalarMappable.changed(self)
 
     def _make_image(self, A, in_bbox, out_bbox, clip_bbox, magnification=1.0,
@@ -710,7 +728,6 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
                 self._A = self._A.astype(np.uint8)
 
         self._imcache = None
-        self._rgbacache = None
         self.stale = True
 
     def set_array(self, A):
@@ -884,8 +901,6 @@ class AxesImage(_ImageBase):
         the output image is larger than the input image.
     **kwargs : `.Artist` properties
     """
-    def __str__(self):
-        return "AxesImage(%g,%g;%gx%g)" % tuple(self.axes.bbox.bounds)
 
     def __init__(self, ax,
                  cmap=None,
@@ -959,9 +974,9 @@ class AxesImage(_ImageBase):
         self.axes.update_datalim(corners)
         self.sticky_edges.x[:] = [xmin, xmax]
         self.sticky_edges.y[:] = [ymin, ymax]
-        if self.axes._autoscaleXon:
+        if self.axes.get_autoscalex_on():
             self.axes.set_xlim((xmin, xmax), auto=None)
-        if self.axes._autoscaleYon:
+        if self.axes.get_autoscaley_on():
             self.axes.set_ylim((ymin, ymax), auto=None)
         self.stale = True
 
@@ -1203,7 +1218,7 @@ class PcolorImage(AxesImage):
         **kwargs : `.Artist` properties
         """
         super().__init__(ax, norm=norm, cmap=cmap)
-        self.update(kwargs)
+        self._internal_update(kwargs)
         if A is not None:
             self.set_data(x, y, A)
 
@@ -1214,10 +1229,10 @@ class PcolorImage(AxesImage):
         if unsampled:
             raise ValueError('unsampled not supported on PColorImage')
 
-        if self._rgbacache is None:
+        if self._imcache is None:
             A = self.to_rgba(self._A, bytes=True)
-            self._rgbacache = np.pad(A, [(1, 1), (1, 1), (0, 0)], "constant")
-        padded_A = self._rgbacache
+            self._imcache = np.pad(A, [(1, 1), (1, 1), (0, 0)], "constant")
+        padded_A = self._imcache
         bg = mcolors.to_rgba(self.axes.patch.get_facecolor(), 0)
         bg = (np.array(bg) * 255).astype(np.uint8)
         if (padded_A[0, 0] != bg).all():
@@ -1294,7 +1309,7 @@ class PcolorImage(AxesImage):
         self._A = A
         self._Ax = x
         self._Ay = y
-        self._rgbacache = None
+        self._imcache = None
         self.stale = True
 
     def set_array(self, *args):
@@ -1344,7 +1359,7 @@ class FigureImage(_ImageBase):
         self.figure = fig
         self.ox = offsetx
         self.oy = offsety
-        self.update(kwargs)
+        self._internal_update(kwargs)
         self.magnification = 1.0
 
     def get_extent(self):
@@ -1410,7 +1425,7 @@ class BboxImage(_ImageBase):
 
     def get_window_extent(self, renderer=None):
         if renderer is None:
-            renderer = self.get_figure()._cachedRenderer
+            renderer = self.get_figure()._get_renderer()
 
         if isinstance(self.bbox, BboxBase):
             return self.bbox
@@ -1511,29 +1526,13 @@ def imread(fname, format=None):
         ext = format
     img_open = (
         PIL.PngImagePlugin.PngImageFile if ext == 'png' else PIL.Image.open)
-    if isinstance(fname, str):
-        parsed = parse.urlparse(fname)
-        if len(parsed.scheme) > 1:  # Pillow doesn't handle URLs directly.
-            _api.warn_deprecated(
-                "3.4", message="Directly reading images from URLs is "
-                "deprecated since %(since)s and will no longer be supported "
-                "%(removal)s. Please open the URL for reading and pass the "
-                "result to Pillow, e.g. with "
-                "``np.array(PIL.Image.open(urllib.request.urlopen(url)))``.")
-            # hide imports to speed initial import on systems with slow linkers
-            from urllib import request
-            ssl_ctx = mpl._get_ssl_context()
-            if ssl_ctx is None:
-                _log.debug(
-                    "Could not get certifi ssl context, https may not work."
-                )
-            with request.urlopen(fname, context=ssl_ctx) as response:
-                import io
-                try:
-                    response.seek(0)
-                except (AttributeError, io.UnsupportedOperation):
-                    response = io.BytesIO(response.read())
-                return imread(response, format=ext)
+    if isinstance(fname, str) and len(parse.urlparse(fname).scheme) > 1:
+        # Pillow doesn't handle URLs directly.
+        raise ValueError(
+            "Please open the URL for reading and pass the "
+            "result to Pillow, e.g. with "
+            "``np.array(PIL.Image.open(urllib.request.urlopen(url)))``."
+            )
     with img_open(fname) as image:
         return (_pil_png_to_float_array(image)
                 if isinstance(image, PIL.PngImagePlugin.PngImageFile) else
@@ -1752,7 +1751,7 @@ def thumbnail(infile, thumbfile, scale=0.1, interpolation='bilinear',
 
     Returns
     -------
-    `~.figure.Figure`
+    `.Figure`
         The figure instance containing the thumbnail.
     """
 

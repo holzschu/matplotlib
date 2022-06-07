@@ -40,9 +40,9 @@ Colors that Matplotlib recognizes are listed at
 """
 
 import base64
-from collections.abc import Sized, Sequence
-import copy
+from collections.abc import Sized, Sequence, Mapping
 import functools
+import importlib
 import inspect
 import io
 import itertools
@@ -53,7 +53,7 @@ from PIL.PngImagePlugin import PngInfo
 
 import matplotlib as mpl
 import numpy as np
-from matplotlib import _api, cbook, scale
+from matplotlib import _api, _cm, cbook, scale
 from ._color_data import BASE_COLORS, TABLEAU_COLORS, CSS4_COLORS, XKCD_COLORS
 
 
@@ -93,6 +93,113 @@ def get_named_colors_mapping():
     return _colors_full_map
 
 
+class ColorSequenceRegistry(Mapping):
+    r"""
+    Container for sequences of colors that are known to Matplotlib by name.
+
+    The universal registry instance is `matplotlib.color_sequences`. There
+    should be no need for users to instantiate `.ColorSequenceRegistry`
+    themselves.
+
+    Read access uses a dict-like interface mapping names to lists of colors::
+
+        import matplotlib as mpl
+        cmap = mpl.color_sequences['tab10']
+
+    The returned lists are copies, so that their modification does not change
+    the global definition of the color sequence.
+
+    Additional color sequences can be added via
+    `.ColorSequenceRegistry.register`::
+
+        mpl.color_sequences.register('rgb', ['r', 'g', 'b'])
+    """
+
+    _BUILTIN_COLOR_SEQUENCES = {
+        'tab10': _cm._tab10_data,
+        'tab20': _cm._tab20_data,
+        'tab20b': _cm._tab20b_data,
+        'tab20c': _cm._tab20c_data,
+        'Pastel1': _cm._Pastel1_data,
+        'Pastel2': _cm._Pastel2_data,
+        'Paired': _cm._Paired_data,
+        'Accent': _cm._Accent_data,
+        'Dark2': _cm._Dark2_data,
+        'Set1': _cm._Set1_data,
+        'Set2': _cm._Set1_data,
+        'Set3': _cm._Set1_data,
+    }
+
+    def __init__(self):
+        self._color_sequences = {**self._BUILTIN_COLOR_SEQUENCES}
+
+    def __getitem__(self, item):
+        try:
+            return list(self._color_sequences[item])
+        except KeyError:
+            raise KeyError(f"{item!r} is not a known color sequence name")
+
+    def __iter__(self):
+        return iter(self._color_sequences)
+
+    def __len__(self):
+        return len(self._color_sequences)
+
+    def __str__(self):
+        return ('ColorSequenceRegistry; available colormaps:\n' +
+                ', '.join(f"'{name}'" for name in self))
+
+    def register(self, name, color_list):
+        """
+        Register a new color sequence.
+
+        The color sequence registry stores a copy of the given *color_list*, so
+        that future changes to the original list do not affect the registered
+        color sequence. Think of this as the registry taking a snapshot
+        of *color_list* at registration.
+
+        Parameters
+        ----------
+        name : str
+            The name for the color sequence.
+
+        color_list : list of colors
+            An iterable returning valid Matplotlib colors when iterating over.
+            Note however that the returned color sequence will always be a
+            list regardless of the input type.
+
+        """
+        if name in self._BUILTIN_COLOR_SEQUENCES:
+            raise ValueError(f"{name!r} is a reserved name for a builtin "
+                             "color sequence")
+
+        color_list = list(color_list)  # force copy and coerce type to list
+        for color in color_list:
+            try:
+                to_rgba(color)
+            except ValueError:
+                raise ValueError(
+                    f"{color!r} is not a valid color specification")
+
+        self._color_sequences[name] = color_list
+
+    def unregister(self, name):
+        """
+        Remove a sequence from the registry.
+
+        You cannot remove built-in color sequences.
+
+        If the name is not registered, returns with no error.
+        """
+        if name in self._BUILTIN_COLOR_SEQUENCES:
+            raise ValueError(
+                f"Cannot unregister builtin color sequence {name!r}")
+        self._color_sequences.pop(name, None)
+
+
+_color_sequences = ColorSequenceRegistry()
+
+
 def _sanitize_extrema(ex):
     if ex is None:
         return ex
@@ -119,6 +226,12 @@ def is_color_like(c):
         return False
     else:
         return True
+
+
+def _has_alpha_channel(c):
+    """Return whether *c* is a color with an alpha channel."""
+    # 4-element sequences are interpreted as r, g, b, a
+    return not isinstance(c, str) and len(c) == 4
 
 
 def _check_color_like(**kwargs):
@@ -356,9 +469,7 @@ def to_rgba_array(c, alpha=None):
         pass
 
     if isinstance(c, str):
-        raise ValueError("Using a string of single character colors as "
-                         "a color sequence is not supported. The colors can "
-                         "be passed as an explicit list instead.")
+        raise ValueError(f"{c!r} is not a valid color value.")
 
     if len(c) == 0:
         return np.zeros((0, 4), float)
@@ -394,7 +505,7 @@ def to_hex(c, keep_alpha=False):
     ----------
     c : :doc:`color </tutorials/colors/colors>` or `numpy.ma.masked`
 
-    keep_alpha: bool, default: False
+    keep_alpha : bool, default: False
       If False, use the ``#rrggbb`` format, otherwise use ``#rrggbbaa``.
 
     Returns
@@ -504,9 +615,7 @@ def _create_lookup_table(N, data, gamma=1.0):
         adata = np.array(data)
     except Exception as err:
         raise TypeError("data must be convertible to an array") from err
-    shape = adata.shape
-    if len(shape) != 2 or shape[1] != 3:
-        raise ValueError("data must be nx3 format")
+    _api.check_shape((None, 3), data=adata)
 
     x = adata[:, 0]
     y0 = adata[:, 1]
@@ -534,20 +643,6 @@ def _create_lookup_table(N, data, gamma=1.0):
         ])
     # ensure that the lut is confined to values between 0 and 1 by clipping it
     return np.clip(lut, 0.0, 1.0)
-
-
-def _warn_if_global_cmap_modified(cmap):
-    if getattr(cmap, '_global', False):
-        _api.warn_deprecated(
-            "3.3",
-            removal="3.6",
-            message="You are modifying the state of a globally registered "
-                    "colormap. This has been deprecated since %(since)s and "
-                    "%(removal)s, you will not be able to modify a "
-                    "registered colormap in-place. To remove this warning, "
-                    "you can make a copy of the colormap first. "
-                    f'cmap = mpl.cm.get_cmap("{cmap.name}").copy()'
-        )
 
 
 class Colormap:
@@ -666,7 +761,6 @@ class Colormap:
         cmapobject.__dict__.update(self.__dict__)
         if self._isinit:
             cmapobject._lut = np.copy(self._lut)
-        cmapobject._global = False
         return cmapobject
 
     def __eq__(self, other):
@@ -688,7 +782,6 @@ class Colormap:
 
     def set_bad(self, color='k', alpha=None):
         """Set the color for masked values."""
-        _warn_if_global_cmap_modified(self)
         self._rgba_bad = to_rgba(color, alpha)
         if self._isinit:
             self._set_extremes()
@@ -701,7 +794,6 @@ class Colormap:
 
     def set_under(self, color='k', alpha=None):
         """Set the color for low out-of-range values."""
-        _warn_if_global_cmap_modified(self)
         self._rgba_under = to_rgba(color, alpha)
         if self._isinit:
             self._set_extremes()
@@ -714,7 +806,6 @@ class Colormap:
 
     def set_over(self, color='k', alpha=None):
         """Set the color for high out-of-range values."""
-        _warn_if_global_cmap_modified(self)
         self._rgba_over = to_rgba(color, alpha)
         if self._isinit:
             self._set_extremes()
@@ -737,7 +828,7 @@ class Colormap:
         values and, when ``norm.clip = False``, low (*under*) and high (*over*)
         out-of-range values, have been set accordingly.
         """
-        new_cm = copy.copy(self)
+        new_cm = self.copy()
         new_cm.set_extremes(bad=bad, under=under, over=over)
         return new_cm
 
@@ -1132,7 +1223,7 @@ class Normalize:
         self._vmax = _sanitize_extrema(vmax)
         self._clip = clip
         self._scale = None
-        self.callbacks = cbook.CallbackRegistry()
+        self.callbacks = cbook.CallbackRegistry(signals=["changed"])
 
     @property
     def vmin(self):
@@ -1231,12 +1322,13 @@ class Normalize:
 
         result, is_scalar = self.process_value(value)
 
-        self.autoscale_None(result)
+        if self.vmin is None or self.vmax is None:
+            self.autoscale_None(result)
         # Convert at least to float, without losing precision.
         (vmin,), _ = self.process_value(self.vmin)
         (vmax,), _ = self.process_value(self.vmax)
         if vmin == vmax:
-            result.fill(0)   # Or should it be all masked?  Or 0.5?
+            result.fill(0)  # Or should it be all masked?  Or 0.5?
         elif vmin > vmax:
             raise ValueError("minvalue must be less than or equal to maxvalue")
         else:
@@ -1508,9 +1600,39 @@ def make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
 
     if init is None:
         def init(vmin=None, vmax=None, clip=False): pass
-    bound_init_signature = inspect.signature(init)
+
+    return _make_norm_from_scale(
+        scale_cls, base_norm_cls, inspect.signature(init))
+
+
+@functools.lru_cache(None)
+def _make_norm_from_scale(scale_cls, base_norm_cls, bound_init_signature):
+    """
+    Helper for `make_norm_from_scale`.
+
+    This function is split out so that it takes a signature object as third
+    argument (as signatures are picklable, contrary to arbitrary lambdas);
+    caching is also used so that different unpickles reuse the same class.
+    """
 
     class Norm(base_norm_cls):
+        def __reduce__(self):
+            cls = type(self)
+            # If the class is toplevel-accessible, it is possible to directly
+            # pickle it "by name".  This is required to support norm classes
+            # defined at a module's toplevel, as the inner base_norm_cls is
+            # otherwise unpicklable (as it gets shadowed by the generated norm
+            # class).  If either import or attribute access fails, fall back to
+            # the general path.
+            try:
+                if cls is getattr(importlib.import_module(cls.__module__),
+                                  cls.__qualname__):
+                    return (_create_empty_object_of_class, (cls,), vars(self))
+            except (ImportError, AttributeError):
+                pass
+            return (_picklable_norm_constructor,
+                    (scale_cls, base_norm_cls, bound_init_signature),
+                    vars(self))
 
         def __init__(self, *args, **kwargs):
             ba = bound_init_signature.bind(*args, **kwargs)
@@ -1520,9 +1642,14 @@ def make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
             self._scale = scale_cls(axis=None, **ba.arguments)
             self._trf = self._scale.get_transform()
 
+        __init__.__signature__ = bound_init_signature.replace(parameters=[
+            inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            *bound_init_signature.parameters.values()])
+
         def __call__(self, value, clip=None):
             value, is_scalar = self.process_value(value)
-            self.autoscale_None(value)
+            if self.vmin is None or self.vmax is None:
+                self.autoscale_None(value)
             if self.vmin > self.vmax:
                 raise ValueError("vmin must be less or equal to vmax")
             if self.vmin == self.vmax:
@@ -1557,15 +1684,33 @@ def make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
                      .reshape(np.shape(value)))
             return value[0] if is_scalar else value
 
-    Norm.__name__ = (f"{scale_cls.__name__}Norm" if base_norm_cls is Normalize
-                     else base_norm_cls.__name__)
-    Norm.__qualname__ = base_norm_cls.__qualname__
+        def autoscale(self, A):
+            # i.e. A[np.isfinite(...)], but also for non-array A's
+            in_trf_domain = np.extract(np.isfinite(self._trf.transform(A)), A)
+            return super().autoscale(in_trf_domain)
+
+        def autoscale_None(self, A):
+            in_trf_domain = np.extract(np.isfinite(self._trf.transform(A)), A)
+            return super().autoscale_None(in_trf_domain)
+
+    Norm.__name__ = (
+            f"{scale_cls.__name__}Norm" if base_norm_cls is Normalize
+            else base_norm_cls.__name__)
+    Norm.__qualname__ = (
+            f"{scale_cls.__qualname__}Norm" if base_norm_cls is Normalize
+            else base_norm_cls.__qualname__)
     Norm.__module__ = base_norm_cls.__module__
     Norm.__doc__ = base_norm_cls.__doc__
-    Norm.__init__.__signature__ = bound_init_signature.replace(parameters=[
-        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
-        *bound_init_signature.parameters.values()])
+
     return Norm
+
+
+def _create_empty_object_of_class(cls):
+    return cls.__new__(cls)
+
+
+def _picklable_norm_constructor(*args):
+    return _create_empty_object_of_class(_make_norm_from_scale(*args))
 
 
 @make_norm_from_scale(
@@ -1605,14 +1750,6 @@ class FuncNorm(Normalize):
 class LogNorm(Normalize):
     """Normalize a given value to the 0-1 range on a log scale."""
 
-    def autoscale(self, A):
-        # docstring inherited.
-        super().autoscale(np.ma.array(A, mask=(A <= 0)))
-
-    def autoscale_None(self, A):
-        # docstring inherited.
-        super().autoscale_None(np.ma.array(A, mask=(A <= 0)))
-
 
 @make_norm_from_scale(
     scale.SymmetricalLogScale,
@@ -1650,6 +1787,38 @@ class SymLogNorm(Normalize):
     @linthresh.setter
     def linthresh(self, value):
         self._scale.linthresh = value
+
+
+@make_norm_from_scale(
+    scale.AsinhScale,
+    init=lambda linear_width=1, vmin=None, vmax=None, clip=False: None)
+class AsinhNorm(Normalize):
+    """
+    The inverse hyperbolic sine scale is approximately linear near
+    the origin, but becomes logarithmic for larger positive
+    or negative values. Unlike the `SymLogNorm`, the transition between
+    these linear and logarithmic regions is smooth, which may reduce
+    the risk of visual artifacts.
+
+    .. note::
+
+       This API is provisional and may be revised in the future
+       based on early user feedback.
+
+    Parameters
+    ----------
+    linear_width : float, default: 1
+        The effective width of the linear region, beyond which
+        the transformation becomes asymptotically logarithmic
+    """
+
+    @property
+    def linear_width(self):
+        return self._scale.linear_width
+
+    @linear_width.setter
+    def linear_width(self, value):
+        self._scale.linear_width = value
 
 
 class PowerNorm(Normalize):

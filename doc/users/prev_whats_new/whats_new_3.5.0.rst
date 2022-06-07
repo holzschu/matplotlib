@@ -1,6 +1,6 @@
-==============================
-What's new in Matplotlib 3.5.0
-==============================
+=============================================
+What's new in Matplotlib 3.5.0 (Nov 15, 2021)
+=============================================
 
 For a list of all of the issues and pull requests since the last revision, see
 the :ref:`github-stats`.
@@ -126,7 +126,7 @@ Setting collection offset transform after initialization
 The added `.collections.Collection.set_offset_transform` may be used to set the
 offset transform after initialization. This can be helpful when creating a
 `.collections.Collection` outside an Axes object, and later adding it with
-`.Axes.add_collection()` and setting the offset transform to `.Axes.transData`.
+`.Axes.add_collection()` and setting the offset transform to ``Axes.transData``.
 
 Colors and colormaps
 ====================
@@ -173,7 +173,7 @@ happens. The default is the current behaviour of "data", with the alternative
 being "rgba" for the newly-available behavior.
 
 .. figure:: /gallery/images_contours_and_fields/images/sphx_glr_image_antialiasing_001.png
-   :target: /gallery/images_contours_and_fields/image_antialiasing.html
+   :target: ../../gallery/images_contours_and_fields/image_antialiasing.html
 
    Example of the interpolation stage options.
 
