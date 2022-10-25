@@ -7,11 +7,11 @@ import matplotlib as mpl
 from matplotlib import dviread
 from matplotlib.testing import _has_tex_package
 from matplotlib.testing.decorators import check_figures_equal, image_comparison
+from matplotlib.testing._markers import needs_usetex
 import matplotlib.pyplot as plt
 
 
-if not mpl.checkdep_usetex(True):
-    pytestmark = pytest.mark.skip('Missing TeX of Ghostscript or dvipng')
+pytestmark = needs_usetex
 
 
 @image_comparison(
@@ -62,6 +62,21 @@ def test_mathdefault():
     # problems when later switching usetex on.
     mpl.rcParams['text.usetex'] = True
     fig.canvas.draw()
+
+
+@image_comparison(['eqnarray.png'])
+def test_multiline_eqnarray():
+    text = (
+        r'\begin{eqnarray*}'
+        r'foo\\'
+        r'bar\\'
+        r'baz\\'
+        r'\end{eqnarray*}'
+    )
+
+    fig = plt.figure(figsize=(1, 1))
+    fig.text(0.5, 0.5, text, usetex=True,
+             horizontalalignment='center', verticalalignment='center')
 
 
 @pytest.mark.parametrize("fontsize", [8, 10, 12])

@@ -55,6 +55,7 @@ commands:
               texlive-latex-recommended \
               texlive-pictures \
               texlive-xetex \
+              ttf-wqy-zenhei \
               graphviz \
               fonts-crosextra-carlito \
               fonts-freefont-otf \
@@ -87,7 +88,7 @@ commands:
             python -m pip install --upgrade --user wheel
             python -m pip install --upgrade --user 'setuptools!=60.6.0'
 
-  deps-install:
+  doc-deps-install:
     parameters:
       numpy_version:
         type: string
@@ -96,6 +97,8 @@ commands:
       - run:
           name: Install Python dependencies
           command: |
+            python -m pip install --no-deps --user \
+                git+https://github.com/matplotlib/mpl-sphinx-theme.git
             python -m pip install --user \
                 numpy<< parameters.numpy_version >> codecov coverage \
                 -r requirements/doc/doc-requirements.txt
@@ -138,7 +141,7 @@ commands:
                [ "$CIRCLE_PR_NUMBER" = "" ]; then
               export RELEASE_TAG='-t release'
             fi
-            make html O="-T $RELEASE_TAG"
+            make html O="-T $RELEASE_TAG -j4 -w /tmp/sphinxerrorswarnings.log"
             rm -r build/html/_sources
           working_directory: doc
       - save_cache:
@@ -146,11 +149,34 @@ commands:
           paths:
             - doc/build/doctrees
 
+  doc-show-errors-warnings:
+    steps:
+      - run:
+          name: Extract possible build errors and warnings
+          command: |
+           (grep "WARNING\|ERROR" /tmp/sphinxerrorswarnings.log ||
+            echo "No errors or warnings")
+
+  doc-show-deprecations:
+    steps:
+      - run:
+          name: Extract possible deprecation warnings in examples and tutorials
+          command: |
+           (grep DeprecationWarning -r -l doc/build/html/gallery ||
+            echo "No deprecation warnings in gallery")
+           (grep DeprecationWarning -r -l doc/build/html/tutorials ||
+            echo "No deprecation warnings in tutorials")
+
   doc-bundle:
     steps:
       - run:
           name: Bundle sphinx-gallery documentation artifacts
-          command: tar cf doc/build/sphinx-gallery-files.tar.gz doc/api/_as_gen doc/gallery doc/tutorials
+          command: >
+            tar cf doc/build/sphinx-gallery-files.tar.gz
+            doc/api/_as_gen
+            doc/gallery
+            doc/plot_types
+            doc/tutorials
           when: always
       - store_artifacts:
           path: doc/build/sphinx-gallery-files.tar.gz
@@ -164,6 +190,7 @@ jobs:
   docs-python38:
     docker:
       - image: cimg/python:3.8
+    resource_class: large
     steps:
       - checkout
       - check-skip
@@ -173,10 +200,12 @@ jobs:
       - fonts-install
       - pip-install
 
-      - deps-install
       - mpl-install
+      - doc-deps-install
 
       - doc-build
+      - doc-show-errors-warnings
+      - doc-show-deprecations
 
       - doc-bundle
 

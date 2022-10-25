@@ -34,6 +34,9 @@ import setuptools.command.build_ext
 import setuptools.command.build_py
 import setuptools.command.sdist
 
+# sys.path modified to find setupext.py during pyproject.toml builds.
+sys.path.append(str(Path(__file__).resolve().parent))
+
 import setupext
 from setupext import print_raw, print_status
 
@@ -68,6 +71,12 @@ def has_flag(self, flagname):
 
 class BuildExtraLibraries(setuptools.command.build_ext.build_ext):
     def finalize_options(self):
+        # If coverage is enabled then need to keep the .o and .gcno files in a
+        # non-temporary directory otherwise coverage info not collected.
+        cppflags = os.getenv('CPPFLAGS')
+        if cppflags and '--coverage' in cppflags:
+            self.build_temp = 'build'
+
         self.distribution.ext_modules[:] = [
             ext
             for package in good_packages
@@ -133,7 +142,7 @@ class BuildExtraLibraries(setuptools.command.build_ext.build_ext):
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT,
                                         universal_newlines=True)
-            except Exception as e:
+            except Exception:
                 pass
             else:
                 version = result.stdout.lower()
@@ -208,8 +217,9 @@ def update_matplotlibrc(path):
 class BuildPy(setuptools.command.build_py.build_py):
     def run(self):
         super().run()
-        update_matplotlibrc(
-            Path(self.build_lib, "matplotlib/mpl-data/matplotlibrc"))
+        if not getattr(self, 'editable_mode', False):
+            update_matplotlibrc(
+                Path(self.build_lib, "matplotlib/mpl-data/matplotlibrc"))
 
 
 class Sdist(setuptools.command.sdist.sdist):
@@ -263,7 +273,7 @@ setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
     author="John D. Hunter, Michael Droettboom",
     author_email="matplotlib-users@python.org",
     url="https://matplotlib.org",
-    download_url="https://matplotlib.org/users/installing.html",
+    download_url="https://matplotlib.org/stable/users/installing/index.html",
     project_urls={
         'Documentation': 'https://matplotlib.org',
         'Source Code': 'https://github.com/matplotlib/matplotlib',
@@ -271,8 +281,8 @@ setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
         'Forum': 'https://discourse.matplotlib.org/',
         'Donate': 'https://numfocus.org/donate-to-matplotlib'
     },
-    long_description=Path("README.rst").read_text(encoding="utf-8"),
-    long_description_content_type="text/x-rst",
+    long_description=Path("README.md").read_text(encoding="utf-8"),
+    long_description_content_type="text/markdown",
     license="PSF",
     platforms="any",
     classifiers=[
@@ -286,6 +296,7 @@ setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
         'Topic :: Scientific/Engineering :: Visualization',
     ],
 
@@ -299,12 +310,6 @@ setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
     package_data=package_data,
 
     python_requires='>={}'.format('.'.join(str(n) for n in py_min_version)),
-    setup_requires=[
-        "certifi>=2020.06.20",
-        "numpy>=1.19",
-        "setuptools_scm>=4",
-        "setuptools_scm_git_archive",
-    ],
     install_requires=[
         "contourpy>=1.0.1",
         "cycler>=0.10",
@@ -313,11 +318,11 @@ setup(  # Finally, pass this all along to setuptools to do the heavy lifting.
         "numpy>=1.19",
         "packaging>=20.0",
         "pillow>=6.2.0",
-        "pyparsing>=2.2.1",
+        "pyparsing>=2.3.1",
         "python-dateutil>=2.7",
     ] + (
         # Installing from a git checkout that is not producing a wheel.
-        ["setuptools_scm>=4"] if (
+        ["setuptools_scm>=7"] if (
             Path(__file__).with_name(".git").exists() and
             os.environ.get("CIBUILDWHEEL", "0") != "1"
         ) else []

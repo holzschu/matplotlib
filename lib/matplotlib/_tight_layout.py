@@ -11,7 +11,8 @@ such cases as when left or right margin are affected by xlabel.
 
 import numpy as np
 
-from matplotlib import _api, artist as martist, rcParams
+import matplotlib as mpl
+from matplotlib import _api, artist as martist
 from matplotlib.font_manager import FontProperties
 from matplotlib.transforms import Bbox
 
@@ -41,13 +42,13 @@ def _auto_adjust_subplotpars(
     h_pad, w_pad : float
         Padding (height/width) between edges of adjacent subplots, as a
         fraction of the font size.  Defaults to *pad*.
-    rect : tuple[float, float, float, float]
-        [left, bottom, right, top] in normalized (0, 1) figure coordinates.
+    rect : tuple
+        (left, bottom, right, top), default: None.
     """
     rows, cols = shape
 
-    font_size_inch = (
-        FontProperties(size=rcParams["font.size"]).get_size_in_points() / 72)
+    font_size_inch = (FontProperties(
+        size=mpl.rcParams["font.size"]).get_size_in_points() / 72)
     pad_inch = pad * font_size_inch
     vpad_inch = h_pad * font_size_inch if h_pad is not None else pad_inch
     hpad_inch = w_pad * font_size_inch if w_pad is not None else pad_inch
@@ -183,8 +184,8 @@ def auto_adjust_subplotpars(
     h_pad, w_pad : float
         Padding (height/width) between edges of adjacent subplots, as a
         fraction of the font size.  Defaults to *pad*.
-    rect : tuple[float, float, float, float]
-        [left, bottom, right, top] in normalized (0, 1) figure coordinates.
+    rect : tuple
+        (left, bottom, right, top), default: None.
     """
     nrows, ncols = nrows_ncols
     span_pairs = []
@@ -250,8 +251,8 @@ def get_tight_layout_figure(fig, axes_list, subplotspec_list, renderer,
     h_pad, w_pad : float
         Padding (height/width) between edges of adjacent subplots.  Defaults to
         *pad*.
-    rect : tuple[float, float, float, float], optional
-        (left, bottom, right, top) rectangle in normalized figure coordinates
+    rect : tuple (left, bottom, right, top), default: None.
+        rectangle in normalized figure coordinates
         that the whole subplots area (including labels) will fit into.
         Defaults to using the entire figure.
 

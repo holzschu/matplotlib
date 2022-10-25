@@ -12,6 +12,7 @@ from numpy.testing import assert_array_equal
 import pytest
 
 import matplotlib
+import matplotlib as mpl
 import matplotlib.lines as mlines
 from matplotlib.markers import MarkerStyle
 from matplotlib.path import Path
@@ -296,12 +297,23 @@ def test_marker_as_markerstyle():
     line.set_marker(MarkerStyle("o"))
     fig.canvas.draw()
     # test Path roundtrip
-    triangle1 = Path([[-1., -1.], [1., -1.], [0., 2.], [0., 0.]], closed=True)
+    triangle1 = Path._create_closed([[-1, -1], [1, -1], [0, 2]])
     line2, = ax.plot([1, 3, 2], marker=MarkerStyle(triangle1), ms=22)
     line3, = ax.plot([0, 2, 1], marker=triangle1, ms=22)
 
     assert_array_equal(line2.get_marker().vertices, triangle1.vertices)
     assert_array_equal(line3.get_marker().vertices, triangle1.vertices)
+
+
+@image_comparison(['striped_line.png'], remove_text=True, style='mpl20')
+def test_striped_lines():
+    rng = np.random.default_rng(19680801)
+    _, ax = plt.subplots()
+    ax.plot(rng.uniform(size=12), color='orange', gapcolor='blue',
+            linestyle='--', lw=5, label=' ')
+    ax.plot(rng.uniform(size=12), color='red', gapcolor='black',
+            linestyle=(0, (2, 5, 4, 2)), lw=5, label=' ', alpha=0.5)
+    ax.legend(handlelength=5)
 
 
 @check_figures_equal()
@@ -354,7 +366,7 @@ def test_markevery_prop_cycle(fig_test, fig_ref):
              slice(100, 200, 3), 0.1, 0.3, 1.5,
              (0.0, 0.1), (0.45, 0.1)]
 
-    cmap = plt.get_cmap('jet')
+    cmap = mpl.colormaps['jet']
     colors = cmap(np.linspace(0.2, 0.8, len(cases)))
 
     x = np.linspace(-1, 1)

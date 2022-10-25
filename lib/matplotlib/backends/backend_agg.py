@@ -31,16 +31,13 @@ import matplotlib as mpl
 from matplotlib import _api, cbook
 from matplotlib.backend_bases import (
     _Backend, FigureCanvasBase, FigureManagerBase, RendererBase)
-from matplotlib.font_manager import findfont, get_font
+from matplotlib.font_manager import fontManager as _fontManager, get_font
 from matplotlib.ft2font import (LOAD_FORCE_AUTOHINT, LOAD_NO_HINTING,
                                 LOAD_DEFAULT, LOAD_NO_AUTOHINT)
 from matplotlib.mathtext import MathTextParser
 from matplotlib.path import Path
 from matplotlib.transforms import Bbox, BboxBase
 from matplotlib.backends._backend_agg import RendererAgg as _RendererAgg
-
-
-backend_version = 'v2.2'
 
 
 def get_hinting_flag():
@@ -226,12 +223,7 @@ class RendererAgg(RendererBase):
 
         _api.check_in_list(["TeX", True, False], ismath=ismath)
         if ismath == "TeX":
-            # todo: handle props
-            texmanager = self.get_texmanager()
-            fontsize = prop.get_size_in_points()
-            w, h, d = texmanager.get_text_width_height_descent(
-                s, fontsize, renderer=self)
-            return w, h, d
+            return super().get_text_width_height_descent(s, prop, ismath)
 
         if ismath:
             ox, oy, width, height, descent, font_image = \
@@ -272,7 +264,7 @@ class RendererAgg(RendererBase):
         """
         Get the `.FT2Font` for *font_prop*, clear its buffer, and set its size.
         """
-        font = get_font(findfont(font_prop))
+        font = get_font(_fontManager._find_fonts_by_props(font_prop))
         font.clear()
         size = font_prop.get_size_in_points()
         font.set_size(size, self.dpi)
@@ -563,5 +555,6 @@ class FigureCanvasAgg(FigureCanvasBase):
 
 @_Backend.export
 class _BackendAgg(_Backend):
+    backend_version = 'v2.2'
     FigureCanvas = FigureCanvasAgg
     FigureManager = FigureManagerBase

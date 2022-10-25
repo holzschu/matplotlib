@@ -883,7 +883,7 @@ def test_imshow_endianess():
                   remove_text=True, style='mpl20')
 def test_imshow_masked_interpolation():
 
-    cmap = plt.get_cmap('viridis').with_extremes(over='r', under='b', bad='k')
+    cmap = mpl.colormaps['viridis'].with_extremes(over='r', under='b', bad='k')
 
     N = 20
     n = colors.Normalize(vmin=0, vmax=N*N-1)
@@ -984,7 +984,7 @@ def test_empty_imshow(make_norm):
     fig.canvas.draw()
 
     with pytest.raises(RuntimeError):
-        im.make_image(fig._cachedRenderer)
+        im.make_image(fig.canvas.get_renderer())
 
 
 def test_imshow_float16():
@@ -1096,7 +1096,7 @@ def test_image_array_alpha(fig_test, fig_ref):
     zz = np.exp(- 3 * ((xx - 0.5) ** 2) + (yy - 0.7 ** 2))
     alpha = zz / zz.max()
 
-    cmap = plt.get_cmap('viridis')
+    cmap = mpl.colormaps['viridis']
     ax = fig_test.add_subplot()
     ax.imshow(zz, alpha=alpha, cmap=cmap, interpolation='nearest')
 
@@ -1113,7 +1113,7 @@ def test_image_array_alpha_validation():
 
 @mpl.style.context('mpl20')
 def test_exact_vmin():
-    cmap = copy(plt.cm.get_cmap("autumn_r"))
+    cmap = copy(mpl.colormaps["autumn_r"])
     cmap.set_under(color="lightgrey")
 
     # make the image exactly 190 pixels wide
@@ -1163,7 +1163,7 @@ class QuantityND(np.ndarray):
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         func = getattr(ufunc, method)
         if "out" in kwargs:
-            raise NotImplementedError
+            return NotImplemented
         if len(inputs) == 1:
             i0 = inputs[0]
             unit = getattr(i0, "units", "dimensionless")
@@ -1183,11 +1183,16 @@ class QuantityND(np.ndarray):
                 unit = f"{u0}*{u1}"
             elif ufunc == np.divide:
                 unit = f"{u0}/({u1})"
+            elif ufunc in (np.greater, np.greater_equal,
+                           np.equal, np.not_equal,
+                           np.less, np.less_equal):
+                # Comparisons produce unitless booleans for output
+                unit = None
             else:
-                raise NotImplementedError
+                return NotImplemented
             out_arr = func(i0.view(np.ndarray), i1.view(np.ndarray), **kwargs)
         else:
-            raise NotImplementedError
+            return NotImplemented
         if unit is None:
             out_arr = np.array(out_arr)
         else:
@@ -1229,7 +1234,7 @@ def test_norm_change(fig_test, fig_ref):
     masked_data = np.ma.array(data, mask=False)
     masked_data.mask[0:2, 0:2] = True
 
-    cmap = plt.get_cmap('viridis').with_extremes(under='w')
+    cmap = mpl.colormaps['viridis'].with_extremes(under='w')
 
     ax = fig_test.subplots()
     im = ax.imshow(data, norm=colors.LogNorm(vmin=0.5, vmax=1),
@@ -1263,7 +1268,7 @@ def test_huge_range_log(fig_test, fig_ref, x):
     data[0:2, :] = 1000
 
     ax = fig_ref.subplots()
-    cmap = plt.get_cmap('viridis').with_extremes(under='w')
+    cmap = mpl.colormaps['viridis'].with_extremes(under='w')
     ax.imshow(data, norm=colors.Normalize(vmin=1, vmax=data.max()),
               interpolation='nearest', cmap=cmap)
 
@@ -1410,3 +1415,25 @@ def test_large_image(fig_test, fig_ref, dim, size, msg, origin):
                        extent=(0, 1, 0, 1),
                        interpolation='none',
                        origin=origin)
+
+
+@check_figures_equal(extensions=["png"])
+def test_str_norms(fig_test, fig_ref):
+    t = np.random.rand(10, 10) * .8 + .1  # between 0 and 1
+    axts = fig_test.subplots(1, 5)
+    axts[0].imshow(t, norm="log")
+    axts[1].imshow(t, norm="log", vmin=.2)
+    axts[2].imshow(t, norm="symlog")
+    axts[3].imshow(t, norm="symlog", vmin=.3, vmax=.7)
+    axts[4].imshow(t, norm="logit", vmin=.3, vmax=.7)
+    axrs = fig_ref.subplots(1, 5)
+    axrs[0].imshow(t, norm=colors.LogNorm())
+    axrs[1].imshow(t, norm=colors.LogNorm(vmin=.2))
+    # same linthresh as SymmetricalLogScale's default.
+    axrs[2].imshow(t, norm=colors.SymLogNorm(linthresh=2))
+    axrs[3].imshow(t, norm=colors.SymLogNorm(linthresh=2, vmin=.3, vmax=.7))
+    axrs[4].imshow(t, norm="logit", clim=(.3, .7))
+
+    assert type(axts[0].images[0].norm) == colors.LogNorm  # Exactly that class
+    with pytest.raises(ValueError):
+        axts[0].imshow(t, norm="foobar")

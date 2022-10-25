@@ -13,12 +13,8 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
 from matplotlib.testing.decorators import check_figures_equal, image_comparison
+from matplotlib.testing._markers import needs_usetex
 from matplotlib.text import Text
-
-
-needs_usetex = pytest.mark.skipif(
-    not mpl.checkdep_usetex(True),
-    reason="This test needs a TeX installation")
 
 
 @image_comparison(['font_styles'])
@@ -343,6 +339,32 @@ def test_set_position():
         assert a + shift_val == b
 
 
+def test_char_index_at():
+    fig = plt.figure()
+    text = fig.text(0.1, 0.9, "")
+
+    text.set_text("i")
+    bbox = text.get_window_extent()
+    size_i = bbox.x1 - bbox.x0
+
+    text.set_text("m")
+    bbox = text.get_window_extent()
+    size_m = bbox.x1 - bbox.x0
+
+    text.set_text("iiiimmmm")
+    bbox = text.get_window_extent()
+    origin = bbox.x0
+
+    assert text._char_index_at(origin - size_i) == 0  # left of first char
+    assert text._char_index_at(origin) == 0
+    assert text._char_index_at(origin + 0.499*size_i) == 0
+    assert text._char_index_at(origin + 0.501*size_i) == 1
+    assert text._char_index_at(origin + size_i*3) == 3
+    assert text._char_index_at(origin + size_i*4 + size_m*3) == 7
+    assert text._char_index_at(origin + size_i*4 + size_m*4) == 8
+    assert text._char_index_at(origin + size_i*4 + size_m*10) == 8
+
+
 @pytest.mark.parametrize('text', ['', 'O'], ids=['empty', 'non-empty'])
 def test_non_default_dpi(text):
     fig, ax = plt.subplots()
@@ -523,8 +545,8 @@ def test_two_2line_texts(spacing1, spacing2):
     fig = plt.figure()
     renderer = fig.canvas.get_renderer()
 
-    text1 = plt.text(0.25, 0.5, text_string, linespacing=spacing1)
-    text2 = plt.text(0.25, 0.5, text_string, linespacing=spacing2)
+    text1 = fig.text(0.25, 0.5, text_string, linespacing=spacing1)
+    text2 = fig.text(0.25, 0.5, text_string, linespacing=spacing2)
     fig.canvas.draw()
 
     box1 = text1.get_window_extent(renderer=renderer)
@@ -536,6 +558,11 @@ def test_two_2line_texts(spacing1, spacing2):
         assert box1.height == box2.height
     else:
         assert box1.height != box2.height
+
+
+def test_validate_linespacing():
+    with pytest.raises(TypeError):
+        plt.text(.25, .5, "foo", linespacing="abc")
 
 
 def test_nonfinite_pos():
@@ -805,11 +832,26 @@ def test_metrics_cache():
 
     fig = plt.figure()
     fig.text(.3, .5, "foo\nbar")
-    fig.text(.5, .5, "foo\nbar")
     fig.text(.3, .5, "foo\nbar", usetex=True)
     fig.text(.5, .5, "foo\nbar", usetex=True)
     fig.canvas.draw()
+    renderer = fig._get_renderer()
+    ys = {}  # mapping of strings to where they were drawn in y with draw_tex.
+
+    def call(*args, **kwargs):
+        renderer, x, y, s, *_ = args
+        ys.setdefault(s, set()).add(y)
+
+    renderer.draw_tex = call
+    fig.canvas.draw()
+    assert [*ys] == ["foo", "bar"]
+    # Check that both TeX strings were drawn with the same y-position for both
+    # single-line substrings.  Previously, there used to be an incorrect cache
+    # collision with the non-TeX string (drawn first here) whose metrics would
+    # get incorrectly reused by the first TeX string.
+    assert len(ys["foo"]) == len(ys["bar"]) == 1
 
     info = mpl.text._get_text_metrics_with_cache_impl.cache_info()
-    # Each string gets drawn twice, so the second draw results in a hit.
-    assert info.hits == info.misses
+    # Every string gets a miss for the first layouting (extents), then a hit
+    # when drawing, but "foo\nbar" gets two hits as it's drawn twice.
+    assert info.hits > info.misses

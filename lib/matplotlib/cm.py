@@ -16,12 +16,13 @@ Builtin colormaps, colormap handling utilities, and the `ScalarMappable` mixin.
 """
 
 from collections.abc import Mapping
+import functools
 
 import numpy as np
 from numpy import ma
 
 import matplotlib as mpl
-from matplotlib import _api, colors, cbook
+from matplotlib import _api, colors, cbook, scale
 from matplotlib._cm import datad
 from matplotlib._cm_listed import cmaps as cmaps_listed
 
@@ -59,12 +60,6 @@ def _gen_cmap_registry():
 class ColormapRegistry(Mapping):
     r"""
     Container for colormaps that are known to Matplotlib by name.
-
-    .. admonition:: Experimental
-
-       While we expect the API to be final, we formally mark it as
-       experimental for 3.5 because we want to keep the option to still adapt
-       the API for 3.6 should the need arise.
 
     The universal registry instance is `matplotlib.colormaps`. There should be
     no need for users to instantiate `.ColormapRegistry` themselves.
@@ -192,6 +187,38 @@ class ColormapRegistry(Mapping):
                              "colormap.")
         self._cmaps.pop(name, None)
 
+    def get_cmap(self, cmap):
+        """
+        Return a color map specified through *cmap*.
+
+        Parameters
+        ----------
+        cmap : str or `~matplotlib.colors.Colormap` or None
+
+            - if a `.Colormap`, return it
+            - if a string, look it up in ``mpl.colormaps``
+            - if None, return the Colormap defined in :rc:`image.cmap`
+
+        Returns
+        -------
+        Colormap
+        """
+        # get the default color map
+        if cmap is None:
+            return self[mpl.rcParams["image.cmap"]]
+
+        # if the user passed in a Colormap, simply return it
+        if isinstance(cmap, colors.Colormap):
+            return cmap
+        if isinstance(cmap, str):
+            _api.check_in_list(sorted(_colormaps), cmap=cmap)
+            # otherwise, it must be a string so look it up
+            return self[cmap]
+        raise TypeError(
+            'get_cmap expects None or an instance of a str or Colormap . ' +
+            f'you passed {cmap!r} of type {type(cmap)}'
+        )
+
 
 # public access to the colormaps should be via `matplotlib.colormaps`. For now,
 # we still create the registry here, but that should stay an implementation
@@ -200,6 +227,11 @@ _colormaps = ColormapRegistry(_gen_cmap_registry())
 globals().update(_colormaps)
 
 
+@_api.deprecated(
+    '3.6',
+    pending=True,
+    alternative="``matplotlib.colormaps.register(name)``"
+)
 def register_cmap(name=None, cmap=None, *, override_builtin=False):
     """
     Add a colormap to the set recognized by :func:`get_cmap`.
@@ -243,12 +275,9 @@ def register_cmap(name=None, cmap=None, *, override_builtin=False):
     _colormaps._allow_override_builtin = False
 
 
-def get_cmap(name=None, lut=None):
+def _get_cmap(name=None, lut=None):
     """
     Get a colormap instance, defaulting to rc values if *name* is None.
-
-    Colormaps added with :func:`register_cmap` take precedence over
-    built-in colormaps.
 
     Parameters
     ----------
@@ -259,6 +288,10 @@ def get_cmap(name=None, lut=None):
     lut : int or None, default: None
         If *name* is not already a Colormap instance and *lut* is not None, the
         colormap will be resampled to have *lut* entries in the lookup table.
+
+    Returns
+    -------
+    Colormap
     """
     if name is None:
         name = mpl.rcParams['image.cmap']
@@ -268,9 +301,26 @@ def get_cmap(name=None, lut=None):
     if lut is None:
         return _colormaps[name]
     else:
-        return _colormaps[name]._resample(lut)
+        return _colormaps[name].resampled(lut)
+
+# do it in two steps like this so we can have an un-deprecated version in
+# pyplot.
+get_cmap = _api.deprecated(
+    '3.6',
+    name='get_cmap',
+    pending=True,
+    alternative=(
+        "``matplotlib.colormaps[name]`` " +
+        "or ``matplotlib.colormaps.get_cmap(obj)``"
+    )
+)(_get_cmap)
 
 
+@_api.deprecated(
+    '3.6',
+    pending=True,
+    alternative="``matplotlib.colormaps.unregister(name)``"
+)
 def unregister_cmap(name):
     """
     Remove a colormap recognized by :func:`get_cmap`.
@@ -308,6 +358,34 @@ def unregister_cmap(name):
     return cmap
 
 
+def _auto_norm_from_scale(scale_cls):
+    """
+    Automatically generate a norm class from *scale_cls*.
+
+    This differs from `.colors.make_norm_from_scale` in the following points:
+
+    - This function is not a class decorator, but directly returns a norm class
+      (as if decorating `.Normalize`).
+    - The scale is automatically constructed with ``nonpositive="mask"``, if it
+      supports such a parameter, to work around the difference in defaults
+      between standard scales (which use "clip") and norms (which use "mask").
+
+    Note that ``make_norm_from_scale`` caches the generated norm classes
+    (not the instances) and reuses them for later calls.  For example,
+    ``type(_auto_norm_from_scale("log")) == LogNorm``.
+    """
+    # Actually try to construct an instance, to verify whether
+    # ``nonpositive="mask"`` is supported.
+    try:
+        norm = colors.make_norm_from_scale(
+            functools.partial(scale_cls, nonpositive="mask"))(
+            colors.Normalize)()
+    except TypeError:
+        norm = colors.make_norm_from_scale(scale_cls)(
+            colors.Normalize)()
+    return type(norm)
+
+
 class ScalarMappable:
     """
     A mixin class to map scalar data to RGBA.
@@ -318,12 +396,13 @@ class ScalarMappable:
 
     def __init__(self, norm=None, cmap=None):
         """
-
         Parameters
         ----------
-        norm : `matplotlib.colors.Normalize` (or subclass thereof)
+        norm : `.Normalize` (or subclass thereof) or str or None
             The normalizing object which scales data, typically into the
             interval ``[0, 1]``.
+            If a `str`, a `.Normalize` subclass is dynamically generated based
+            on the scale with the corresponding name.
             If *None*, *norm* defaults to a *colors.Normalize* object which
             initializes its scaling based on the first data processed.
         cmap : str or `~matplotlib.colors.Colormap`
@@ -353,11 +432,11 @@ class ScalarMappable:
         """
         if vmin is not None or vmax is not None:
             self.set_clim(vmin, vmax)
-            if norm is not None:
+            if isinstance(norm, colors.Normalize):
                 raise ValueError(
-                    "Passing parameters norm and vmin/vmax simultaneously is "
-                    "not supported. Please pass vmin/vmax directly to the "
-                    "norm when creating it.")
+                    "Passing a Normalize instance simultaneously with "
+                    "vmin/vmax is not supported.  Please pass vmin/vmax "
+                    "directly to the norm when creating it.")
 
         # always resolve the autoscaling so we have concrete limits
         # rather than deferring to draw time.
@@ -520,8 +599,8 @@ class ScalarMappable:
         cmap : `.Colormap` or str or None
         """
         in_init = self.cmap is None
-        cmap = get_cmap(cmap)
-        self.cmap = cmap
+
+        self.cmap = _ensure_cmap(cmap)
         if not in_init:
             self.changed()  # Things are not set up properly yet.
 
@@ -531,9 +610,18 @@ class ScalarMappable:
 
     @norm.setter
     def norm(self, norm):
-        _api.check_isinstance((colors.Normalize, None), norm=norm)
+        _api.check_isinstance((colors.Normalize, str, None), norm=norm)
         if norm is None:
             norm = colors.Normalize()
+        elif isinstance(norm, str):
+            try:
+                scale_cls = scale._scale_mapping[norm]
+            except KeyError:
+                raise ValueError(
+                    "Invalid norm str name; the following values are "
+                    "supported: {}".format(", ".join(scale._scale_mapping))
+                ) from None
+            norm = _auto_norm_from_scale(scale_cls)()
 
         if norm is self.norm:
             # We aren't updating anything
@@ -555,7 +643,7 @@ class ScalarMappable:
 
         Parameters
         ----------
-        norm : `.Normalize` or None
+        norm : `.Normalize` or str or None
 
         Notes
         -----
@@ -594,3 +682,61 @@ class ScalarMappable:
         """
         self.callbacks.process('changed', self)
         self.stale = True
+
+
+# The docstrings here must be generic enough to apply to all relevant methods.
+mpl._docstring.interpd.update(
+    cmap_doc="""\
+cmap : str or `~matplotlib.colors.Colormap`, default: :rc:`image.cmap`
+    The Colormap instance or registered colormap name used to map scalar data
+    to colors.""",
+    norm_doc="""\
+norm : str or `~matplotlib.colors.Normalize`, optional
+    The normalization method used to scale scalar data to the [0, 1] range
+    before mapping to colors using *cmap*. By default, a linear scaling is
+    used, mapping the lowest value to 0 and the highest to 1.
+
+    If given, this can be one of the following:
+
+    - An instance of `.Normalize` or one of its subclasses
+      (see :doc:`/tutorials/colors/colormapnorms`).
+    - A scale name, i.e. one of "linear", "log", "symlog", "logit", etc.  For a
+      list of available scales, call `matplotlib.scale.get_scale_names()`.
+      In that case, a suitable `.Normalize` subclass is dynamically generated
+      and instantiated.""",
+    vmin_vmax_doc="""\
+vmin, vmax : float, optional
+    When using scalar data and no explicit *norm*, *vmin* and *vmax* define
+    the data range that the colormap covers. By default, the colormap covers
+    the complete value range of the supplied data. It is an error to use
+    *vmin*/*vmax* when a *norm* instance is given (but using a `str` *norm*
+    name together with *vmin*/*vmax* is acceptable).""",
+)
+
+
+def _ensure_cmap(cmap):
+    """
+    Ensure that we have a `.Colormap` object.
+
+    For internal use to preserve type stability of errors.
+
+    Parameters
+    ----------
+    cmap : None, str, Colormap
+
+        - if a `Colormap`, return it
+        - if a string, look it up in mpl.colormaps
+        - if None, look up the default color map in mpl.colormaps
+
+    Returns
+    -------
+    Colormap
+
+    """
+    if isinstance(cmap, colors.Colormap):
+        return cmap
+    cmap_name = cmap if cmap is not None else mpl.rcParams["image.cmap"]
+    # use check_in_list to ensure type stability of the exception raised by
+    # the internal usage of this (ValueError vs KeyError)
+    _api.check_in_list(sorted(_colormaps), cmap=cmap_name)
+    return mpl.colormaps[cmap_name]

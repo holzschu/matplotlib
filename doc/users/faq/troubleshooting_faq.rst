@@ -84,7 +84,8 @@ Getting help
 There are a number of good resources for getting help with Matplotlib.
 There is a good chance your question has already been asked:
 
-- The `mailing list archive <http://matplotlib.1069221.n5.nabble.com/>`_.
+- The `mailing list archive
+  <https://discourse.matplotlib.org/c/community/matplotlib-users/6>`_.
 
 - `GitHub issues <https://github.com/matplotlib/matplotlib/issues>`_.
 
@@ -156,7 +157,7 @@ the tracker so the issue doesn't get lost.
 Problems with recent git versions
 =================================
 
-First make sure you have a clean build and install (see :ref:`clean-install`),
+First, make sure you have a clean build and install (see :ref:`clean-install`),
 get the latest git update, install it and run a simple test script in debug
 mode::
 

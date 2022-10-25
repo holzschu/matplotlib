@@ -1,10 +1,10 @@
-from collections import OrderedDict
 import math
 import types
 
 import numpy as np
 
-from matplotlib import _api, cbook, rcParams
+import matplotlib as mpl
+from matplotlib import _api, cbook
 from matplotlib.axes import Axes
 import matplotlib.axis as maxis
 import matplotlib.markers as mmarkers
@@ -12,16 +12,21 @@ import matplotlib.patches as mpatches
 from matplotlib.path import Path
 import matplotlib.ticker as mticker
 import matplotlib.transforms as mtransforms
-import matplotlib.spines as mspines
+from matplotlib.spines import Spine
 
 
 class PolarTransform(mtransforms.Transform):
     """
-    The base polar transform.  This handles projection *theta* and
-    *r* into Cartesian coordinate space *x* and *y*, but does not
-    perform the ultimate affine transformation into the correct
-    position.
+    The base polar transform.
+
+    This transform maps polar coordinates ``(theta, r)`` into Cartesian
+    coordinates ``(x, y) = (r * cos(theta), r * sin(theta))`` (but does not
+    handle positioning in screen space).
+
+    Path segments at a fixed radius are automatically transformed to circular
+    arcs as long as ``path._interpolation_steps > 1``.
     """
+
     input_dims = output_dims = 2
 
     def __init__(self, axis=None, use_rmin=True,
@@ -774,7 +779,7 @@ class PolarAxes(Axes):
             end.set_visible(False)
         self.set_xlim(0.0, 2 * np.pi)
 
-        self.grid(rcParams['polaraxes.grid'])
+        self.grid(mpl.rcParams['polaraxes.grid'])
         inner = self.spines.get('inner', None)
         if inner:
             inner.set_visible(False)
@@ -964,14 +969,12 @@ class PolarAxes(Axes):
         return mpatches.Wedge((0.5, 0.5), 0.5, 0.0, 360.0)
 
     def _gen_axes_spines(self):
-        spines = OrderedDict([
-            ('polar', mspines.Spine.arc_spine(self, 'top',
-                                              (0.5, 0.5), 0.5, 0.0, 360.0)),
-            ('start', mspines.Spine.linear_spine(self, 'left')),
-            ('end', mspines.Spine.linear_spine(self, 'right')),
-            ('inner', mspines.Spine.arc_spine(self, 'bottom',
-                                              (0.5, 0.5), 0.0, 0.0, 360.0))
-        ])
+        spines = {
+            'polar': Spine.arc_spine(self, 'top', (0.5, 0.5), 0.5, 0, 360),
+            'start': Spine.linear_spine(self, 'left'),
+            'end': Spine.linear_spine(self, 'right'),
+            'inner': Spine.arc_spine(self, 'bottom', (0.5, 0.5), 0.0, 0, 360),
+        }
         spines['polar'].set_transform(self.transWedge + self.transAxes)
         spines['inner'].set_transform(self.transWedge + self.transAxes)
         spines['start'].set_transform(self._yaxis_transform)

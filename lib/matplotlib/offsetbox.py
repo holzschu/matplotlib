@@ -24,7 +24,8 @@ Container classes for `.Artist`\s.
 
 import numpy as np
 
-from matplotlib import _api, _docstring, rcParams
+import matplotlib as mpl
+from matplotlib import _api, _docstring
 import matplotlib.artist as martist
 import matplotlib.path as mpath
 import matplotlib.text as mtext
@@ -349,8 +350,12 @@ class OffsetBox(martist.Artist):
         # docstring inherited
         if renderer is None:
             renderer = self.figure._get_renderer()
-        w, h, xd, yd, offsets = self.get_extent_offsets(renderer)
-        px, py = self.get_offset(w, h, xd, yd, renderer)
+        w, h, xd, yd = self.get_extent(renderer)
+        # Some subclasses redefine get_offset to take no args.
+        try:
+            px, py = self.get_offset(w, h, xd, yd, renderer)
+        except TypeError:
+            px, py = self.get_offset()
         return mtransforms.Bbox.from_bounds(px - xd, py - yd, w, h)
 
     def draw(self, renderer):
@@ -500,6 +505,8 @@ class PaddedBox(OffsetBox):
     The `.PaddedBox` contains a `.FancyBboxPatch` that is used to visualize
     it when rendering.
     """
+
+    @_api.make_keyword_only("3.6", name="draw_frame")
     def __init__(self, child, pad=None, draw_frame=False, patch_attrs=None):
         """
         Parameters
@@ -633,15 +640,6 @@ class DrawingArea(OffsetBox):
         """Return offset of the container."""
         return self._offset
 
-    def get_window_extent(self, renderer=None):
-        # docstring inherited
-        if renderer is None:
-            renderer = self.figure._get_renderer()
-        w, h, xd, yd = self.get_extent(renderer)
-        ox, oy = self.get_offset()  # w, h, xd, yd)
-
-        return mtransforms.Bbox.from_bounds(ox - xd, oy - yd, w, h)
-
     def get_extent(self, renderer):
         """Return width, height, xdescent, ydescent of box."""
         dpi_cor = renderer.points_to_pixels(1.)
@@ -692,6 +690,7 @@ class TextArea(OffsetBox):
     child text.
     """
 
+    @_api.make_keyword_only("3.6", name="textprops")
     def __init__(self, s,
                  textprops=None,
                  multilinebaseline=False,
@@ -768,14 +767,6 @@ class TextArea(OffsetBox):
     def get_offset(self):
         """Return offset of the container."""
         return self._offset
-
-    def get_window_extent(self, renderer=None):
-        # docstring inherited
-        if renderer is None:
-            renderer = self.figure._get_renderer()
-        w, h, xd, yd = self.get_extent(renderer)
-        ox, oy = self.get_offset()
-        return mtransforms.Bbox.from_bounds(ox - xd, oy - yd, w, h)
 
     def get_extent(self, renderer):
         _, h_, d_ = renderer.get_text_width_height_descent(
@@ -872,14 +863,6 @@ class AuxTransformBox(OffsetBox):
         """Return offset of the container."""
         return self._offset
 
-    def get_window_extent(self, renderer=None):
-        # docstring inherited
-        if renderer is None:
-            renderer = self.figure._get_renderer()
-        w, h, xd, yd = self.get_extent(renderer)
-        ox, oy = self.get_offset()  # w, h, xd, yd)
-        return mtransforms.Bbox.from_bounds(ox - xd, oy - yd, w, h)
-
     def get_extent(self, renderer):
         # clear the offset transforms
         _off = self.offset_transform.get_matrix()  # to be restored later
@@ -927,6 +910,7 @@ class AnchoredOffsetbox(OffsetBox):
              'center': 10,
              }
 
+    @_api.make_keyword_only("3.6", name="pad")
     def __init__(self, loc,
                  pad=0.4, borderpad=0.5,
                  child=None, prop=None, frameon=True,
@@ -978,11 +962,11 @@ class AnchoredOffsetbox(OffsetBox):
         self.pad = pad
 
         if prop is None:
-            self.prop = FontProperties(size=rcParams["legend.fontsize"])
+            self.prop = FontProperties(size=mpl.rcParams["legend.fontsize"])
         else:
             self.prop = FontProperties._from_any(prop)
             if isinstance(prop, dict) and "size" not in prop:
-                self.prop.set_size(rcParams["legend.fontsize"])
+                self.prop.set_size(mpl.rcParams["legend.fontsize"])
 
         self.patch = FancyBboxPatch(
             xy=(0.0, 0.0), width=1., height=1.,
@@ -1056,34 +1040,14 @@ class AnchoredOffsetbox(OffsetBox):
         self._bbox_to_anchor_transform = transform
         self.stale = True
 
-    def get_window_extent(self, renderer=None):
+    def get_offset(self, width, height, xdescent, ydescent, renderer):
         # docstring inherited
-        if renderer is None:
-            renderer = self.figure._get_renderer()
-
-        self._update_offset_func(renderer)
-        w, h, xd, yd = self.get_extent(renderer)
-        ox, oy = self.get_offset(w, h, xd, yd, renderer)
-        return Bbox.from_bounds(ox - xd, oy - yd, w, h)
-
-    def _update_offset_func(self, renderer, fontsize=None):
-        """
-        Update the offset func which depends on the dpi of the
-        renderer (because of the padding).
-        """
-        if fontsize is None:
-            fontsize = renderer.points_to_pixels(
-                self.prop.get_size_in_points())
-
-        def _offset(w, h, xd, yd, renderer):
-            bbox = Bbox.from_bounds(0, 0, w, h)
-            borderpad = self.borderpad * fontsize
-            bbox_to_anchor = self.get_bbox_to_anchor()
-            x0, y0 = _get_anchored_bbox(
-                self.loc, bbox, bbox_to_anchor, borderpad)
-            return x0 + xd, y0 + yd
-
-        self.set_offset(_offset)
+        bbox = Bbox.from_bounds(0, 0, width, height)
+        pad = (self.borderpad
+               * renderer.points_to_pixels(self.prop.get_size_in_points()))
+        bbox_to_anchor = self.get_bbox_to_anchor()
+        x0, y0 = _get_anchored_bbox(self.loc, bbox, bbox_to_anchor, pad)
+        return x0 + xdescent, y0 + ydescent
 
     def update_frame(self, bbox, fontsize=None):
         self.patch.set_bounds(bbox.bounds)
@@ -1095,11 +1059,9 @@ class AnchoredOffsetbox(OffsetBox):
         if not self.get_visible():
             return
 
-        fontsize = renderer.points_to_pixels(self.prop.get_size_in_points())
-        self._update_offset_func(renderer, fontsize)
-
         # update the location and size of the legend
         bbox = self.get_window_extent(renderer)
+        fontsize = renderer.points_to_pixels(self.prop.get_size_in_points())
         self.update_frame(bbox, fontsize)
         self.patch.draw(renderer)
 
@@ -1129,6 +1091,7 @@ class AnchoredText(AnchoredOffsetbox):
     AnchoredOffsetbox with Text.
     """
 
+    @_api.make_keyword_only("3.6", name="pad")
     def __init__(self, s, loc, pad=0.4, borderpad=0.5, prop=None, **kwargs):
         """
         Parameters
@@ -1168,6 +1131,8 @@ class AnchoredText(AnchoredOffsetbox):
 
 
 class OffsetImage(OffsetBox):
+
+    @_api.make_keyword_only("3.6", name="zoom")
     def __init__(self, arr,
                  zoom=1,
                  cmap=None,
@@ -1222,14 +1187,6 @@ class OffsetImage(OffsetBox):
     def get_children(self):
         return [self.image]
 
-    def get_window_extent(self, renderer=None):
-        # docstring inherited
-        if renderer is None:
-            renderer = self.figure._get_renderer()
-        w, h, xd, yd = self.get_extent(renderer)
-        ox, oy = self.get_offset()
-        return mtransforms.Bbox.from_bounds(ox - xd, oy - yd, w, h)
-
     def get_extent(self, renderer):
         if self._dpi_cor:  # True, do correction
             dpi_cor = renderer.points_to_pixels(1.)
@@ -1265,6 +1222,7 @@ class AnnotationBbox(martist.Artist, mtext._AnnotationBase):
         return "AnnotationBbox(%g,%g)" % (self.xy[0], self.xy[1])
 
     @_docstring.dedent_interpd
+    @_api.make_keyword_only("3.6", name="xycoords")
     def __init__(self, offsetbox, xy,
                  xybox=None,
                  xycoords='data',
@@ -1394,7 +1352,7 @@ class AnnotationBbox(martist.Artist, mtext._AnnotationBase):
         If *s* is not given, reset to :rc:`legend.fontsize`.
         """
         if s is None:
-            s = rcParams["legend.fontsize"]
+            s = mpl.rcParams["legend.fontsize"]
 
         self.prop = FontProperties(size=s)
         self.stale = True

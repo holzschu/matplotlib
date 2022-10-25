@@ -61,7 +61,8 @@ _log = logging.getLogger(__name__)
 
 ######################################################
 def do_constrained_layout(fig, h_pad, w_pad,
-                          hspace=None, wspace=None, rect=(0, 0, 1, 1)):
+                          hspace=None, wspace=None, rect=(0, 0, 1, 1),
+                          compress=False):
     """
     Do the constrained_layout.  Called at draw time in
      ``figure.constrained_layout()``
@@ -87,6 +88,11 @@ def do_constrained_layout(fig, h_pad, w_pad,
     rect : tuple of 4 floats
         Rectangle in figure coordinates to perform constrained layout in
         [left, bottom, width, height], each from 0-1.
+
+    compress : bool
+        Whether to shift Axes so that white space in between them is
+        removed. This is useful for simple grids of fixed-aspect Axes (e.g.
+        a grid of images).
 
     Returns
     -------
@@ -123,13 +129,22 @@ def do_constrained_layout(fig, h_pad, w_pad,
         # update all the variables in the layout.
         layoutgrids[fig].update_variables()
 
+        warn_collapsed = ('constrained_layout not applied because '
+                          'axes sizes collapsed to zero.  Try making '
+                          'figure larger or axes decorations smaller.')
         if check_no_collapsed_axes(layoutgrids, fig):
             reposition_axes(layoutgrids, fig, renderer, h_pad=h_pad,
                             w_pad=w_pad, hspace=hspace, wspace=wspace)
+            if compress:
+                layoutgrids = compress_fixed_aspect(layoutgrids, fig)
+                layoutgrids[fig].update_variables()
+                if check_no_collapsed_axes(layoutgrids, fig):
+                    reposition_axes(layoutgrids, fig, renderer, h_pad=h_pad,
+                                    w_pad=w_pad, hspace=hspace, wspace=wspace)
+                else:
+                    _api.warn_external(warn_collapsed)
         else:
-            _api.warn_external('constrained_layout not applied because '
-                               'axes sizes collapsed to zero.  Try making '
-                               'figure larger or axes decorations smaller.')
+            _api.warn_external(warn_collapsed)
         reset_margins(layoutgrids, fig)
     return layoutgrids
 
@@ -172,8 +187,8 @@ def make_layoutgrids(fig, layoutgrids, rect=(0, 0, 1, 1)):
 
     # for each axes at the local level add its gridspec:
     for ax in fig._localaxes:
-        if hasattr(ax, 'get_subplotspec'):
-            gs = ax.get_subplotspec().get_gridspec()
+        gs = ax.get_gridspec()
+        if gs is not None:
             layoutgrids = make_layoutgrids_gs(layoutgrids, gs)
 
     return layoutgrids
@@ -233,18 +248,53 @@ def check_no_collapsed_axes(layoutgrids, fig):
         ok = check_no_collapsed_axes(layoutgrids, sfig)
         if not ok:
             return False
-
     for ax in fig.axes:
-        if hasattr(ax, 'get_subplotspec'):
-            gs = ax.get_subplotspec().get_gridspec()
-            if gs in layoutgrids:
-                lg = layoutgrids[gs]
-                for i in range(gs.nrows):
-                    for j in range(gs.ncols):
-                        bb = lg.get_inner_bbox(i, j)
-                        if bb.width <= 0 or bb.height <= 0:
-                            return False
+        gs = ax.get_gridspec()
+        if gs in layoutgrids:  # also implies gs is not None.
+            lg = layoutgrids[gs]
+            for i in range(gs.nrows):
+                for j in range(gs.ncols):
+                    bb = lg.get_inner_bbox(i, j)
+                    if bb.width <= 0 or bb.height <= 0:
+                        return False
     return True
+
+
+def compress_fixed_aspect(layoutgrids, fig):
+    gs = None
+    for ax in fig.axes:
+        if ax.get_subplotspec() is None:
+            continue
+        ax.apply_aspect()
+        sub = ax.get_subplotspec()
+        _gs = sub.get_gridspec()
+        if gs is None:
+            gs = _gs
+            extraw = np.zeros(gs.ncols)
+            extrah = np.zeros(gs.nrows)
+        elif _gs != gs:
+            raise ValueError('Cannot do compressed layout if axes are not'
+                                'all from the same gridspec')
+        orig = ax.get_position(original=True)
+        actual = ax.get_position(original=False)
+        dw = orig.width - actual.width
+        if dw > 0:
+            extraw[sub.colspan] = np.maximum(extraw[sub.colspan], dw)
+        dh = orig.height - actual.height
+        if dh > 0:
+            extrah[sub.rowspan] = np.maximum(extrah[sub.rowspan], dh)
+
+    if gs is None:
+        raise ValueError('Cannot do compressed layout if no axes '
+                         'are part of a gridspec.')
+    w = np.sum(extraw) / 2
+    layoutgrids[fig].edit_margin_min('left', w)
+    layoutgrids[fig].edit_margin_min('right', w)
+
+    h = np.sum(extrah) / 2
+    layoutgrids[fig].edit_margin_min('top', h)
+    layoutgrids[fig].edit_margin_min('bottom', h)
+    return layoutgrids
 
 
 def get_margin_from_padding(obj, *, w_pad=0, h_pad=0,
@@ -305,7 +355,7 @@ def make_layout_margins(layoutgrids, fig, renderer, *, w_pad=0, h_pad=0,
         layoutgrids[sfig].parent.edit_outer_margin_mins(margins, ss)
 
     for ax in fig._localaxes:
-        if not hasattr(ax, 'get_subplotspec') or not ax.get_in_layout():
+        if not ax.get_subplotspec() or not ax.get_in_layout():
             continue
 
         ss = ax.get_subplotspec()
@@ -436,8 +486,8 @@ def match_submerged_margins(layoutgrids, fig):
     for sfig in fig.subfigs:
         match_submerged_margins(layoutgrids, sfig)
 
-    axs = [a for a in fig.get_axes() if (hasattr(a, 'get_subplotspec')
-                                         and a.get_in_layout())]
+    axs = [a for a in fig.get_axes()
+           if a.get_subplotspec() is not None and a.get_in_layout()]
 
     for ax1 in axs:
         ss1 = ax1.get_subplotspec()
@@ -568,7 +618,7 @@ def reposition_axes(layoutgrids, fig, renderer, *,
                         wspace=wspace, hspace=hspace)
 
     for ax in fig._localaxes:
-        if not hasattr(ax, 'get_subplotspec') or not ax.get_in_layout():
+        if ax.get_subplotspec() is None or not ax.get_in_layout():
             continue
 
         # grid bbox is in Figure coordinates, but we specify in panel
@@ -690,10 +740,9 @@ def reset_margins(layoutgrids, fig):
     for sfig in fig.subfigs:
         reset_margins(layoutgrids, sfig)
     for ax in fig.axes:
-        if hasattr(ax, 'get_subplotspec') and ax.get_in_layout():
-            ss = ax.get_subplotspec()
-            gs = ss.get_gridspec()
-            if gs in layoutgrids:
+        if ax.get_in_layout():
+            gs = ax.get_gridspec()
+            if gs in layoutgrids:  # also implies gs is not None.
                 layoutgrids[gs].reset_margins()
     layoutgrids[fig].reset_margins()
 

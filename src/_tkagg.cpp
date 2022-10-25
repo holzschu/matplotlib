@@ -24,6 +24,10 @@
  * also.
  */
 #define WIN32_DLL
+static inline PyObject *PyErr_SetFromWindowsErr(int ierr) {
+    PyErr_SetString(PyExc_OSError, "Call to EnumProcessModules failed");
+    return NULL;
+}
 #endif
 
 #ifdef WIN32_DLL
@@ -227,13 +231,13 @@ bool load_tcl_tk(T lib)
 {
     // Try to fill Tcl/Tk global vars with function pointers.  Return whether
     // all of them have been filled.
-    if (void* ptr = dlsym(lib, "Tcl_SetVar")) {
+    if (auto ptr = dlsym(lib, "Tcl_SetVar")) {
         TCL_SETVAR = (Tcl_SetVar_t)ptr;
     }
-    if (void* ptr = dlsym(lib, "Tk_FindPhoto")) {
+    if (auto ptr = dlsym(lib, "Tk_FindPhoto")) {
         TK_FIND_PHOTO = (Tk_FindPhoto_t)ptr;
     }
-    if (void* ptr = dlsym(lib, "Tk_PhotoPutBlock")) {
+    if (auto ptr = dlsym(lib, "Tk_PhotoPutBlock")) {
         TK_PHOTO_PUT_BLOCK = (Tk_PhotoPutBlock_t)ptr;
     }
     return TCL_SETVAR && TK_FIND_PHOTO && TK_PHOTO_PUT_BLOCK;

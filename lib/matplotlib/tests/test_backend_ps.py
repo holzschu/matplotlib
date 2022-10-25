@@ -4,22 +4,18 @@ import io
 import re
 import tempfile
 
+import numpy as np
 import pytest
 
-from matplotlib import cbook, patheffects
+from matplotlib import cbook, path, patheffects, font_manager as fm
 from matplotlib._api import MatplotlibDeprecationWarning
 from matplotlib.figure import Figure
 from matplotlib.patches import Ellipse
+from matplotlib.testing._markers import needs_ghostscript, needs_usetex
 from matplotlib.testing.decorators import check_figures_equal, image_comparison
 import matplotlib as mpl
+import matplotlib.collections as mcollections
 import matplotlib.pyplot as plt
-
-needs_ghostscript = pytest.mark.skipif(
-    "eps" not in mpl.testing.compare.converter,
-    reason="This test needs a ghostscript installation")
-needs_usetex = pytest.mark.skipif(
-    not mpl.checkdep_usetex(True),
-    reason="This test needs a TeX installation")
 
 
 # This tests tends to hit a TeX cache lock on AppVeyor.
@@ -260,6 +256,15 @@ def test_linedash():
     assert buf.tell() > 0
 
 
+def test_empty_line():
+    # Smoke-test for gh#23954
+    figure = Figure()
+    figure.text(0.5, 0.5, "\nfoo\n\n")
+    buf = io.BytesIO()
+    figure.savefig(buf, format='eps')
+    figure.savefig(buf, format='ps')
+
+
 def test_no_duplicate_definition():
 
     fig = Figure()
@@ -278,3 +283,47 @@ def test_no_duplicate_definition():
            if ln.startswith('/')]
 
     assert max(Counter(wds).values()) == 1
+
+
+@image_comparison(["multi_font_type3.eps"], tol=0.51)
+def test_multi_font_type3():
+    fp = fm.FontProperties(family=["WenQuanYi Zen Hei"])
+    if Path(fm.findfont(fp)).name != "wqy-zenhei.ttc":
+        pytest.skip("Font may be missing")
+
+    plt.rc('font', family=['DejaVu Sans', 'WenQuanYi Zen Hei'], size=27)
+    plt.rc('ps', fonttype=3)
+
+    fig = plt.figure()
+    fig.text(0.15, 0.475, "There are 几个汉字 in between!")
+
+
+@image_comparison(["multi_font_type42.eps"], tol=1.6)
+def test_multi_font_type42():
+    fp = fm.FontProperties(family=["WenQuanYi Zen Hei"])
+    if Path(fm.findfont(fp)).name != "wqy-zenhei.ttc":
+        pytest.skip("Font may be missing")
+
+    plt.rc('font', family=['DejaVu Sans', 'WenQuanYi Zen Hei'], size=27)
+    plt.rc('ps', fonttype=42)
+
+    fig = plt.figure()
+    fig.text(0.15, 0.475, "There are 几个汉字 in between!")
+
+
+@image_comparison(["scatter.eps"])
+def test_path_collection():
+    rng = np.random.default_rng(19680801)
+    xvals = rng.uniform(0, 1, 10)
+    yvals = rng.uniform(0, 1, 10)
+    sizes = rng.uniform(30, 100, 10)
+    fig, ax = plt.subplots()
+    ax.scatter(xvals, yvals, sizes, edgecolor=[0.9, 0.2, 0.1], marker='<')
+    ax.set_axis_off()
+    paths = [path.Path.unit_regular_polygon(i) for i in range(3, 7)]
+    offsets = rng.uniform(0, 200, 20).reshape(10, 2)
+    sizes = [0.02, 0.04]
+    pc = mcollections.PathCollection(paths, sizes, zorder=-1,
+                                     facecolors='yellow', offsets=offsets)
+    ax.add_collection(pc)
+    ax.set_xlim(0, 1)

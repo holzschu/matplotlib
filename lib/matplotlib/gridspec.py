@@ -18,7 +18,7 @@ from numbers import Integral
 import numpy as np
 
 import matplotlib as mpl
-from matplotlib import _api, _pylab_helpers, _tight_layout, rcParams
+from matplotlib import _api, _pylab_helpers, _tight_layout
 from matplotlib.transforms import Bbox
 
 _log = logging.getLogger(__name__)
@@ -142,6 +142,7 @@ class GridSpecBase:
         """
         return self._row_height_ratios
 
+    @_api.delete_parameter("3.7", "raw")
     def get_grid_positions(self, fig, raw=False):
         """
         Return the positions of the grid cells in figure coordinates.
@@ -210,8 +211,8 @@ class GridSpecBase:
         or create a new one
         """
         for ax in figure.get_axes():
-            if hasattr(ax, 'get_subplotspec'):
-                gs = ax.get_subplotspec().get_gridspec()
+            gs = ax.get_gridspec()
+            if gs is not None:
                 if hasattr(gs, 'get_topmost_subplotspec'):
                     # This is needed for colorbar gridspec layouts.
                     # This is probably OK because this whole logic tree
@@ -412,7 +413,7 @@ class GridSpec(GridSpecBase):
                 raise AttributeError(f"{k} is an unknown keyword")
         for figmanager in _pylab_helpers.Gcf.figs.values():
             for ax in figmanager.canvas.figure.axes:
-                if isinstance(ax, mpl.axes.SubplotBase):
+                if ax.get_subplotspec() is not None:
                     ss = ax.get_subplotspec().get_topmost_subplotspec()
                     if ss.get_gridspec() == self:
                         ax._set_position(
@@ -429,7 +430,8 @@ class GridSpec(GridSpecBase):
         - :rc:`figure.subplot.*`
         """
         if figure is None:
-            kw = {k: rcParams["figure.subplot."+k] for k in self._AllowedKeys}
+            kw = {k: mpl.rcParams["figure.subplot."+k]
+                  for k in self._AllowedKeys}
             subplotpars = mpl.figure.SubplotParams(**kw)
         else:
             subplotpars = copy.copy(figure.subplotpars)
@@ -460,10 +462,10 @@ class GridSpec(GridSpecBase):
         h_pad, w_pad : float, optional
             Padding (height/width) between edges of adjacent subplots.
             Defaults to *pad*.
-        rect : tuple of 4 floats, default: (0, 0, 1, 1), i.e. the whole figure
+        rect : tuple (left, bottom, right, top), default: None
             (left, bottom, right, top) rectangle in normalized figure
             coordinates that the whole subplots area (including labels) will
-            fit into.
+            fit into. Default (None) is the whole figure.
         """
 
         subplotspec_list = _tight_layout.get_subplotspec_list(
@@ -519,10 +521,10 @@ class GridSpecFromSubplotSpec(GridSpecBase):
         """Return a dictionary of subplot layout parameters."""
         hspace = (self._hspace if self._hspace is not None
                   else figure.subplotpars.hspace if figure is not None
-                  else rcParams["figure.subplot.hspace"])
+                  else mpl.rcParams["figure.subplot.hspace"])
         wspace = (self._wspace if self._wspace is not None
                   else figure.subplotpars.wspace if figure is not None
-                  else rcParams["figure.subplot.wspace"])
+                  else mpl.rcParams["figure.subplot.wspace"])
 
         figbox = self._subplot_spec.get_position(figure)
         left, bottom, right, top = figbox.extents

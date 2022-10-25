@@ -14,6 +14,8 @@ on:
   schedule:
     # 3:47 UTC on Saturdays
     - cron: "47 3 * * 6"
+  workflow_dispatch:
+    workflow: "*"
 
 env:
   NO_AT_BRIDGE: 1  # Necessary for GTK3 interactive test.
@@ -22,7 +24,7 @@ env:
 
 jobs:
   test:
-    if: "github.repository == 'matplotlib/matplotlib' && !contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[skip github]')"
+    if: "github.event_name == 'workflow_dispatch' || github.repository == 'matplotlib/matplotlib' && !contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[skip github]')"
     name: "Python ${{ matrix.python-version }} on ${{ matrix.os }} ${{ matrix.name-suffix }}"
     runs-on: ${{ matrix.os }}
 
@@ -31,29 +33,28 @@ jobs:
       matrix:
         include:
           - name-suffix: "(Minimum Versions)"
-            os: ubuntu-18.04
+            os: ubuntu-20.04
             python-version: 3.8
             extra-requirements: '-c requirements/testing/minver.txt'
             pyqt5-ver: '==5.11.2 sip==5.0.0'  # oldest versions with a Py3.8 wheel.
+            pyqt6-ver: '==6.1.0 PyQt6-Qt6==6.1.0'
+            pyside2-ver: '==5.14.0'  # oldest version with working Py3.8 wheel.
+            pyside6-ver: '==6.0.0'
             delete-font-cache: true
-            XVFB_RUN: xvfb-run -a
-          - os: ubuntu-18.04
+          - os: ubuntu-20.04
             python-version: 3.8
             extra-requirements: '-r requirements/testing/extra.txt'
-            XVFB_RUN: xvfb-run -a
             CFLAGS: "-fno-lto"  # Ensure that disabling LTO works.
           - os: ubuntu-20.04
             python-version: 3.9
             extra-requirements: '-r requirements/testing/extra.txt'
-            XVFB_RUN: xvfb-run -a
           - os: ubuntu-20.04
             python-version: '3.10'
-            # Re-add this when extra dependencies have wheels.
-            # extra-requirements: '-r requirements/testing/extra.txt'
-            XVFB_RUN: xvfb-run -a
+            extra-requirements: '-r requirements/testing/extra.txt'
+          - os: ubuntu-20.04
+            python-version: '3.11.0-rc.1'
           - os: macos-latest
             python-version: 3.8
-            XVFB_RUN: ""
 
     steps:
       - uses: actions/checkout@v3
@@ -61,7 +62,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -113,7 +114,7 @@ jobs:
           macOS)
             brew install ccache
             brew tap homebrew/cask-fonts
-            brew install font-noto-sans-cjk-sc
+            brew install font-noto-sans-cjk
             ;;
           esac
 
@@ -148,10 +149,10 @@ jobs:
             ~/.cache/matplotlib
             !~/.cache/matplotlib/tex.cache
             !~/.cache/matplotlib/test_cache
-          key: 1-${{ runner.os }}-py${{ matrix.python-version }}-mpl-${{ github.ref }}-${{ github.sha }}
+          key: 2-${{ runner.os }}-py${{ matrix.python-version }}-mpl-${{ github.ref }}-${{ github.sha }}
           restore-keys: |
-            1-${{ runner.os }}-py${{ matrix.python-version }}-mpl-${{ github.ref }}-
-            1-${{ runner.os }}-py${{ matrix.python-version }}-mpl-
+            2-${{ runner.os }}-py${{ matrix.python-version }}-mpl-${{ github.ref }}-
+            2-${{ runner.os }}-py${{ matrix.python-version }}-mpl-
 
       - name: Install Python dependencies
         run: |
@@ -191,18 +192,17 @@ jobs:
             echo 'PyQt5 is available' ||
             echo 'PyQt5 is not available'
           if [[ "${{ runner.os }}" != 'macOS' ]]; then
-            python -mpip install --upgrade pyside2 &&
+            python -mpip install --upgrade pyside2${{ matrix.pyside2-ver }} &&
               python -c 'import PySide2.QtCore' &&
               echo 'PySide2 is available' ||
               echo 'PySide2 is not available'
           fi
-          # Qt6 crashes on Github's ubuntu 18.04 runner.
           if [[ "${{ matrix.os }}" = ubuntu-20.04 ]]; then
-            python -mpip install --upgrade pyqt6 &&
+            python -mpip install --upgrade pyqt6${{ matrix.pyqt6-ver }} &&
               python -c 'import PyQt6.QtCore' &&
               echo 'PyQt6 is available' ||
               echo 'PyQt6 is not available'
-            python -mpip install --upgrade pyside6 &&
+            python -mpip install --upgrade pyside6${{ matrix.pyside6-ver }} &&
               python -c 'import PySide6.QtCore' &&
               echo 'PySide6 is available' ||
               echo 'PySide6 is not available'
@@ -243,9 +243,13 @@ jobs:
 
           cat mplsetup.cfg
 
-          # All dependencies must have been pre-installed, so that the minver
-          # constraints are held.
-          python -m pip install --no-deps -ve .
+          if [[ "${{ matrix.name-suffix }}" == '(Minimum Versions)' ]]; then
+            # Minimum versions run does not use build isolation so that it
+            # builds against the pre-installed minver dependencies.
+            python -m pip install --no-deps --no-build-isolation -ve .
+          else
+            python -m pip install --no-deps -ve .
+          fi
 
           if [[ "${{ runner.os }}" != 'macOS' ]]; then
             unset CPPFLAGS
@@ -258,7 +262,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          ${{ matrix.XVFB_RUN }} python -mpytest -raR -n auto \
+          python -mpytest -raR -n auto \
             --maxfail=50 --timeout=300 --durations=25 \
             --cov-report=xml --cov=lib --log-level=DEBUG --color=yes
 

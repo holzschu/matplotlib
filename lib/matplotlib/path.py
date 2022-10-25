@@ -188,6 +188,17 @@ class Path:
             pth._interpolation_steps = 1
         return pth
 
+    @classmethod
+    def _create_closed(cls, vertices):
+        """
+        Create a closed polygonal path going through *vertices*.
+
+        Unlike ``Path(..., closed=True)``, *vertices* should **not** end with
+        an entry for the CLOSEPATH; this entry is added by `._create_closed`.
+        """
+        v = _to_unmasked_float_array(vertices)
+        return cls(np.concatenate([v, v[:1]]), closed=True)
+
     def _update_values(self):
         self._simplify_threshold = mpl.rcParams['path.simplify_threshold']
         self._should_simplify = (
@@ -282,15 +293,15 @@ class Path:
     @classmethod
     def make_compound_path_from_polys(cls, XY):
         """
-        Make a compound path object to draw a number
-        of polygons with equal numbers of sides XY is a (numpolys x
-        numsides x 2) numpy array of vertices.  Return object is a
-        :class:`Path`.
+        Make a compound `Path` object to draw a number of polygons with equal
+        numbers of sides.
 
         .. plot:: gallery/misc/histogram_path.py
 
+        Parameters
+        ----------
+        XY : (numpolys, numsides, 2) array
         """
-
         # for each poly: 1 for the MOVETO, (numsides-1) for the LINETO, 1 for
         # the CLOSEPOLY; the vert for the closepoly is ignored but we still
         # need it to keep the codes aligned with the vertices
@@ -305,7 +316,6 @@ class Path:
         codes[numsides::stride] = cls.CLOSEPOLY
         for i in range(numsides):
             verts[i::stride] = XY[:, i]
-
         return cls(verts, codes)
 
     @classmethod

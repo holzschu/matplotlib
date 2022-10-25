@@ -75,6 +75,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
     _edge_default = False
 
     @_docstring.interpd
+    @_api.make_keyword_only("3.6", name="edgecolors")
     def __init__(self,
                  edgecolors=None,
                  facecolors=None,
@@ -130,13 +131,9 @@ class Collection(artist.Artist, cm.ScalarMappable):
         offset_transform : `~.Transform`, default: `.IdentityTransform`
             A single transform which will be applied to each *offsets* vector
             before it is used.
-        norm : `~.colors.Normalize`, optional
-            Forwarded to `.ScalarMappable`. The default of
-            ``None`` means that the first draw call will set ``vmin`` and
-            ``vmax`` using the minimum and maximum values of the data.
-        cmap : `~.colors.Colormap`, optional
-            Forwarded to `.ScalarMappable`. The default of
-            ``None`` will result in :rc:`image.cmap` being used.
+        cmap, norm
+            Data normalization and colormapping parameters. See
+            `.ScalarMappable` for a detailed description.
         hatch : str, optional
             Hatching pattern to use in filled paths, if any. Valid strings are
             ['/', '\\', '|', '-', '+', 'x', 'o', 'O', '.', '*']. See
@@ -208,7 +205,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
     def get_paths(self):
         return self._paths
 
-    def set_paths(self):
+    def set_paths(self, paths):
         raise NotImplementedError
 
     def get_transforms(self):
@@ -422,16 +419,17 @@ class Collection(artist.Artist, cm.ScalarMappable):
         renderer.close_group(self.__class__.__name__)
         self.stale = False
 
-    def set_pickradius(self, pr):
+    @_api.rename_parameter("3.6", "pr", "pickradius")
+    def set_pickradius(self, pickradius):
         """
         Set the pick radius used for containment tests.
 
         Parameters
         ----------
-        pr : float
+        pickradius : float
             Pick radius, in points.
         """
-        self._pickradius = pr
+        self._pickradius = pickradius
 
     def get_pickradius(self):
         return self._pickradius
@@ -1151,6 +1149,8 @@ class PathCollection(_CollectionWithSizes):
 
 
 class PolyCollection(_CollectionWithSizes):
+
+    @_api.make_keyword_only("3.6", name="closed")
     def __init__(self, verts, sizes=None, closed=True, **kwargs):
         """
         Parameters
@@ -1214,11 +1214,7 @@ class PolyCollection(_CollectionWithSizes):
         self._paths = []
         for xy in verts:
             if len(xy):
-                if isinstance(xy, np.ma.MaskedArray):
-                    xy = np.ma.concatenate([xy, xy[:1]])
-                else:
-                    xy = np.concatenate([xy, xy[:1]])
-                self._paths.append(mpath.Path(xy, closed=True))
+                self._paths.append(mpath.Path._create_closed(xy))
             else:
                 self._paths.append(mpath.Path(xy))
 
@@ -1229,12 +1225,8 @@ class PolyCollection(_CollectionWithSizes):
         if len(verts) != len(codes):
             raise ValueError("'codes' must be a 1D list or array "
                              "with the same length of 'verts'")
-        self._paths = []
-        for xy, cds in zip(verts, codes):
-            if len(xy):
-                self._paths.append(mpath.Path(xy, cds))
-            else:
-                self._paths.append(mpath.Path(xy))
+        self._paths = [mpath.Path(xy, cds) if len(xy) else mpath.Path(xy)
+                       for xy, cds in zip(verts, codes)]
         self.stale = True
 
 
@@ -1287,6 +1279,7 @@ class RegularPolyCollection(_CollectionWithSizes):
     _path_generator = mpath.Path.unit_regular_polygon
     _factor = np.pi ** (-1/2)
 
+    @_api.make_keyword_only("3.6", name="rotation")
     def __init__(self,
                  numsides,
                  rotation=0,
@@ -1423,14 +1416,10 @@ class LineCollection(Collection):
     def set_segments(self, segments):
         if segments is None:
             return
-        _segments = []
 
-        for seg in segments:
-            if not isinstance(seg, np.ma.MaskedArray):
-                seg = np.asarray(seg, float)
-            _segments.append(seg)
-
-        self._paths = [mpath.Path(_seg) for _seg in _segments]
+        self._paths = [mpath.Path(seg) if isinstance(seg, np.ma.MaskedArray)
+                       else mpath.Path(np.asarray(seg, float))
+                       for seg in segments]
         self.stale = True
 
     set_verts = set_segments  # for compatibility with PolyCollection
@@ -1503,6 +1492,7 @@ class EventCollection(LineCollection):
 
     _edge_default = True
 
+    @_api.make_keyword_only("3.6", name="lineoffset")
     def __init__(self,
                  positions,  # Cannot be None.
                  orientation='horizontal',
@@ -1698,6 +1688,7 @@ class CircleCollection(_CollectionWithSizes):
 class EllipseCollection(Collection):
     """A collection of ellipses, drawn using splines."""
 
+    @_api.make_keyword_only("3.6", name="units")
     def __init__(self, widths, heights, angles, units='points', **kwargs):
         """
         Parameters
@@ -1785,6 +1776,7 @@ class PatchCollection(Collection):
     collection of patches.
     """
 
+    @_api.make_keyword_only("3.6", name="match_original")
     def __init__(self, patches, match_original=False, **kwargs):
         """
         Parameters
@@ -2105,7 +2097,7 @@ class QuadMesh(Collection):
         """
         Convert a given mesh into a sequence of triangles, each point
         with its own color.  The result can be used to construct a call to
-        `~.RendererBase.draw_gouraud_triangle`.
+        `~.RendererBase.draw_gouraud_triangles`.
         """
         if isinstance(coordinates, np.ma.MaskedArray):
             p = coordinates.data

@@ -1,6 +1,6 @@
 from collections import namedtuple
 import contextlib
-from functools import wraps
+from functools import lru_cache, wraps
 import inspect
 from inspect import Signature, Parameter
 import logging
@@ -12,6 +12,7 @@ import numpy as np
 
 import matplotlib as mpl
 from . import _api, cbook
+from .colors import BoundaryNorm
 from .cm import ScalarMappable
 from .path import Path
 from .transforms import (Bbox, IdentityTransform, Transform, TransformedBbox,
@@ -497,6 +498,7 @@ class Artist:
         --------
         set_picker, get_picker, pickable
         """
+        from .backend_bases import PickEvent  # Circular import.
         # Pick self
         if self.pickable():
             picker = self.get_picker()
@@ -505,7 +507,8 @@ class Artist:
             else:
                 inside, prop = self.contains(mouseevent)
             if inside:
-                self.figure.canvas.pick_event(mouseevent, self, **prop)
+                PickEvent("pick_event", self.figure.canvas,
+                          mouseevent, self, **prop)._process()
 
         # Pick children
         for a in self.get_children():
@@ -1305,10 +1308,20 @@ class Artist:
                 return "[]"
             normed = self.norm(data)
             if np.isfinite(normed):
-                # Midpoints of neighboring color intervals.
-                neighbors = self.norm.inverse(
-                    (int(self.norm(data) * n) + np.array([0, 1])) / n)
-                delta = abs(neighbors - data).max()
+                if isinstance(self.norm, BoundaryNorm):
+                    # not an invertible normalization mapping
+                    cur_idx = np.argmin(np.abs(self.norm.boundaries - data))
+                    neigh_idx = max(0, cur_idx - 1)
+                    # use max diff to prevent delta == 0
+                    delta = np.diff(
+                        self.norm.boundaries[neigh_idx:cur_idx + 2]
+                    ).max()
+
+                else:
+                    # Midpoints of neighboring color intervals.
+                    neighbors = self.norm.inverse(
+                        (int(normed * n) + np.array([0, 1])) / n)
+                    delta = abs(neighbors - data).max()
                 g_sig_digits = cbook._g_sig_digits(data, delta)
             else:
                 g_sig_digits = 3  # Consistent with default below.
@@ -1481,17 +1494,29 @@ class ArtistInspector:
                 continue
             func = getattr(self.o, name)
             if (not callable(func)
-                    or len(inspect.signature(func).parameters) < 2
+                    or self.number_of_parameters(func) < 2
                     or self.is_alias(func)):
                 continue
             setters.append(name[4:])
         return setters
 
-    def is_alias(self, o):
-        """Return whether method object *o* is an alias for another method."""
-        ds = inspect.getdoc(o)
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def number_of_parameters(func):
+        """Return number of parameters of the callable *func*."""
+        return len(inspect.signature(func).parameters)
+
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def is_alias(method):
+        """
+        Return whether the object *method* is an alias for another method.
+        """
+
+        ds = inspect.getdoc(method)
         if ds is None:
             return False
+
         return ds.startswith('Alias for ')
 
     def aliased_name(self, s):

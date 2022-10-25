@@ -107,7 +107,7 @@ allows both interactive work and plotting from scripts, with output to the
 screen and/or to a file, so at least initially, you will not need to worry
 about the backend.  The most common exception is if your Python distribution
 comes without :mod:`tkinter` and you have no other GUI toolkit installed.
-This happens on certain Linux distributions, where you need to install a
+This happens with certain Linux distributions, where you need to install a
 Linux package named ``python-tk`` (or similar).
 
 If, however, you want to write graphical user interfaces, or a web
@@ -139,13 +139,13 @@ writing to a file):
 Renderer  Filetypes  Description
 ========  =========  =======================================================
 AGG       png        raster_ graphics -- high quality images using the
-                     `Anti-Grain Geometry`_ engine
-PDF       pdf        vector_ graphics -- `Portable Document Format`_
-PS        ps, eps    vector_ graphics -- Postscript_ output
-SVG       svg        vector_ graphics -- `Scalable Vector Graphics`_
-PGF       pgf, pdf   vector_ graphics -- using the pgf_ package
+                     `Anti-Grain Geometry`_ engine.
+PDF       pdf        vector_ graphics -- `Portable Document Format`_ output.
+PS        ps, eps    vector_ graphics -- PostScript_ output.
+SVG       svg        vector_ graphics -- `Scalable Vector Graphics`_ output.
+PGF       pgf, pdf   vector_ graphics -- using the pgf_ package.
 Cairo     png, ps,   raster_ or vector_ graphics -- using the Cairo_ library
-          pdf, svg
+          pdf, svg   (requires pycairo_ or cairocffi_).
 ========  =========  =======================================================
 
 To save plots using the non-interactive backends, use the
@@ -162,15 +162,15 @@ Backend   Description
 QtAgg     Agg rendering in a Qt_ canvas (requires PyQt_ or `Qt for Python`_,
           a.k.a. PySide).  This backend can be activated in IPython with
           ``%matplotlib qt``.
-ipympl    Agg rendering embedded in a Jupyter widget.  (requires ipympl_).
+ipympl    Agg rendering embedded in a Jupyter widget (requires ipympl_).
           This backend can be enabled in a Jupyter notebook with
           ``%matplotlib ipympl``.
-GTK3Agg   Agg rendering to a GTK_ 3.x canvas (requires PyGObject_,
-          and pycairo_ or cairocffi_).  This backend can be activated in
-          IPython with ``%matplotlib gtk3``.
-GTK4Agg   Agg rendering to a GTK_ 4.x canvas (requires PyGObject_,
-          and pycairo_ or cairocffi_).  This backend can be activated in
-          IPython with ``%matplotlib gtk4``.
+GTK3Agg   Agg rendering to a GTK_ 3.x canvas (requires PyGObject_ and
+          pycairo_).  This backend can be activated in IPython with
+          ``%matplotlib gtk3``.
+GTK4Agg   Agg rendering to a GTK_ 4.x canvas (requires PyGObject_ and
+          pycairo_).  This backend can be activated in IPython with
+          ``%matplotlib gtk4``.
 macosx    Agg rendering into a Cocoa canvas in OSX.  This backend can be
           activated in IPython with ``%matplotlib osx``.
 TkAgg     Agg rendering to a Tk_ canvas (requires TkInter_). This
@@ -180,10 +180,10 @@ nbAgg     Embed an interactive figure in a Jupyter classic notebook.  This
           ``%matplotlib notebook``.
 WebAgg    On ``show()`` will start a tornado server with an interactive
           figure.
-GTK3Cairo Cairo rendering to a GTK_ 3.x canvas (requires PyGObject_,
-          and pycairo_ or cairocffi_).
-GTK4Cairo Cairo rendering to a GTK_ 4.x canvas (requires PyGObject_,
-          and pycairo_ or cairocffi_).
+GTK3Cairo Cairo rendering to a GTK_ 3.x canvas (requires PyGObject_ and
+          pycairo_).
+GTK4Cairo Cairo rendering to a GTK_ 4.x canvas (requires PyGObject_ and
+          pycairo_).
 wxAgg     Agg rendering to a wxWidgets_ canvas (requires wxPython_ 4).
           This backend can be activated in IPython with ``%matplotlib wx``.
 ========= ================================================================

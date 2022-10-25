@@ -17,15 +17,13 @@ import matplotlib as mpl
 from matplotlib import _api, backend_tools, cbook, _c_internal_utils
 from matplotlib.backend_bases import (
     _Backend, FigureCanvasBase, FigureManagerBase, NavigationToolbar2,
-    TimerBase, ToolContainerBase, cursors, _Mode)
+    TimerBase, ToolContainerBase, cursors, _Mode,
+    CloseEvent, KeyEvent, LocationEvent, MouseEvent, ResizeEvent)
 from matplotlib._pylab_helpers import Gcf
 from . import _tkagg
 
 
 _log = logging.getLogger(__name__)
-
-backend_version = tk.TkVersion
-
 cursord = {
     cursors.MOVE: "fleur",
     cursors.HAND: "hand2",
@@ -206,12 +204,13 @@ class FigureCanvasTk(FigureCanvasBase):
         # to the window and filter.
         def filter_destroy(event):
             if event.widget is self._tkcanvas:
-                self.close_event()
+                CloseEvent("close_event", self)._process()
         root.bind("<Destroy>", filter_destroy, "+")
 
         self._tkcanvas.focus_set()
 
-        self._rubberband_rect = None
+        self._rubberband_rect_black = None
+        self._rubberband_rect_white = None
 
     def _update_device_pixel_ratio(self, event=None):
         # Tk gives scaling with respect to 72 DPI, but Windows screens are
@@ -239,7 +238,8 @@ class FigureCanvasTk(FigureCanvasBase):
             master=self._tkcanvas, width=int(width), height=int(height))
         self._tkcanvas.create_image(
             int(width / 2), int(height / 2), image=self._tkphoto)
-        self.resize_event()
+        ResizeEvent("resize_event", self)._process()
+        self.draw_idle()
 
     def draw_idle(self):
         # docstring inherited
@@ -271,12 +271,19 @@ class FigureCanvasTk(FigureCanvasBase):
                 self.figure.bbox.height - self._tkcanvas.canvasy(event.y))
 
     def motion_notify_event(self, event):
-        super().motion_notify_event(
-            *self._event_mpl_coords(event), guiEvent=event)
+        MouseEvent("motion_notify_event", self,
+                   *self._event_mpl_coords(event),
+                   guiEvent=event)._process()
 
     def enter_notify_event(self, event):
-        super().enter_notify_event(
-            guiEvent=event, xy=self._event_mpl_coords(event))
+        LocationEvent("figure_enter_event", self,
+                      *self._event_mpl_coords(event),
+                      guiEvent=event)._process()
+
+    def leave_notify_event(self, event):
+        LocationEvent("figure_leave_event", self,
+                      *self._event_mpl_coords(event),
+                      guiEvent=event)._process()
 
     def button_press_event(self, event, dblclick=False):
         # set focus to the canvas so that it can receive keyboard events
@@ -285,9 +292,9 @@ class FigureCanvasTk(FigureCanvasBase):
         num = getattr(event, 'num', None)
         if sys.platform == 'darwin':  # 2 and 3 are reversed.
             num = {2: 3, 3: 2}.get(num, num)
-        super().button_press_event(
-            *self._event_mpl_coords(event), num, dblclick=dblclick,
-            guiEvent=event)
+        MouseEvent("button_press_event", self,
+                   *self._event_mpl_coords(event), num, dblclick=dblclick,
+                   guiEvent=event)._process()
 
     def button_dblclick_event(self, event):
         self.button_press_event(event, dblclick=True)
@@ -296,25 +303,29 @@ class FigureCanvasTk(FigureCanvasBase):
         num = getattr(event, 'num', None)
         if sys.platform == 'darwin':  # 2 and 3 are reversed.
             num = {2: 3, 3: 2}.get(num, num)
-        super().button_release_event(
-            *self._event_mpl_coords(event), num, guiEvent=event)
+        MouseEvent("button_release_event", self,
+                   *self._event_mpl_coords(event), num,
+                   guiEvent=event)._process()
 
     def scroll_event(self, event):
         num = getattr(event, 'num', None)
         step = 1 if num == 4 else -1 if num == 5 else 0
-        super().scroll_event(
-            *self._event_mpl_coords(event), step, guiEvent=event)
+        MouseEvent("scroll_event", self,
+                   *self._event_mpl_coords(event), step=step,
+                   guiEvent=event)._process()
 
     def scroll_event_windows(self, event):
         """MouseWheel event processor"""
         # need to find the window that contains the mouse
         w = event.widget.winfo_containing(event.x_root, event.y_root)
-        if w == self._tkcanvas:
-            x = self._tkcanvas.canvasx(event.x_root - w.winfo_rootx())
-            y = (self.figure.bbox.height
-                 - self._tkcanvas.canvasy(event.y_root - w.winfo_rooty()))
-            step = event.delta/120.
-            FigureCanvasBase.scroll_event(self, x, y, step, guiEvent=event)
+        if w != self._tkcanvas:
+            return
+        x = self._tkcanvas.canvasx(event.x_root - w.winfo_rootx())
+        y = (self.figure.bbox.height
+             - self._tkcanvas.canvasy(event.y_root - w.winfo_rooty()))
+        step = event.delta / 120
+        MouseEvent("scroll_event", self,
+                   x, y, step=step, guiEvent=event)._process()
 
     def _get_key(self, event):
         unikey = event.char
@@ -356,12 +367,14 @@ class FigureCanvasTk(FigureCanvasBase):
         return key
 
     def key_press(self, event):
-        key = self._get_key(event)
-        FigureCanvasBase.key_press_event(self, key, guiEvent=event)
+        KeyEvent("key_press_event", self,
+                 self._get_key(event), *self._event_mpl_coords(event),
+                 guiEvent=event)._process()
 
     def key_release(self, event):
-        key = self._get_key(event)
-        FigureCanvasBase.key_release_event(self, key, guiEvent=event)
+        KeyEvent("key_release_event", self,
+                 self._get_key(event), *self._event_mpl_coords(event),
+                 guiEvent=event)._process()
 
     def new_timer(self, *args, **kwargs):
         # docstring inherited
@@ -652,21 +665,30 @@ class NavigationToolbar2Tk(NavigationToolbar2, tk.Frame):
 
     def draw_rubberband(self, event, x0, y0, x1, y1):
         # Block copied from remove_rubberband for backend_tools convenience.
-        if self.canvas._rubberband_rect:
-            self.canvas._tkcanvas.delete(self.canvas._rubberband_rect)
+        if self.canvas._rubberband_rect_white:
+            self.canvas._tkcanvas.delete(self.canvas._rubberband_rect_white)
+        if self.canvas._rubberband_rect_black:
+            self.canvas._tkcanvas.delete(self.canvas._rubberband_rect_black)
         height = self.canvas.figure.bbox.height
         y0 = height - y0
         y1 = height - y1
-        self.canvas._rubberband_rect = self.canvas._tkcanvas.create_rectangle(
-            x0, y0, x1, y1)
+        self.canvas._rubberband_rect_black = (
+            self.canvas._tkcanvas.create_rectangle(
+                x0, y0, x1, y1))
+        self.canvas._rubberband_rect_white = (
+            self.canvas._tkcanvas.create_rectangle(
+                x0, y0, x1, y1, outline='white', dash=(3, 3)))
 
     def remove_rubberband(self):
-        if self.canvas._rubberband_rect:
-            self.canvas._tkcanvas.delete(self.canvas._rubberband_rect)
-            self.canvas._rubberband_rect = None
+        if self.canvas._rubberband_rect_white:
+            self.canvas._tkcanvas.delete(self.canvas._rubberband_rect_white)
+            self.canvas._rubberband_rect_white = None
+        if self.canvas._rubberband_rect_black:
+            self.canvas._tkcanvas.delete(self.canvas._rubberband_rect_black)
+            self.canvas._rubberband_rect_black = None
 
     lastrect = _api.deprecated("3.6")(
-        property(lambda self: self.canvas._rubberband_rect))
+        property(lambda self: self.canvas._rubberband_rect_black))
 
     def _set_image_for_button(self, button):
         """
@@ -892,14 +914,7 @@ class RubberbandTk(backend_tools.RubberbandBase):
             self._make_classic_style_pseudo_toolbar())
 
     lastrect = _api.deprecated("3.6")(
-        property(lambda self: self.figure.canvas._rubberband_rect))
-
-
-@_api.deprecated("3.5", alternative="ToolSetCursor")
-class SetCursorTk(backend_tools.SetCursorBase):
-    def set_cursor(self, cursor):
-        NavigationToolbar2Tk.set_cursor(
-            self._make_classic_style_pseudo_toolbar(), cursor)
+        property(lambda self: self.figure.canvas._rubberband_rect_black))
 
 
 class ToolbarTk(ToolContainerBase, tk.Frame):
@@ -1002,6 +1017,7 @@ FigureManagerTk._toolmanager_toolbar_class = ToolbarTk
 
 @_Backend.export
 class _BackendTk(_Backend):
+    backend_version = tk.TkVersion
     FigureManager = FigureManagerTk
 
     @staticmethod

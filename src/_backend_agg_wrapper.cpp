@@ -12,6 +12,8 @@ typedef struct
     Py_ssize_t suboffsets[3];
 } PyRendererAgg;
 
+static PyTypeObject PyRendererAggType;
+
 typedef struct
 {
     PyObject_HEAD
@@ -20,6 +22,8 @@ typedef struct
     Py_ssize_t strides[3];
     Py_ssize_t suboffsets[3];
 } PyBufferRegion;
+
+static PyTypeObject PyBufferRegionType;
 
 
 /**********************************************************************
@@ -42,6 +46,12 @@ static void PyBufferRegion_dealloc(PyBufferRegion *self)
 
 static PyObject *PyBufferRegion_to_string(PyBufferRegion *self, PyObject *args)
 {
+    char const* msg =
+        "BufferRegion.to_string is deprecated since Matplotlib 3.7 and will "
+        "be removed two minor releases later; use np.asarray(region) instead.";
+    if (PyErr_WarnEx(PyExc_DeprecationWarning, msg, 1)) {
+        return NULL;
+    }
     return PyBytes_FromStringAndSize((const char *)self->x->get_data(),
                                      self->x->get_height() * self->x->get_stride());
 }
@@ -79,6 +89,13 @@ static PyObject *PyBufferRegion_get_extents(PyBufferRegion *self, PyObject *args
 
 static PyObject *PyBufferRegion_to_string_argb(PyBufferRegion *self, PyObject *args)
 {
+    char const* msg =
+        "BufferRegion.to_string_argb is deprecated since Matplotlib 3.7 and "
+        "will be removed two minor releases later; use "
+        "np.take(region, [2, 1, 0, 3], axis=2) instead.";
+    if (PyErr_WarnEx(PyExc_DeprecationWarning, msg, 1)) {
+        return NULL;
+    }
     PyObject *bufobj;
     uint8_t *buf;
 
@@ -114,9 +131,7 @@ int PyBufferRegion_get_buffer(PyBufferRegion *self, Py_buffer *buf, int flags)
     return 1;
 }
 
-static PyTypeObject PyBufferRegionType;
-
-static PyTypeObject *PyBufferRegion_init_type(PyObject *m, PyTypeObject *type)
+static PyTypeObject *PyBufferRegion_init_type()
 {
     static PyMethodDef methods[] = {
         { "to_string", (PyCFunction)PyBufferRegion_to_string, METH_NOARGS, NULL },
@@ -128,26 +143,17 @@ static PyTypeObject *PyBufferRegion_init_type(PyObject *m, PyTypeObject *type)
     };
 
     static PyBufferProcs buffer_procs;
-    memset(&buffer_procs, 0, sizeof(PyBufferProcs));
     buffer_procs.bf_getbuffer = (getbufferproc)PyBufferRegion_get_buffer;
 
-    memset(type, 0, sizeof(PyTypeObject));
-    type->tp_name = "matplotlib.backends._backend_agg.BufferRegion";
-    type->tp_basicsize = sizeof(PyBufferRegion);
-    type->tp_dealloc = (destructor)PyBufferRegion_dealloc;
-    type->tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
-    type->tp_methods = methods;
-    type->tp_new = PyBufferRegion_new;
-    type->tp_as_buffer = &buffer_procs;
+    PyBufferRegionType.tp_name = "matplotlib.backends._backend_agg.BufferRegion";
+    PyBufferRegionType.tp_basicsize = sizeof(PyBufferRegion);
+    PyBufferRegionType.tp_dealloc = (destructor)PyBufferRegion_dealloc;
+    PyBufferRegionType.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    PyBufferRegionType.tp_methods = methods;
+    PyBufferRegionType.tp_new = PyBufferRegion_new;
+    PyBufferRegionType.tp_as_buffer = &buffer_procs;
 
-    if (PyType_Ready(type) < 0) {
-        return NULL;
-    }
-
-    /* Don't need to add to module, since you can't create buffer
-       regions directly from Python */
-
-    return type;
+    return &PyBufferRegionType;
 }
 
 /**********************************************************************
@@ -658,9 +664,7 @@ static PyObject *PyRendererAgg_restore_region(PyRendererAgg *self, PyObject *arg
     Py_RETURN_NONE;
 }
 
-PyTypeObject PyRendererAggType;
-
-static PyTypeObject *PyRendererAgg_init_type(PyObject *m, PyTypeObject *type)
+static PyTypeObject *PyRendererAgg_init_type()
 {
     static PyMethodDef methods[] = {
         {"draw_path", (PyCFunction)PyRendererAgg_draw_path, METH_VARARGS, NULL},
@@ -680,28 +684,18 @@ static PyTypeObject *PyRendererAgg_init_type(PyObject *m, PyTypeObject *type)
     };
 
     static PyBufferProcs buffer_procs;
-    memset(&buffer_procs, 0, sizeof(PyBufferProcs));
     buffer_procs.bf_getbuffer = (getbufferproc)PyRendererAgg_get_buffer;
 
-    memset(type, 0, sizeof(PyTypeObject));
-    type->tp_name = "matplotlib.backends._backend_agg.RendererAgg";
-    type->tp_basicsize = sizeof(PyRendererAgg);
-    type->tp_dealloc = (destructor)PyRendererAgg_dealloc;
-    type->tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
-    type->tp_methods = methods;
-    type->tp_init = (initproc)PyRendererAgg_init;
-    type->tp_new = PyRendererAgg_new;
-    type->tp_as_buffer = &buffer_procs;
+    PyRendererAggType.tp_name = "matplotlib.backends._backend_agg.RendererAgg";
+    PyRendererAggType.tp_basicsize = sizeof(PyRendererAgg);
+    PyRendererAggType.tp_dealloc = (destructor)PyRendererAgg_dealloc;
+    PyRendererAggType.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    PyRendererAggType.tp_methods = methods;
+    PyRendererAggType.tp_init = (initproc)PyRendererAgg_init;
+    PyRendererAggType.tp_new = PyRendererAgg_new;
+    PyRendererAggType.tp_as_buffer = &buffer_procs;
 
-    if (PyType_Ready(type) < 0) {
-        return NULL;
-    }
-
-    if (PyModule_AddObject(m, "RendererAgg", (PyObject *)type)) {
-        return NULL;
-    }
-
-    return type;
+    return &PyRendererAggType;
 }
 
 static struct PyModuleDef moduledef = { PyModuleDef_HEAD_INIT, "_backend_agg" };
@@ -710,26 +704,16 @@ static struct PyModuleDef moduledef = { PyModuleDef_HEAD_INIT, "_backend_agg" };
 
 PyMODINIT_FUNC PyInit__backend_agg(void)
 {
-    PyObject *m;
-
     import_array();
-
-    m = PyModule_Create(&moduledef);
-
-    if (m == NULL) {
+    PyObject *m;
+    if (!(m = PyModule_Create(&moduledef))
+        || prepare_and_add_type(PyRendererAgg_init_type(), m)
+        // BufferRegion is not constructible from Python, thus not added to the module.
+        || PyType_Ready(PyBufferRegion_init_type())
+       ) {
+        Py_XDECREF(m);
         return NULL;
     }
-
-    if (!PyRendererAgg_init_type(m, &PyRendererAggType)) {
-        Py_DECREF(m);
-        return NULL;
-    }
-
-    if (!PyBufferRegion_init_type(m, &PyBufferRegionType)) {
-        Py_DECREF(m);
-        return NULL;
-    }
-
     return m;
 }
 

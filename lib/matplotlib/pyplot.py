@@ -35,6 +35,7 @@ See :ref:`api_interfaces` for an explanation of the tradeoffs between the
 implicit and explicit interfaces.
 """
 
+from contextlib import ExitStack
 from enum import Enum
 import functools
 import importlib
@@ -67,7 +68,7 @@ from matplotlib import mlab  # for detrend_none, window_hanning
 from matplotlib.scale import get_scale_names
 
 from matplotlib import cm
-from matplotlib.cm import _colormaps as colormaps, get_cmap, register_cmap
+from matplotlib.cm import _colormaps as colormaps, register_cmap
 from matplotlib.colors import _color_sequences as color_sequences
 
 import numpy as np
@@ -181,7 +182,8 @@ def findobj(o=None, match=None, include_self=True):
 
 
 def _get_required_interactive_framework(backend_mod):
-    if not hasattr(backend_mod.FigureCanvas, "required_interactive_framework"):
+    if not hasattr(getattr(backend_mod, "FigureCanvas", None),
+                   "required_interactive_framework"):
         _api.warn_deprecated(
             "3.6", name="Support for FigureCanvases without a "
             "required_interactive_framework attribute")
@@ -208,21 +210,24 @@ def _get_backend_mod():
 
 def switch_backend(newbackend):
     """
-    Close all open figures and set the Matplotlib backend.
+    Set the pyplot backend.
 
-    The argument is case-insensitive.  Switching to an interactive backend is
-    possible only if no event loop for another interactive backend has started.
-    Switching to and from non-interactive backends is always possible.
+    Switching to an interactive backend is possible only if no event loop for
+    another interactive backend has started.  Switching to and from
+    non-interactive backends is always possible.
+
+    If the new backend is different than the current backend then all open
+    Figures will be closed via ``plt.close('all')``.
 
     Parameters
     ----------
     newbackend : str
-        The name of the backend to use.
+        The case-insensitive name of the backend to use.
+
     """
     global _backend_mod
     # make sure the init is pulled up so we can assign to it later
     import matplotlib.backends
-    close("all")
 
     if newbackend is rcsetup._auto_backend_sentinel:
         current_framework = cbook._get_running_interactive_framework()
@@ -259,10 +264,11 @@ def switch_backend(newbackend):
             switch_backend("agg")
             rcParamsOrig["backend"] = "agg"
             return
+    # have to escape the switch on access logic
+    old_backend = dict.__getitem__(rcParams, 'backend')
 
     backend_mod = importlib.import_module(
         cbook._backend_module_name(newbackend))
-    canvas_class = backend_mod.FigureCanvas
 
     required_framework = _get_required_interactive_framework(backend_mod)
     if required_framework is not None:
@@ -274,13 +280,11 @@ def switch_backend(newbackend):
                 "framework, as {!r} is currently running".format(
                     newbackend, required_framework, current_framework))
 
-    # Load the new_figure_manager(), draw_if_interactive(), and show()
-    # functions from the backend.
+    # Load the new_figure_manager() and show() functions from the backend.
 
     # Classically, backends can directly export these functions.  This should
     # keep working for backcompat.
     new_figure_manager = getattr(backend_mod, "new_figure_manager", None)
-    # draw_if_interactive = getattr(backend_mod, "draw_if_interactive", None)
     # show = getattr(backend_mod, "show", None)
     # In that classical approach, backends are implemented as modules, but
     # "inherit" default method implementations from backend_bases._Backend.
@@ -290,9 +294,12 @@ def switch_backend(newbackend):
         locals().update(vars(backend_mod))
 
     # However, the newer approach for defining new_figure_manager (and, in
-    # the future, draw_if_interactive and show) is to derive them from canvas
-    # methods.  In that case, also update backend_mod accordingly.
+    # the future, show) is to derive them from canvas methods.  In that case,
+    # also update backend_mod accordingly; also, per-backend customization of
+    # draw_if_interactive is disabled.
     if new_figure_manager is None:
+        # only try to get the canvas class if have opted into the new scheme
+        canvas_class = backend_mod.FigureCanvas
         def new_figure_manager_given_figure(num, figure):
             return canvas_class.new_manager(figure, num)
 
@@ -300,9 +307,16 @@ def switch_backend(newbackend):
             fig = FigureClass(*args, **kwargs)
             return new_figure_manager_given_figure(num, fig)
 
+        def draw_if_interactive():
+            if matplotlib.is_interactive():
+                manager = _pylab_helpers.Gcf.get_active()
+                if manager:
+                    manager.canvas.draw_idle()
+
         backend_mod.new_figure_manager_given_figure = \
             new_figure_manager_given_figure
         backend_mod.new_figure_manager = new_figure_manager
+        backend_mod.draw_if_interactive = draw_if_interactive
 
     _log.debug("Loaded backend %s version %s.",
                newbackend, backend_mod.backend_version)
@@ -316,6 +330,8 @@ def switch_backend(newbackend):
     # Need to keep a global reference to the backend for compatibility reasons.
     # See https://github.com/matplotlib/matplotlib/issues/6092
     matplotlib.backends.backend = newbackend
+    if not cbook._str_equal(old_backend, newbackend):
+        close("all")
 
     # make sure the repl display hook is installed in case we become
     # interactive
@@ -323,8 +339,21 @@ def switch_backend(newbackend):
 
 
 def _warn_if_gui_out_of_main_thread():
-    if (_get_required_interactive_framework(_get_backend_mod())
-            and threading.current_thread() is not threading.main_thread()):
+    warn = False
+    if _get_required_interactive_framework(_get_backend_mod()):
+        if hasattr(threading, 'get_native_id'):
+            # This compares native thread ids because even if Python-level
+            # Thread objects match, the underlying OS thread (which is what
+            # really matters) may be different on Python implementations with
+            # green threads.
+            if threading.get_native_id() != threading.main_thread().native_id:
+                warn = True
+        else:
+            # Fall back to Python-level Thread if native IDs are unavailable,
+            # mainly for PyPy.
+            if threading.current_thread() is not threading.main_thread():
+                warn = True
+    if warn:
         _api.warn_external(
             "Starting a Matplotlib GUI outside of the main thread will likely "
             "fail.")
@@ -429,58 +458,6 @@ def isinteractive():
     return matplotlib.is_interactive()
 
 
-class _IoffContext:
-    """
-    Context manager for `.ioff`.
-
-    The state is changed in ``__init__()`` instead of ``__enter__()``. The
-    latter is a no-op. This allows using `.ioff` both as a function and
-    as a context.
-    """
-
-    def __init__(self):
-        self.wasinteractive = isinteractive()
-        matplotlib.interactive(False)
-        uninstall_repl_displayhook()
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        if self.wasinteractive:
-            matplotlib.interactive(True)
-            install_repl_displayhook()
-        else:
-            matplotlib.interactive(False)
-            uninstall_repl_displayhook()
-
-
-class _IonContext:
-    """
-    Context manager for `.ion`.
-
-    The state is changed in ``__init__()`` instead of ``__enter__()``. The
-    latter is a no-op. This allows using `.ion` both as a function and
-    as a context.
-    """
-
-    def __init__(self):
-        self.wasinteractive = isinteractive()
-        matplotlib.interactive(True)
-        install_repl_displayhook()
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        if not self.wasinteractive:
-            matplotlib.interactive(False)
-            uninstall_repl_displayhook()
-        else:
-            matplotlib.interactive(True)
-            install_repl_displayhook()
-
-
 def ioff():
     """
     Disable interactive mode.
@@ -510,11 +487,15 @@ def ioff():
             fig2 = plt.figure()
             # ...
 
-    To enable usage as a context manager, this function returns an
-    ``_IoffContext`` object. The return value is not intended to be stored
-    or accessed by the user.
+    To enable optional usage as a context manager, this function returns a
+    `~contextlib.ExitStack` object, which is not intended to be stored or
+    accessed by the user.
     """
-    return _IoffContext()
+    stack = ExitStack()
+    stack.callback(ion if isinteractive() else ioff)
+    matplotlib.interactive(False)
+    uninstall_repl_displayhook()
+    return stack
 
 
 def ion():
@@ -546,11 +527,15 @@ def ion():
             fig2 = plt.figure()
             # ...
 
-    To enable usage as a context manager, this function returns an
-    ``_IonContext`` object. The return value is not intended to be stored
-    or accessed by the user.
+    To enable optional usage as a context manager, this function returns a
+    `~contextlib.ExitStack` object, which is not intended to be stored or
+    accessed by the user.
     """
-    return _IonContext()
+    stack = ExitStack()
+    stack.callback(ion if isinteractive() else ioff)
+    matplotlib.interactive(True)
+    install_repl_displayhook()
+    return stack
 
 
 def pause(interval):
@@ -649,46 +634,38 @@ def xkcd(scale=1, length=100, randomness=2):
         # This figure will be in regular style
         fig2 = plt.figure()
     """
-    return _xkcd(scale, length, randomness)
+    # This cannot be implemented in terms of contextmanager() or rc_context()
+    # because this needs to work as a non-contextmanager too.
 
+    if rcParams['text.usetex']:
+        raise RuntimeError(
+            "xkcd mode is not compatible with text.usetex = True")
 
-class _xkcd:
-    # This cannot be implemented in terms of rc_context() because this needs to
-    # work as a non-contextmanager too.
+    stack = ExitStack()
+    stack.callback(dict.update, rcParams, rcParams.copy())
 
-    def __init__(self, scale, length, randomness):
-        self._orig = rcParams.copy()
+    from matplotlib import patheffects
+    rcParams.update({
+        'font.family': ['xkcd', 'xkcd Script', 'Humor Sans', 'Comic Neue',
+                        'Comic Sans MS'],
+        'font.size': 14.0,
+        'path.sketch': (scale, length, randomness),
+        'path.effects': [
+            patheffects.withStroke(linewidth=4, foreground="w")],
+        'axes.linewidth': 1.5,
+        'lines.linewidth': 2.0,
+        'figure.facecolor': 'white',
+        'grid.linewidth': 0.0,
+        'axes.grid': False,
+        'axes.unicode_minus': False,
+        'axes.edgecolor': 'black',
+        'xtick.major.size': 8,
+        'xtick.major.width': 3,
+        'ytick.major.size': 8,
+        'ytick.major.width': 3,
+    })
 
-        if rcParams['text.usetex']:
-            raise RuntimeError(
-                "xkcd mode is not compatible with text.usetex = True")
-
-        from matplotlib import patheffects
-        rcParams.update({
-            'font.family': ['xkcd', 'xkcd Script', 'Humor Sans', 'Comic Neue',
-                            'Comic Sans MS'],
-            'font.size': 14.0,
-            'path.sketch': (scale, length, randomness),
-            'path.effects': [
-                patheffects.withStroke(linewidth=4, foreground="w")],
-            'axes.linewidth': 1.5,
-            'lines.linewidth': 2.0,
-            'figure.facecolor': 'white',
-            'grid.linewidth': 0.0,
-            'axes.grid': False,
-            'axes.unicode_minus': False,
-            'axes.edgecolor': 'black',
-            'xtick.major.size': 8,
-            'xtick.major.width': 3,
-            'ytick.major.size': 8,
-            'ytick.major.width': 3,
-        })
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        dict.update(rcParams, self._orig)
+    return stack
 
 
 ## Figures ##
@@ -762,9 +739,9 @@ def figure(num=None,  # autoincrement if None, else integer from 1-N
 
     Notes
     -----
-    Newly created figures will be passed to the
-    `~.backend_template.new_figure_manager` function provided by the current
-    backend, which will install a canvas and a manager on the figure.
+    Newly created figures are passed to the `~.FigureCanvasBase.new_manager`
+    method or the `new_figure_manager` function provided by the current
+    backend, which install a canvas and a manager on the figure.
 
     If you are creating many figures, make sure you explicitly call
     `.pyplot.close` on the figures you are not using, because this will
@@ -806,7 +783,8 @@ def figure(num=None,  # autoincrement if None, else integer from 1-N
                 f"Figures created through the pyplot interface "
                 f"(`matplotlib.pyplot.figure`) are retained until explicitly "
                 f"closed and may consume too much memory. (To control this "
-                f"warning, see the rcParam `figure.max_open_warning`).",
+                f"warning, see the rcParam `figure.max_open_warning`). "
+                f"Consider using `matplotlib.pyplot.close()`.",
                 RuntimeWarning)
 
         manager = new_figure_manager(
@@ -1171,13 +1149,11 @@ def subplot(*args, **kwargs):
 
     Returns
     -------
-    `.axes.SubplotBase`, or another subclass of `~.axes.Axes`
+    `~.axes.Axes`
 
-        The axes of the subplot. The returned axes base class depends on
-        the projection used. It is `~.axes.Axes` if rectilinear projection
-        is used and `.projections.polar.PolarAxes` if polar projection
-        is used. The returned axes is then a subplot subclass of the
-        base class.
+        The Axes of the subplot. The returned Axes can actually be an instance
+        of a subclass, such as `.projections.polar.PolarAxes` for polar
+        projections.
 
     Other Parameters
     ----------------
@@ -1294,7 +1270,7 @@ def subplot(*args, **kwargs):
 
     for ax in fig.axes:
         # if we found an Axes at the position sort out if we can re-use it
-        if hasattr(ax, 'get_subplotspec') and ax.get_subplotspec() == key:
+        if ax.get_subplotspec() == key:
             # if the user passed no kwargs, re-use
             if kwargs == {}:
                 break
@@ -1323,6 +1299,7 @@ def subplot(*args, **kwargs):
 
 
 def subplots(nrows=1, ncols=1, *, sharex=False, sharey=False, squeeze=True,
+             width_ratios=None, height_ratios=None,
              subplot_kw=None, gridspec_kw=None, **fig_kw):
     """
     Create a figure and a set of subplots.
@@ -1367,6 +1344,18 @@ def subplots(nrows=1, ncols=1, *, sharex=False, sharey=False, squeeze=True,
         - If False, no squeezing at all is done: the returned Axes object is
           always a 2D array containing Axes instances, even if it ends up
           being 1x1.
+
+    width_ratios : array-like of length *ncols*, optional
+        Defines the relative widths of the columns. Each column gets a
+        relative width of ``width_ratios[i] / sum(width_ratios)``.
+        If not given, all columns will have the same width.  Equivalent
+        to ``gridspec_kw={'width_ratios': [...]}``.
+
+    height_ratios : array-like of length *nrows*, optional
+        Defines the relative heights of the rows. Each row gets a
+        relative height of ``height_ratios[i] / sum(height_ratios)``.
+        If not given, all rows will have the same height. Convenience
+        for ``gridspec_kw={'height_ratios': [...]}``.
 
     subplot_kw : dict, optional
         Dict with keywords passed to the
@@ -1458,13 +1447,14 @@ def subplots(nrows=1, ncols=1, *, sharex=False, sharey=False, squeeze=True,
     fig = figure(**fig_kw)
     axs = fig.subplots(nrows=nrows, ncols=ncols, sharex=sharex, sharey=sharey,
                        squeeze=squeeze, subplot_kw=subplot_kw,
-                       gridspec_kw=gridspec_kw)
+                       gridspec_kw=gridspec_kw, height_ratios=height_ratios,
+                       width_ratios=width_ratios)
     return fig, axs
 
 
 def subplot_mosaic(mosaic, *, sharex=False, sharey=False,
-                   subplot_kw=None, gridspec_kw=None, empty_sentinel='.',
-                   **fig_kw):
+                   width_ratios=None, height_ratios=None, empty_sentinel='.',
+                   subplot_kw=None, gridspec_kw=None, **fig_kw):
     """
     Build a layout of Axes based on ASCII art or nested lists.
 
@@ -1515,6 +1505,24 @@ def subplot_mosaic(mosaic, *, sharex=False, sharey=False,
         behave as for `subplots`.  If False, each subplot's x- or y-axis will
         be independent.
 
+    width_ratios : array-like of length *ncols*, optional
+        Defines the relative widths of the columns. Each column gets a
+        relative width of ``width_ratios[i] / sum(width_ratios)``.
+        If not given, all columns will have the same width.  Convenience
+        for ``gridspec_kw={'width_ratios': [...]}``.
+
+    height_ratios : array-like of length *nrows*, optional
+        Defines the relative heights of the rows. Each row gets a
+        relative height of ``height_ratios[i] / sum(height_ratios)``.
+        If not given, all rows will have the same height. Convenience
+        for ``gridspec_kw={'height_ratios': [...]}``.
+
+    empty_sentinel : object, optional
+        Entry in the layout to mean "leave this space empty".  Defaults
+        to ``'.'``. Note, if *layout* is a string, it is processed via
+        `inspect.cleandoc` to remove leading white space, which may
+        interfere with using white-space as the empty sentinel.
+
     subplot_kw : dict, optional
         Dictionary with keywords passed to the `.Figure.add_subplot` call
         used to create each subplot.
@@ -1522,12 +1530,6 @@ def subplot_mosaic(mosaic, *, sharex=False, sharey=False,
     gridspec_kw : dict, optional
         Dictionary with keywords passed to the `.GridSpec` constructor used
         to create the grid the subplots are placed on.
-
-    empty_sentinel : object, optional
-        Entry in the layout to mean "leave this space empty".  Defaults
-        to ``'.'``. Note, if *layout* is a string, it is processed via
-        `inspect.cleandoc` to remove leading white space, which may
-        interfere with using white-space as the empty sentinel.
 
     **fig_kw
         All additional keyword arguments are passed to the
@@ -1547,6 +1549,7 @@ def subplot_mosaic(mosaic, *, sharex=False, sharey=False,
     fig = figure(**fig_kw)
     ax_dict = fig.subplot_mosaic(
         mosaic, sharex=sharex, sharey=sharey,
+        height_ratios=height_ratios, width_ratios=width_ratios,
         subplot_kw=subplot_kw, gridspec_kw=gridspec_kw,
         empty_sentinel=empty_sentinel
     )
@@ -1574,12 +1577,11 @@ def subplot2grid(shape, loc, rowspan=1, colspan=1, fig=None, **kwargs):
 
     Returns
     -------
-    `.axes.SubplotBase`, or another subclass of `~.axes.Axes`
+    `~.axes.Axes`
 
-        The axes of the subplot.  The returned axes base class depends on the
-        projection used.  It is `~.axes.Axes` if rectilinear projection is used
-        and `.projections.polar.PolarAxes` if polar projection is used.  The
-        returned axes is then a subplot subclass of the base class.
+        The Axes of the subplot. The returned Axes can actually be an instance
+        of a subclass, such as `.projections.polar.PolarAxes` for polar
+        projections.
 
     Notes
     -----
@@ -1765,7 +1767,7 @@ def ylim(*args, **kwargs):
     return ret
 
 
-def xticks(ticks=None, labels=None, **kwargs):
+def xticks(ticks=None, labels=None, *, minor=False, **kwargs):
     """
     Get or set the current tick locations and labels of the x-axis.
 
@@ -1778,6 +1780,9 @@ def xticks(ticks=None, labels=None, **kwargs):
     labels : array-like, optional
         The labels to place at the given *ticks* locations.  This argument can
         only be passed if *ticks* is passed as well.
+    minor : bool, default: False
+        If ``False``, get/set the major ticks/labels; if ``True``, the minor
+        ticks/labels.
     **kwargs
         `.Text` properties can be used to control the appearance of the labels.
 
@@ -1808,24 +1813,24 @@ def xticks(ticks=None, labels=None, **kwargs):
     ax = gca()
 
     if ticks is None:
-        locs = ax.get_xticks()
+        locs = ax.get_xticks(minor=minor)
         if labels is not None:
             raise TypeError("xticks(): Parameter 'labels' can't be set "
                             "without setting 'ticks'")
     else:
-        locs = ax.set_xticks(ticks)
+        locs = ax.set_xticks(ticks, minor=minor)
 
     if labels is None:
-        labels = ax.get_xticklabels()
+        labels = ax.get_xticklabels(minor=minor)
         for l in labels:
             l._internal_update(kwargs)
     else:
-        labels = ax.set_xticklabels(labels, **kwargs)
+        labels = ax.set_xticklabels(labels, minor=minor, **kwargs)
 
     return locs, labels
 
 
-def yticks(ticks=None, labels=None, **kwargs):
+def yticks(ticks=None, labels=None, *, minor=False, **kwargs):
     """
     Get or set the current tick locations and labels of the y-axis.
 
@@ -1838,6 +1843,9 @@ def yticks(ticks=None, labels=None, **kwargs):
     labels : array-like, optional
         The labels to place at the given *ticks* locations.  This argument can
         only be passed if *ticks* is passed as well.
+    minor : bool, default: False
+        If ``False``, get/set the major ticks/labels; if ``True``, the minor
+        ticks/labels.
     **kwargs
         `.Text` properties can be used to control the appearance of the labels.
 
@@ -1868,19 +1876,19 @@ def yticks(ticks=None, labels=None, **kwargs):
     ax = gca()
 
     if ticks is None:
-        locs = ax.get_yticks()
+        locs = ax.get_yticks(minor=minor)
         if labels is not None:
             raise TypeError("yticks(): Parameter 'labels' can't be set "
                             "without setting 'ticks'")
     else:
-        locs = ax.set_yticks(ticks)
+        locs = ax.set_yticks(ticks, minor=minor)
 
     if labels is None:
-        labels = ax.get_yticklabels()
+        labels = ax.get_yticklabels(minor=minor)
         for l in labels:
             l._internal_update(kwargs)
     else:
-        labels = ax.set_yticklabels(labels, **kwargs)
+        labels = ax.set_yticklabels(labels, minor=minor, **kwargs)
 
     return locs, labels
 
@@ -2024,20 +2032,23 @@ def thetagrids(angles=None, labels=None, fmt=None, **kwargs):
     return lines, labels
 
 
-_NON_PLOT_COMMANDS = {
-    'connect', 'disconnect', 'get_current_fig_manager', 'ginput',
-    'new_figure_manager', 'waitforbuttonpress'}
-
-
+@_api.deprecated("3.7", pending=True)
 def get_plot_commands():
     """
     Get a sorted list of all of the plotting commands.
     """
+    NON_PLOT_COMMANDS = {
+        'connect', 'disconnect', 'get_current_fig_manager', 'ginput',
+        'new_figure_manager', 'waitforbuttonpress'}
+    return (name for name in _get_pyplot_commands()
+            if name not in NON_PLOT_COMMANDS)
+
+
+def _get_pyplot_commands():
     # This works by searching for all functions in this module and removing
     # a few hard-coded exclusions, as well as all of the colormap-setting
     # functions, and anything marked as private with a preceding underscore.
-    exclude = {'colormaps', 'colors', 'get_plot_commands',
-               *_NON_PLOT_COMMANDS, *colormaps}
+    exclude = {'colormaps', 'colors', 'get_plot_commands', *colormaps}
     this_module = inspect.getmodule(get_plot_commands)
     return sorted(
         name for name, obj in globals().items()
@@ -2083,6 +2094,13 @@ def clim(vmin=None, vmax=None):
     im.set_clim(vmin, vmax)
 
 
+# eventually this implementation should move here, use indirection for now to
+# avoid having two copies of the code floating around.
+def get_cmap(name=None, lut=None):
+    return cm._get_cmap(name=name, lut=lut)
+get_cmap.__doc__ = cm._get_cmap.__doc__
+
+
 def set_cmap(cmap):
     """
     Set the default colormap, and applies it to the current image if any.
@@ -2098,7 +2116,7 @@ def set_cmap(cmap):
     matplotlib.cm.register_cmap
     matplotlib.cm.get_cmap
     """
-    cmap = cm.get_cmap(cmap)
+    cmap = get_cmap(cmap)
 
     rc('image', cmap=cmap.name)
     im = gci()
@@ -2195,7 +2213,7 @@ def polar(*args, **kwargs):
 # requested, ignore rcParams['backend'] and force selection of a backend that
 # is compatible with the current running interactive framework.
 if (rcParams["backend_fallback"]
-        and dict.__getitem__(rcParams, "backend") in (
+        and rcParams._get_backend_or_none() in (
             set(_interactive_bk) - {'WebAgg', 'nbAgg'})
         and cbook._get_running_interactive_framework()):
     dict.__setitem__(rcParams, "backend", rcsetup._auto_backend_sentinel)
@@ -2368,9 +2386,12 @@ def barbs(*args, data=None, **kwargs):
 
 # Autogenerated by boilerplate.py.  Do not edit as changes will be lost.
 @_copy_docstring_and_deprecators(Axes.barh)
-def barh(y, width, height=0.8, left=None, *, align='center', **kwargs):
+def barh(
+        y, width, height=0.8, left=None, *, align='center',
+        data=None, **kwargs):
     return gca().barh(
-        y, width, height=height, left=left, align=align, **kwargs)
+        y, width, height=height, left=left, align=align,
+        **({"data": data} if data is not None else {}), **kwargs)
 
 
 # Autogenerated by boilerplate.py.  Do not edit as changes will be lost.
@@ -2837,8 +2858,9 @@ def stackplot(
 @_copy_docstring_and_deprecators(Axes.stem)
 def stem(
         *args, linefmt=None, markerfmt=None, basefmt=None, bottom=0,
-        label=None, use_line_collection=True, orientation='vertical',
-        data=None):
+        label=None,
+        use_line_collection=_api.deprecation._deprecated_parameter,
+        orientation='vertical', data=None):
     return gca().stem(
         *args, linefmt=linefmt, markerfmt=markerfmt, basefmt=basefmt,
         bottom=bottom, label=label,

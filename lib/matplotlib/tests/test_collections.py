@@ -309,10 +309,9 @@ def test_add_collection():
     # GitHub issue #1490, pull #1497.
     plt.figure()
     ax = plt.axes()
-    coll = ax.scatter([0, 1], [0, 1])
-    ax.add_collection(coll)
+    ax.scatter([0, 1], [0, 1])
     bounds = ax.dataLim.bounds
-    coll = ax.scatter([], [])
+    ax.scatter([], [])
     assert ax.dataLim.bounds == bounds
 
 
@@ -956,7 +955,7 @@ def test_quadmesh_set_array():
 def test_quadmesh_vmin_vmax():
     # test when vmin/vmax on the norm changes, the quadmesh gets updated
     fig, ax = plt.subplots()
-    cmap = mpl.cm.get_cmap('plasma')
+    cmap = mpl.colormaps['plasma']
     norm = mpl.colors.Normalize(vmin=0, vmax=1)
     coll = ax.pcolormesh([[1]], cmap=cmap, norm=norm)
     fig.canvas.draw()
@@ -1156,9 +1155,9 @@ def test_set_offsets_late():
 
 def test_set_offset_transform():
     skew = mtransforms.Affine2D().skew(2, 2)
-    init = mcollections.Collection([], offset_transform=skew)
+    init = mcollections.Collection(offset_transform=skew)
 
-    late = mcollections.Collection([])
+    late = mcollections.Collection()
     late.set_offset_transform(skew)
 
     assert skew == init.get_offset_transform() == late.get_offset_transform()

@@ -5,7 +5,7 @@ Classes for including text in a figure.
 import functools
 import logging
 import math
-import numbers
+from numbers import Real
 import weakref
 
 import numpy as np
@@ -15,7 +15,7 @@ from . import _api, artist, cbook, _docstring
 from .artist import Artist
 from .font_manager import FontProperties
 from .patches import FancyArrowPatch, FancyBboxPatch, Rectangle
-from .textpath import TextPath  # Unused, but imported by others.
+from .textpath import TextPath  # noqa # Unused, but imported by others.
 from .transforms import (
     Affine2D, Bbox, BboxBase, BboxTransformTo, IdentityTransform, Transform)
 
@@ -124,10 +124,12 @@ class Text(Artist):
     """Handle storing and drawing of text in window or data coordinates."""
 
     zorder = 3
+    _charsize_cache = dict()
 
     def __repr__(self):
         return "Text(%s, %s, %s)" % (self._x, self._y, repr(self._text))
 
+    @_api.make_keyword_only("3.6", name="color")
     def __init__(self,
                  x=0, y=0, text='',
                  color=None,           # defaults to rc params
@@ -163,6 +165,39 @@ class Text(Artist):
         super().__init__()
         self._x, self._y = x, y
         self._text = ''
+        self._reset_visual_defaults(
+            text=text,
+            color=color,
+            fontproperties=fontproperties,
+            usetex=usetex,
+            parse_math=parse_math,
+            wrap=wrap,
+            verticalalignment=verticalalignment,
+            horizontalalignment=horizontalalignment,
+            multialignment=multialignment,
+            rotation=rotation,
+            transform_rotates_text=transform_rotates_text,
+            linespacing=linespacing,
+            rotation_mode=rotation_mode,
+        )
+        self.update(kwargs)
+
+    def _reset_visual_defaults(
+        self,
+        text='',
+        color=None,
+        fontproperties=None,
+        usetex=None,
+        parse_math=None,
+        wrap=False,
+        verticalalignment='baseline',
+        horizontalalignment='left',
+        multialignment=None,
+        rotation=None,
+        transform_rotates_text=False,
+        linespacing=None,
+        rotation_mode=None,
+    ):
         self.set_text(text)
         self.set_color(
             color if color is not None else mpl.rcParams["text.color"])
@@ -180,9 +215,8 @@ class Text(Artist):
         self._renderer = None
         if linespacing is None:
             linespacing = 1.2  # Maybe use rcParam later.
-        self._linespacing = linespacing
+        self.set_linespacing(linespacing)
         self.set_rotation_mode(rotation_mode)
-        self.update(kwargs)
 
     def update(self, kwargs):
         # docstring inherited
@@ -246,6 +280,38 @@ class Text(Artist):
         else:
             return self._horizontalalignment
 
+    def _char_index_at(self, x):
+        """
+        Calculate the index closest to the coordinate x in display space.
+
+        The position of text[index] is assumed to be the sum of the widths
+        of all preceding characters text[:index].
+
+        This works only on single line texts.
+        """
+        if not self._text:
+            return 0
+
+        text = self._text
+
+        fontproperties = str(self._fontproperties)
+        if fontproperties not in Text._charsize_cache:
+            Text._charsize_cache[fontproperties] = dict()
+
+        charsize_cache = Text._charsize_cache[fontproperties]
+        for char in set(text):
+            if char not in charsize_cache:
+                self.set_text(char)
+                bb = self.get_window_extent()
+                charsize_cache[char] = bb.x1 - bb.x0
+
+        self.set_text(text)
+        bb = self.get_window_extent()
+
+        size_accum = np.cumsum([0] + [charsize_cache[x] for x in text])
+        std_x = x - bb.x0
+        return (np.abs(size_accum - std_x)).argmin()
+
     def get_rotation(self):
         """Return the text angle in degrees between 0 and 360."""
         if self.get_transform_rotates_text():
@@ -301,8 +367,7 @@ class Text(Artist):
         of a rotated text when necessary.
         """
         thisx, thisy = 0.0, 0.0
-        text = self.get_text()
-        lines = [text] if self.get_usetex() else text.split("\n")  # Not empty.
+        lines = self.get_text().split("\n")  # Ensures lines is not empty.
 
         ws = []
         hs = []
@@ -999,6 +1064,7 @@ class Text(Artist):
         ----------
         spacing : float (multiple of font size)
         """
+        _api.check_isinstance(Real, spacing=spacing)
         self._linespacing = spacing
         self.stale = True
 
@@ -1185,7 +1251,7 @@ class Text(Artist):
             The rotation angle in degrees in mathematically positive direction
             (counterclockwise). 'horizontal' equals 0, 'vertical' equals 90.
         """
-        if isinstance(s, numbers.Real):
+        if isinstance(s, Real):
             self._rotation = float(s) % 360
         elif cbook._str_equal(s, 'horizontal') or s is None:
             self._rotation = 0.
@@ -1503,13 +1569,13 @@ class _AnnotationBase:
             ref_x, ref_y = xy0
             if unit == "points":
                 # dots per points
-                dpp = self.figure.get_dpi() / 72.
+                dpp = self.figure.dpi / 72
                 tr = Affine2D().scale(dpp)
             elif unit == "pixels":
                 tr = Affine2D()
             elif unit == "fontsize":
                 fontsize = self.get_size()
-                dpp = fontsize * self.figure.get_dpi() / 72.
+                dpp = fontsize * self.figure.dpi / 72
                 tr = Affine2D().scale(dpp)
             elif unit == "fraction":
                 w, h = bbox0.size

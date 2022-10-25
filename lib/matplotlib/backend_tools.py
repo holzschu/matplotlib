@@ -252,12 +252,12 @@ class ToolToggleBase(ToolBase):
                 self._toggled = True
 
 
-class SetCursorBase(ToolBase):
+class ToolSetCursor(ToolBase):
     """
     Change to the current cursor while inaxes.
 
-    This tool, keeps track of all `ToolToggleBase` derived tools, and calls
-    `set_cursor` when a tool gets triggered.
+    This tool, keeps track of all `ToolToggleBase` derived tools, and updates
+    the cursor when a tool gets triggered.
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -310,18 +310,6 @@ class SetCursorBase(ToolBase):
             self.canvas.set_cursor(self._default_cursor)
             self._last_cursor = self._default_cursor
 
-    @_api.deprecated("3.5", alternative="`.FigureCanvasBase.set_cursor`")
-    def set_cursor(self, cursor):
-        """
-        Set the cursor.
-        """
-        self.canvas.set_cursor(cursor)
-
-
-# This exists solely for deprecation warnings; remove with
-# SetCursorBase.set_cursor.
-ToolSetCursor = SetCursorBase
-
 
 class ToolCursorPosition(ToolBase):
     """
@@ -355,7 +343,7 @@ class ToolCursorPosition(ToolBase):
 
 class RubberbandBase(ToolBase):
     """Draw and remove a rubberband."""
-    def trigger(self, sender, event, data):
+    def trigger(self, sender, event, data=None):
         """Call `draw_rubberband` or `remove_rubberband` based on data."""
         if not self.figure.canvas.widgetlock.available(sender):
             return
@@ -449,11 +437,11 @@ class AxisScaleBase(ToolToggleBase):
             return
         super().trigger(sender, event, data)
 
-    def enable(self, event):
+    def enable(self, event=None):
         self.set_scale(event.inaxes, 'log')
         self.figure.canvas.draw_idle()
 
-    def disable(self, event):
+    def disable(self, event=None):
         self.set_scale(event.inaxes, 'linear')
         self.figure.canvas.draw_idle()
 
@@ -676,7 +664,7 @@ class ZoomPanBase(ToolToggleBase):
         self.scrollthresh = .5  # .5 second scroll threshold
         self.lastscroll = time.time()-self.scrollthresh
 
-    def enable(self, event):
+    def enable(self, event=None):
         """Connect press/release events and lock the canvas."""
         self.figure.canvas.widgetlock(self)
         self._idPress = self.figure.canvas.mpl_connect(
@@ -686,7 +674,7 @@ class ZoomPanBase(ToolToggleBase):
         self._idScroll = self.figure.canvas.mpl_connect(
             'scroll_event', self.scroll_zoom)
 
-    def disable(self, event):
+    def disable(self, event=None):
         """Release the canvas and disconnect press/release events."""
         self._cancel_action()
         self.figure.canvas.widgetlock.release(self)
@@ -979,7 +967,7 @@ default_tools = {'home': ToolHome, 'back': ToolBack, 'forward': ToolForward,
                  'yscale': ToolYScale,
                  'position': ToolCursorPosition,
                  _views_positions: ToolViewsPositions,
-                 'cursor': SetCursorBase,
+                 'cursor': ToolSetCursor,
                  'rubberband': RubberbandBase,
                  'help': ToolHelpBase,
                  'copy': ToolCopyToClipboardBase,

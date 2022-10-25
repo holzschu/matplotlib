@@ -77,11 +77,29 @@ The base matplotlib namespace includes:
         figure is created, because it is not possible to switch between
         different GUI backends after that.
 
+The following environment variables can be used to customize the behavior::
+
+    .. envvar:: MPLBACKEND
+
+      This optional variable can be set to choose the Matplotlib backend. See
+      :ref:`what-is-a-backend`.
+
+    .. envvar:: MPLCONFIGDIR
+
+      This is the directory used to store user customizations to
+      Matplotlib, as well as some caches to improve performance. If
+      :envvar:`MPLCONFIGDIR` is not defined, :file:`{HOME}/.config/matplotlib`
+      and :file:`{HOME}/.cache/matplotlib` are used on Linux, and
+      :file:`{HOME}/.matplotlib` on other platforms, if they are
+      writable. Otherwise, the Python standard library's `tempfile.gettempdir`
+      is used to find a base directory in which the :file:`matplotlib`
+      subdirectory is created.
+
 Matplotlib was initially written by John D. Hunter (1968-2012) and is now
 developed and maintained by a host of others.
 
 Occasionally the internal documentation (python docstrings) will refer
-to MATLAB&reg;, a registered trademark of The MathWorks, Inc.
+to MATLAB®, a registered trademark of The MathWorks, Inc.
 
 """
 
@@ -164,11 +182,13 @@ def _parse_to_version_info(version_str):
 
 def _get_version():
     """Return the version string used for __version__."""
-    # Only shell out to a git subprocess if really needed, and not on a
-    # shallow clone, such as those used by CI, as the latter would trigger
-    # a warning from setuptools_scm.
+    # Only shell out to a git subprocess if really needed, i.e. when we are in
+    # a matplotlib git repo but not in a shallow clone, such as those used by
+    # CI, as the latter would trigger a warning from setuptools_scm.
     root = Path(__file__).resolve().parents[2]
-    if (root / ".git").exists() and not (root / ".git/shallow").exists():
+    if ((root / ".matplotlib-repo").exists()
+            and (root / ".git").exists()
+            and not (root / ".git/shallow").exists()):
         import setuptools_scm
         return setuptools_scm.get_version(
             root=root,
@@ -201,7 +221,7 @@ def _check_versions():
             ("dateutil", "2.7"),
             ("kiwisolver", "1.0.1"),
             ("numpy", "1.19"),
-            ("pyparsing", "2.2.1"),
+            ("pyparsing", "2.3.1"),
     ]:
         module = importlib.import_module(modname)
         if parse_version(module.__version__) < parse_version(minver):
@@ -434,6 +454,7 @@ def _get_executable_info(name):
         raise ValueError("Unknown executable: {!r}".format(name))
 
 
+@_api.deprecated("3.6", alternative="a vendored copy of this function")
 def checkdep_usetex(s):
     if not s:
         return False
@@ -675,6 +696,11 @@ class RcParams(MutableMapping, dict):
 
         return dict.__getitem__(self, key)
 
+    def _get_backend_or_none(self):
+        """Get the requested backend, if any, without triggering resolution."""
+        backend = dict.__getitem__(self, "backend")
+        return None if backend is rcsetup._auto_backend_sentinel else backend
+
     def __repr__(self):
         class_name = self.__class__.__name__
         indent = len(class_name) + 1
@@ -712,6 +738,7 @@ class RcParams(MutableMapping, dict):
                         if pattern_re.search(key))
 
     def copy(self):
+        """Copy this RcParams instance."""
         rccopy = RcParams()
         for k in self:  # Skip deprecations and revalidation.
             dict.__setitem__(rccopy, k, dict.__getitem__(self, k))
@@ -1051,6 +1078,8 @@ def rc_context(rc=None, fname=None):
     """
     Return a context manager for temporarily changing rcParams.
 
+    The :rc:`backend` will not be reset by the context manager.
+
     Parameters
     ----------
     rc : dict
@@ -1079,7 +1108,8 @@ def rc_context(rc=None, fname=None):
              plt.plot(x, y)  # uses 'print.rc'
 
     """
-    orig = rcParams.copy()
+    orig = dict(rcParams.copy())
+    del orig['backend']
     try:
         if fname:
             rc_file(fname)
@@ -1093,6 +1123,10 @@ def rc_context(rc=None, fname=None):
 def use(backend, *, force=True):
     """
     Select the backend used for rendering and GUI integration.
+
+    If pyplot is already imported, `~matplotlib.pyplot.switch_backend` is used
+    and if the new backend is different than the current backend, all Figures
+    will be closed.
 
     Parameters
     ----------
@@ -1124,11 +1158,12 @@ def use(backend, *, force=True):
     --------
     :ref:`backends`
     matplotlib.get_backend
+    matplotlib.pyplot.switch_backend
+
     """
     name = validate_backend(backend)
-    # we need to use the base-class method here to avoid (prematurely)
-    # resolving the "auto" backend setting
-    if dict.__getitem__(rcParams, 'backend') == name:
+    # don't (prematurely) resolve the "auto" backend setting
+    if rcParams._get_backend_or_none() == name:
         # Nothing to do if the requested backend is already set
         pass
     else:

@@ -8,7 +8,6 @@ from enum import Enum
 import functools
 from io import StringIO
 import logging
-import math
 import os
 import pathlib
 import re
@@ -22,11 +21,10 @@ import matplotlib as mpl
 from matplotlib import _api, cbook, _path, _text_helpers
 from matplotlib._afm import AFM
 from matplotlib.backend_bases import (
-    _Backend, FigureCanvasBase, FigureManagerBase, GraphicsContextBase,
-    RendererBase)
+    _Backend, FigureCanvasBase, FigureManagerBase, RendererBase)
 from matplotlib.cbook import is_writable_file_like, file_requires_unicode
 from matplotlib.font_manager import get_font
-from matplotlib.ft2font import LOAD_NO_HINTING, LOAD_NO_SCALE, FT2Font
+from matplotlib.ft2font import LOAD_NO_SCALE, FT2Font
 from matplotlib._ttconv import convert_ttf_to_ps
 from matplotlib._mathtext_data import uni2type1
 from matplotlib.path import Path
@@ -35,18 +33,22 @@ from matplotlib.transforms import Affine2D
 from matplotlib.backends.backend_mixed import MixedModeRenderer
 from . import _backend_pdf_ps
 
-_log = logging.getLogger(__name__)
 
-backend_version = 'Level II'
+_log = logging.getLogger(__name__)
 debugPS = False
 
 
+@_api.deprecated("3.7")
 class PsBackendHelper:
     def __init__(self):
         self._cached = {}
 
 
-ps_backend_helper = PsBackendHelper()
+@_api.caching_module_getattr
+class __getattr__:
+    # module-level deprecations
+    ps_backend_helper = _api.deprecated("3.7", obj_type="")(
+        property(lambda self: PsBackendHelper()))
 
 
 papersize = {'letter': (8.5, 11),
@@ -89,12 +91,8 @@ def _nums_to_str(*args):
     return " ".join(f"{arg:1.3f}".rstrip("0").rstrip(".") for arg in args)
 
 
-@_api.deprecated("3.6", alternative="Vendor the code")
+@_api.deprecated("3.6", alternative="a vendored copy of this function")
 def quote_ps_string(s):
-    return _quote_ps_string(s)
-
-
-def _quote_ps_string(s):
     """
     Quote dangerous characters of S for use in a PostScript string constant.
     """
@@ -447,17 +445,7 @@ newpath
         h, w = im.shape[:2]
         imagecmd = "false 3 colorimage"
         data = im[::-1, :, :3]  # Vertically flipped rgb values.
-        # data.tobytes().hex() has no spaces, so can be linewrapped by simply
-        # splitting data every nchars. It's equivalent to textwrap.fill only
-        # much faster.
-        nchars = 128
-        data = data.tobytes().hex()
-        hexlines = "\n".join(
-            [
-                data[n * nchars:(n + 1) * nchars]
-                for n in range(math.ceil(len(data) / nchars))
-            ]
-        )
+        hexdata = data.tobytes().hex("\n", -64)  # Linewrap to 128 chars.
 
         if transform is None:
             matrix = "1 0 0 1 0 0"
@@ -479,7 +467,7 @@ gsave
 {{
 currentfile DataString readhexstring pop
 }} bind {imagecmd}
-{hexlines}
+{hexdata}
 grestore
 """)
 
@@ -546,7 +534,7 @@ grestore
 
     @_log_if_debug_on
     def draw_path_collection(self, gc, master_transform, paths, all_transforms,
-                             offsets, offsetTrans, facecolors, edgecolors,
+                             offsets, offset_trans, facecolors, edgecolors,
                              linewidths, linestyles, antialiaseds, urls,
                              offset_position):
         # Is the optimization worth it? Rough calculation:
@@ -562,7 +550,7 @@ grestore
         if not should_do_optimization:
             return RendererBase.draw_path_collection(
                 self, gc, master_transform, paths, all_transforms,
-                offsets, offsetTrans, facecolors, edgecolors,
+                offsets, offset_trans, facecolors, edgecolors,
                 linewidths, linestyles, antialiaseds, urls,
                 offset_position)
 
@@ -581,8 +569,8 @@ translate
             path_codes.append(name)
 
         for xo, yo, path_id, gc0, rgbFace in self._iter_collection(
-                gc, master_transform, all_transforms, path_codes, offsets,
-                offsetTrans, facecolors, edgecolors, linewidths, linestyles,
+                gc, path_codes, offsets, offset_trans,
+                facecolors, edgecolors, linewidths, linestyles,
                 antialiaseds, urls, offset_position):
             ps = "%g %g %s" % (xo, yo, path_id)
             self._draw_ps(ps, gc0, rgbFace)
@@ -645,7 +633,7 @@ grestore
         if mpl.rcParams['ps.useafm']:
             font = self._get_font_afm(prop)
             scale = 0.001 * prop.get_size_in_points()
-
+            stream = []
             thisx = 0
             last_name = None  # kerns returns 0 for None.
             xs_names = []
@@ -661,21 +649,37 @@ grestore
                 thisx += kern * scale
                 xs_names.append((thisx, name))
                 thisx += width * scale
+            ps_name = (font.postscript_name
+                       .encode("ascii", "replace").decode("ascii"))
+            stream.append((ps_name, xs_names))
 
         else:
             font = self._get_font_ttf(prop)
-            font.set_text(s, 0, flags=LOAD_NO_HINTING)
             self._character_tracker.track(font, s)
-            xs_names = [(item.x, font.get_glyph_name(item.glyph_idx))
-                        for item in _text_helpers.layout(s, font)]
+            stream = []
+            prev_font = curr_stream = None
+            for item in _text_helpers.layout(s, font):
+                ps_name = (item.ft_object.postscript_name
+                           .encode("ascii", "replace").decode("ascii"))
+                if item.ft_object is not prev_font:
+                    if curr_stream:
+                        stream.append(curr_stream)
+                    prev_font = item.ft_object
+                    curr_stream = [ps_name, []]
+                curr_stream[1].append(
+                    (item.x, item.ft_object.get_glyph_name(item.glyph_idx))
+                )
+            # append the last entry if exists
+            if curr_stream:
+                stream.append(curr_stream)
 
         self.set_color(*gc.get_rgb())
-        ps_name = (font.postscript_name
-                   .encode("ascii", "replace").decode("ascii"))
-        self.set_font(ps_name, prop.get_size_in_points())
-        thetext = "\n".join(f"{x:g} 0 m /{name:s} glyphshow"
-                            for x, name in xs_names)
-        self._pswriter.write(f"""\
+
+        for ps_name, xs_names in stream:
+            self.set_font(ps_name, prop.get_size_in_points(), False)
+            thetext = "\n".join(f"{x:g} 0 m /{name:s} glyphshow"
+                                for x, name in xs_names)
+            self._pswriter.write(f"""\
 gsave
 {self._get_clip_cmd(gc)}
 {x:g} {y:g} translate
@@ -737,13 +741,13 @@ grestore
         xmin, ymin = points_min
         xmax, ymax = points_max
 
-        streamarr = np.empty(
+        data = np.empty(
             shape[0] * shape[1],
             dtype=[('flags', 'u1'), ('points', '2>u4'), ('colors', '3u1')])
-        streamarr['flags'] = 0
-        streamarr['points'] = (flat_points - points_min) * factor
-        streamarr['colors'] = flat_colors[:, :3] * 255.0
-        stream = _quote_ps_string(streamarr.tobytes())
+        data['flags'] = 0
+        data['points'] = (flat_points - points_min) * factor
+        data['colors'] = flat_colors[:, :3] * 255.0
+        hexdata = data.tobytes().hex("\n", -64)  # Linewrap to 128 chars.
 
         self._pswriter.write(f"""\
 gsave
@@ -754,7 +758,9 @@ gsave
    /BitsPerFlag 8
    /AntiAlias true
    /Decode [ {xmin:g} {xmax:g} {ymin:g} {ymax:g} 0 1 0 1 0 1 ]
-   /DataSource ({stream})
+   /DataSource <
+{hexdata}
+>
 >>
 shfill
 grestore
@@ -833,8 +839,8 @@ class FigureCanvasPS(FigureCanvasBase):
             metadata=None, papertype=None, orientation='portrait',
             **kwargs):
 
-        dpi = self.figure.get_dpi()
-        self.figure.set_dpi(72)  # Override the dpi kwarg
+        dpi = self.figure.dpi
+        self.figure.dpi = 72  # Override the dpi kwarg
 
         dsc_comments = {}
         if isinstance(outfile, (str, os.PathLike)):
@@ -1212,7 +1218,7 @@ def xpdf_distill(tmpfile, eps=False, ptype='letter', bbox=None, rotated=False):
         tmppdf = pathlib.Path(tmpdir, "tmp.pdf")
         tmpps = pathlib.Path(tmpdir, "tmp.ps")
         # Pass options as `-foo#bar` instead of `-foo=bar` to keep Windows
-        # happy (https://www.ghostscript.com/doc/9.22/Use.htm#MS_Windows).
+        # happy (https://ghostscript.com/doc/9.56.1/Use.htm#MS_Windows).
         cbook._check_and_log_subprocess(
             ["ps2pdf",
              "-dAutoFilterColorImages#false",
@@ -1362,4 +1368,5 @@ psDefs = [
 
 @_Backend.export
 class _BackendPS(_Backend):
+    backend_version = 'Level II'
     FigureCanvas = FigureCanvasPS

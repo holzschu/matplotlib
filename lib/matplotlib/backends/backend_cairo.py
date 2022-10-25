@@ -14,15 +14,14 @@ import numpy as np
 
 try:
     import cairo
-    if cairo.version_info < (1, 11, 0):
-        # Introduced create_for_data for Py3.
+    if cairo.version_info < (1, 14, 0):  # Introduced set_device_scale.
         raise ImportError
 except ImportError:
     try:
         import cairocffi as cairo
     except ImportError as err:
         raise ImportError(
-            "cairo backend requires that pycairo>=1.11.0 or cairocffi "
+            "cairo backend requires that pycairo>=1.14.0 or cairocffi "
             "is installed") from err
 
 import matplotlib as mpl
@@ -33,25 +32,6 @@ from matplotlib.backend_bases import (
 from matplotlib.font_manager import ttfFontProperty
 from matplotlib.path import Path
 from matplotlib.transforms import Affine2D
-
-
-backend_version = cairo.version
-
-
-if cairo.__name__ == "cairocffi":
-    # Convert a pycairo context to a cairocffi one.
-    def _to_context(ctx):
-        if not isinstance(ctx, cairo.Context):
-            ctx = cairo.Context._from_pointer(
-                cairo.ffi.cast(
-                    'cairo_t **',
-                    id(ctx) + object.__basicsize__)[0],
-                incref=True)
-        return ctx
-else:
-    # Pass-through a pycairo context.
-    def _to_context(ctx):
-        return ctx
 
 
 def _append_path(ctx, path, transform, clip=None):
@@ -132,15 +112,28 @@ class RendererCairo(RendererBase):
         super().__init__()
 
     def set_context(self, ctx):
-        self.gc.ctx = _to_context(ctx)
+        surface = ctx.get_target()
+        if hasattr(surface, "get_width") and hasattr(surface, "get_height"):
+            size = surface.get_width(), surface.get_height()
+        elif hasattr(surface, "get_extents"):  # GTK4 RecordingSurface.
+            ext = surface.get_extents()
+            size = ext.width, ext.height
+        else:  # vector surfaces.
+            ctx.save()
+            ctx.reset_clip()
+            rect, *rest = ctx.copy_clip_rectangle_list()
+            if rest:
+                raise TypeError("Cannot infer surface size")
+            size = rect.width, rect.height
+            ctx.restore()
+        self.gc.ctx = ctx
+        self.width, self.height = size
 
+    @_api.deprecated("3.6", alternative="set_context")
     def set_ctx_from_surface(self, surface):
         self.gc.ctx = cairo.Context(surface)
-        # Although it may appear natural to automatically call
-        # `self.set_width_height(surface.get_width(), surface.get_height())`
-        # here (instead of having the caller do so separately), this would fail
-        # for PDF/PS/SVG surfaces, which have no way to report their extents.
 
+    @_api.deprecated("3.6")
     def set_width_height(self, width, height):
         self.width = width
         self.height = height
@@ -425,6 +418,9 @@ class FigureCanvasCairo(FigureCanvasBase):
             self._cached_renderer = RendererCairo(self.figure.dpi)
         return self._cached_renderer
 
+    def get_renderer(self):
+        return self._renderer
+
     def copy_from_bbox(self, bbox):
         surface = self._renderer.gc.ctx.get_target()
         if not isinstance(surface, cairo.ImageSurface):
@@ -472,9 +468,8 @@ class FigureCanvasCairo(FigureCanvasBase):
     def _get_printed_image_surface(self):
         self._renderer.dpi = self.figure.dpi
         width, height = self.get_width_height()
-        self._renderer.set_width_height(width, height)
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
-        self._renderer.set_ctx_from_surface(surface)
+        self._renderer.set_context(cairo.Context(surface))
         self.figure.draw(self._renderer)
         return surface
 
@@ -514,8 +509,7 @@ class FigureCanvasCairo(FigureCanvasBase):
             raise ValueError("Unknown format: {!r}".format(fmt))
 
         self._renderer.dpi = self.figure.dpi
-        self._renderer.set_width_height(width_in_points, height_in_points)
-        self._renderer.set_ctx_from_surface(surface)
+        self._renderer.set_context(cairo.Context(surface))
         ctx = self._renderer.gc.ctx
 
         if orientation == 'landscape':
@@ -536,7 +530,21 @@ class FigureCanvasCairo(FigureCanvasBase):
     print_svgz = functools.partialmethod(_save, "svgz")
 
 
+@_api.deprecated("3.6")
+class _RendererGTKCairo(RendererCairo):
+    def set_context(self, ctx):
+        if (cairo.__name__ == "cairocffi"
+                and not isinstance(ctx, cairo.Context)):
+            ctx = cairo.Context._from_pointer(
+                cairo.ffi.cast(
+                    'cairo_t **',
+                    id(ctx) + object.__basicsize__)[0],
+                incref=True)
+        self.gc.ctx = ctx
+
+
 @_Backend.export
 class _BackendCairo(_Backend):
+    backend_version = cairo.version
     FigureCanvas = FigureCanvasCairo
     FigureManager = FigureManagerBase

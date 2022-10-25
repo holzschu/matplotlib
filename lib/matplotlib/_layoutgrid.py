@@ -20,6 +20,9 @@ import itertools
 import kiwisolver as kiwi
 import logging
 import numpy as np
+
+import matplotlib as mpl
+import matplotlib.patches as mpatches
 from matplotlib.transforms import Bbox
 
 _log = logging.getLogger(__name__)
@@ -507,21 +510,12 @@ def seq_id():
     return '%06d' % next(_layoutboxobjnum)
 
 
-def print_children(lb):
-    """Print the children of the layoutbox."""
-    for child in lb.children:
-        print_children(child)
-
-
-def plot_children(fig, lg=None, level=0, printit=False):
+def plot_children(fig, lg=None, level=0):
     """Simple plotting to show where boxes are."""
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-
     if lg is None:
-        _layoutgrids = fig.execute_constrained_layout()
+        _layoutgrids = fig.get_layout_engine().execute(fig)
         lg = _layoutgrids[fig]
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
     col = colors[level]
     for i in range(lg.nrows):
         for j in range(lg.ncols):

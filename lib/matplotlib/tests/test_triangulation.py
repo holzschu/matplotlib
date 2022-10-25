@@ -5,7 +5,6 @@ import numpy.ma.testutils as matest
 import pytest
 
 import matplotlib as mpl
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 from matplotlib.path import Path
@@ -244,7 +243,7 @@ def test_tripcolor_color():
     fig, ax = plt.subplots()
     with pytest.raises(TypeError, match=r"tripcolor\(\) missing 1 required "):
         ax.tripcolor(x, y)
-    with pytest.raises(ValueError, match="The length of C must match either"):
+    with pytest.raises(ValueError, match="The length of c must match either"):
         ax.tripcolor(x, y, [1, 2, 3])
     with pytest.raises(ValueError,
                        match="length of facecolors must match .* triangles"):
@@ -256,7 +255,7 @@ def test_tripcolor_color():
                        match="'gouraud' .* at the points.* not at the faces"):
         ax.tripcolor(x, y, [1, 2], shading='gouraud')  # faces
     with pytest.raises(TypeError,
-                       match="positional.*'C'.*keyword-only.*'facecolors'"):
+                       match="positional.*'c'.*keyword-only.*'facecolors'"):
         ax.tripcolor(x, y, C=[1, 2, 3, 4])
 
     # smoke test for valid color specifications (via C or facecolors)
@@ -273,22 +272,22 @@ def test_tripcolor_clim():
     ax = plt.figure().add_subplot()
     clim = (0.25, 0.75)
     norm = ax.tripcolor(a, b, c, clim=clim).norm
-    assert((norm.vmin, norm.vmax) == clim)
+    assert (norm.vmin, norm.vmax) == clim
 
 
 def test_tripcolor_warnings():
     x = [-1, 0, 1, 0]
     y = [0, -1, 0, 1]
-    C = [0.4, 0.5]
+    c = [0.4, 0.5]
     fig, ax = plt.subplots()
     # additional parameters
     with pytest.warns(DeprecationWarning, match="Additional positional param"):
-        ax.tripcolor(x, y, C, 'unused_positional')
-    # facecolors takes precedence over C
-    with pytest.warns(UserWarning, match="Positional parameter C .*no effect"):
-        ax.tripcolor(x, y, C, facecolors=C)
-    with pytest.warns(UserWarning, match="Positional parameter C .*no effect"):
-        ax.tripcolor(x, y, 'interpreted as C', facecolors=C)
+        ax.tripcolor(x, y, c, 'unused_positional')
+    # facecolors takes precedence over c
+    with pytest.warns(UserWarning, match="Positional parameter c .*no effect"):
+        ax.tripcolor(x, y, c, facecolors=c)
+    with pytest.warns(UserWarning, match="Positional parameter c .*no effect"):
+        ax.tripcolor(x, y, 'interpreted as c', facecolors=c)
 
 
 def test_no_modify():
@@ -925,7 +924,7 @@ def test_tri_smooth_gradient():
     plt.triplot(triang, color='0.8')
 
     levels = np.arange(0., 1., 0.01)
-    cmap = cm.get_cmap(name='hot', lut=None)
+    cmap = mpl.colormaps['hot']
     plt.tricontour(tri_refi, z_test_refi, levels=levels, cmap=cmap,
                    linewidths=[2.0, 1.0, 1.0, 1.0])
     # Plots direction of the electrical vector field
@@ -1300,3 +1299,15 @@ def test_triplot_with_ls(fig_test, fig_ref):
     data = [[0, 1, 2]]
     fig_test.subplots().triplot(x, y, data, ls='--')
     fig_ref.subplots().triplot(x, y, data, linestyle='--')
+
+
+def test_triplot_label():
+    x = [0, 2, 1]
+    y = [0, 0, 1]
+    data = [[0, 1, 2]]
+    fig, ax = plt.subplots()
+    lines, markers = ax.triplot(x, y, data, label='label')
+    handles, labels = ax.get_legend_handles_labels()
+    assert labels == ['label']
+    assert len(handles) == 1
+    assert handles[0] is lines

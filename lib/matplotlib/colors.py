@@ -288,8 +288,7 @@ def to_rgba(c, alpha=None):
     """
     # Special-case nth color syntax because it should not be cached.
     if _is_nth_color(c):
-        from matplotlib import rcParams
-        prop_cycler = rcParams['axes.prop_cycle']
+        prop_cycler = mpl.rcParams['axes.prop_cycle']
         colors = prop_cycler.by_key().get('color', ['k'])
         c = colors[int(c[1:]) % len(colors)]
     try:
@@ -707,8 +706,12 @@ class Colormap:
         if not self._isinit:
             self._init()
 
-        mask_bad = X.mask if np.ma.is_masked(X) else np.isnan(X)  # Mask nan's.
+        # Take the bad mask from a masked array, or in all other cases defer
+        # np.isnan() to after we have converted to an array.
+        mask_bad = X.mask if np.ma.is_masked(X) else None
         xa = np.array(X, copy=True)
+        if mask_bad is None:
+            mask_bad = np.isnan(xa)
         if not xa.dtype.isnative:
             xa = xa.byteswap().newbyteorder()  # Native byteorder is faster.
         if xa.dtype.kind == "f":
@@ -854,21 +857,30 @@ class Colormap:
         return (np.all(self._lut[:, 0] == self._lut[:, 1]) and
                 np.all(self._lut[:, 0] == self._lut[:, 2]))
 
-    def _resample(self, lutsize):
+    def resampled(self, lutsize):
         """Return a new colormap with *lutsize* entries."""
+        if hasattr(self, '_resample'):
+            _api.warn_external(
+                "The ability to resample a color map is now public API "
+                f"However the class {type(self)} still only implements "
+                "the previous private _resample method.  Please update "
+                "your class."
+            )
+            return self._resample(lutsize)
+
         raise NotImplementedError()
 
     def reversed(self, name=None):
         """
         Return a reversed instance of the Colormap.
 
-        .. note:: This function is not implemented for base class.
+        .. note:: This function is not implemented for the base class.
 
         Parameters
         ----------
         name : str, optional
-            The name for the reversed colormap. If it's None the
-            name will be the name of the parent colormap + "_r".
+            The name for the reversed colormap. If None, the
+            name is set to ``self.name + "_r"``.
 
         See Also
         --------
@@ -1050,7 +1062,7 @@ class LinearSegmentedColormap(Colormap):
 
         return LinearSegmentedColormap(name, cdict, N, gamma)
 
-    def _resample(self, lutsize):
+    def resampled(self, lutsize):
         """Return a new colormap with *lutsize* entries."""
         new_cmap = LinearSegmentedColormap(self.name, self._segmentdata,
                                            lutsize)
@@ -1071,8 +1083,8 @@ class LinearSegmentedColormap(Colormap):
         Parameters
         ----------
         name : str, optional
-            The name for the reversed colormap. If it's None the
-            name will be the name of the parent colormap + "_r".
+            The name for the reversed colormap. If None, the
+            name is set to ``self.name + "_r"``.
 
         Returns
         -------
@@ -1154,7 +1166,7 @@ class ListedColormap(Colormap):
         self._isinit = True
         self._set_extremes()
 
-    def _resample(self, lutsize):
+    def resampled(self, lutsize):
         """Return a new colormap with *lutsize* entries."""
         colors = self(np.linspace(0, 1, lutsize))
         new_cmap = ListedColormap(colors, name=self.name)
@@ -1171,8 +1183,8 @@ class ListedColormap(Colormap):
         Parameters
         ----------
         name : str, optional
-            The name for the reversed colormap. If it's None the
-            name will be the name of the parent colormap + "_r".
+            The name for the reversed colormap. If None, the
+            name is set to ``self.name + "_r"``.
 
         Returns
         -------
@@ -1598,21 +1610,37 @@ def make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
     if base_norm_cls is None:
         return functools.partial(make_norm_from_scale, scale_cls, init=init)
 
+    if isinstance(scale_cls, functools.partial):
+        scale_args = scale_cls.args
+        scale_kwargs_items = tuple(scale_cls.keywords.items())
+        scale_cls = scale_cls.func
+    else:
+        scale_args = scale_kwargs_items = ()
+
     if init is None:
         def init(vmin=None, vmax=None, clip=False): pass
 
     return _make_norm_from_scale(
-        scale_cls, base_norm_cls, inspect.signature(init))
+        scale_cls, scale_args, scale_kwargs_items,
+        base_norm_cls, inspect.signature(init))
 
 
 @functools.lru_cache(None)
-def _make_norm_from_scale(scale_cls, base_norm_cls, bound_init_signature):
+def _make_norm_from_scale(
+    scale_cls, scale_args, scale_kwargs_items,
+    base_norm_cls, bound_init_signature,
+):
     """
     Helper for `make_norm_from_scale`.
 
-    This function is split out so that it takes a signature object as third
-    argument (as signatures are picklable, contrary to arbitrary lambdas);
-    caching is also used so that different unpickles reuse the same class.
+    This function is split out to enable caching (in particular so that
+    different unpickles reuse the same class).  In order to do so,
+
+    - ``functools.partial`` *scale_cls* is expanded into ``func, args, kwargs``
+      to allow memoizing returned norms (partial instances always compare
+      unequal, but we can check identity based on ``func, args, kwargs``;
+    - *init* is replaced by *init_signature*, as signatures are picklable,
+      unlike to arbitrary lambdas.
     """
 
     class Norm(base_norm_cls):
@@ -1631,7 +1659,8 @@ def _make_norm_from_scale(scale_cls, base_norm_cls, bound_init_signature):
             except (ImportError, AttributeError):
                 pass
             return (_picklable_norm_constructor,
-                    (scale_cls, base_norm_cls, bound_init_signature),
+                    (scale_cls, scale_args, scale_kwargs_items,
+                     base_norm_cls, bound_init_signature),
                     vars(self))
 
         def __init__(self, *args, **kwargs):
@@ -1639,7 +1668,9 @@ def _make_norm_from_scale(scale_cls, base_norm_cls, bound_init_signature):
             ba.apply_defaults()
             super().__init__(
                 **{k: ba.arguments.pop(k) for k in ["vmin", "vmax", "clip"]})
-            self._scale = scale_cls(axis=None, **ba.arguments)
+            self._scale = functools.partial(
+                scale_cls, *scale_args, **dict(scale_kwargs_items))(
+                    axis=None, **ba.arguments)
             self._trf = self._scale.get_transform()
 
         __init__.__signature__ = bound_init_signature.replace(parameters=[
@@ -1693,12 +1724,12 @@ def _make_norm_from_scale(scale_cls, base_norm_cls, bound_init_signature):
             in_trf_domain = np.extract(np.isfinite(self._trf.transform(A)), A)
             return super().autoscale_None(in_trf_domain)
 
-    Norm.__name__ = (
-            f"{scale_cls.__name__}Norm" if base_norm_cls is Normalize
-            else base_norm_cls.__name__)
-    Norm.__qualname__ = (
-            f"{scale_cls.__qualname__}Norm" if base_norm_cls is Normalize
-            else base_norm_cls.__qualname__)
+    if base_norm_cls is Normalize:
+        Norm.__name__ = f"{scale_cls.__name__}Norm"
+        Norm.__qualname__ = f"{scale_cls.__qualname__}Norm"
+    else:
+        Norm.__name__ = base_norm_cls.__name__
+        Norm.__qualname__ = base_norm_cls.__qualname__
     Norm.__module__ = base_norm_cls.__module__
     Norm.__doc__ = base_norm_cls.__doc__
 
@@ -1746,9 +1777,10 @@ class FuncNorm(Normalize):
     """
 
 
-@make_norm_from_scale(functools.partial(scale.LogScale, nonpositive="mask"))
-class LogNorm(Normalize):
-    """Normalize a given value to the 0-1 range on a log scale."""
+LogNorm = make_norm_from_scale(
+    functools.partial(scale.LogScale, nonpositive="mask"))(Normalize)
+LogNorm.__name__ = LogNorm.__qualname__ = "LogNorm"
+LogNorm.__doc__ = "Normalize a given value to the 0-1 range on a log scale."
 
 
 @make_norm_from_scale(

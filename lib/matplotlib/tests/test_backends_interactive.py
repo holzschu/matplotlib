@@ -59,9 +59,6 @@ def _get_testable_interactive_backends():
         elif env["MPLBACKEND"].startswith('wx') and sys.platform == 'darwin':
             # ignore on OSX because that's currently broken (github #16849)
             marks.append(pytest.mark.xfail(reason='github #16849'))
-        elif env["MPLBACKEND"] == "tkagg" and sys.platform == 'darwin':
-            marks.append(  # GitHub issue #23094
-                pytest.mark.xfail(reason="Tk version mismatch on OSX CI"))
         envs.append(
             pytest.param(
                 {**env, 'BACKEND_DEPS': ','.join(deps)},
@@ -77,10 +74,8 @@ _test_timeout = 60  # A reasonably safe value for slower architectures.
 # The source of this function gets extracted and run in another process, so it
 # must be fully self-contained.
 # Using a timer not only allows testing of timers (on other backends), but is
-# also necessary on gtk3 and wx, where a direct call to key_press_event("q")
-# from draw_event causes breakage due to the canvas widget being deleted too
-# early.  Also, gtk3 redefines key_press_event with a different signature, so
-# we directly invoke it from the superclass instead.
+# also necessary on gtk3 and wx, where directly processing a KeyEvent() for "q"
+# from draw_event causes breakage as the canvas widget gets deleted too early.
 def _test_interactive_impl():
     import importlib.util
     import io
@@ -89,15 +84,14 @@ def _test_interactive_impl():
     from unittest import TestCase
 
     import matplotlib as mpl
-    from matplotlib import pyplot as plt, rcParams
-    from matplotlib.backend_bases import FigureCanvasBase
-
-    rcParams.update({
+    from matplotlib import pyplot as plt
+    from matplotlib.backend_bases import KeyEvent
+    mpl.rcParams.update({
         "webagg.open_in_browser": False,
         "webagg.port_retries": 1,
     })
 
-    rcParams.update(json.loads(sys.argv[1]))
+    mpl.rcParams.update(json.loads(sys.argv[1]))
     backend = plt.rcParams["backend"].lower()
     assert_equal = TestCase().assertEqual
     assert_raises = TestCase().assertRaises
@@ -140,8 +134,8 @@ def _test_interactive_impl():
     if fig.canvas.toolbar:  # i.e toolbar2.
         fig.canvas.toolbar.draw_rubberband(None, 1., 1, 2., 2)
 
-    timer = fig.canvas.new_timer(1.)  # Test floats casting to int as needed.
-    timer.add_callback(FigureCanvasBase.key_press_event, fig.canvas, "q")
+    timer = fig.canvas.new_timer(1.)  # Test that floats are cast to int.
+    timer.add_callback(KeyEvent("key_press_event", fig.canvas, "q")._process)
     # Trigger quitting upon draw.
     fig.canvas.mpl_connect("draw_event", lambda event: timer.start())
     fig.canvas.mpl_connect("close_event", print)
@@ -183,9 +177,10 @@ def test_interactive_backend(env, toolbar):
 def _test_thread_impl():
     from concurrent.futures import ThreadPoolExecutor
 
-    from matplotlib import pyplot as plt, rcParams
+    import matplotlib as mpl
+    from matplotlib import pyplot as plt
 
-    rcParams.update({
+    mpl.rcParams.update({
         "webagg.open_in_browser": False,
         "webagg.port_retries": 1,
     })
@@ -239,9 +234,6 @@ for param in _thread_safe_backends:
                 reason='PyPy does not support Tkinter threading: '
                        'https://foss.heptapod.net/pypy/pypy/-/issues/1929',
                 strict=True))
-    elif backend == "tkagg" and sys.platform == "darwin":
-        param.marks.append(  # GitHub issue #23094
-            pytest.mark.xfail("Tk version mismatch on OSX CI"))
 
 
 @pytest.mark.parametrize("env", _thread_safe_backends)
@@ -512,13 +504,13 @@ for param in _blit_backends:
         # copy_from_bbox only works when rendering to an ImageSurface
         param.marks.append(
             pytest.mark.skip("gtk3cairo does not support blitting"))
+    elif backend == "gtk4cairo":
+        # copy_from_bbox only works when rendering to an ImageSurface
+        param.marks.append(
+            pytest.mark.skip("gtk4cairo does not support blitting"))
     elif backend == "wx":
         param.marks.append(
             pytest.mark.skip("wx does not support blitting"))
-    elif backend == "tkagg" and sys.platform == "darwin":
-        param.marks.append(  # GitHub issue #23094
-            pytest.mark.xfail("Tk version mismatch on OSX CI")
-        )
 
 
 @pytest.mark.parametrize("env", _blit_backends)

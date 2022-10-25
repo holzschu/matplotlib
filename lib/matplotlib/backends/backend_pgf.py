@@ -1,4 +1,3 @@
-import atexit
 import codecs
 import datetime
 import functools
@@ -70,6 +69,8 @@ def _get_preamble():
                 path = pathlib.Path(fm.findfont(family))
                 preamble.append(r"\%s{%s}[Path=\detokenize{%s/}]" % (
                     command, path.name, path.parent.as_posix()))
+    preamble.append(mpl.texmanager._usepackage_if_not_loaded(
+        "underscore", option="strings"))  # Documented as "must come last".
     return "\n".join(preamble)
 
 
@@ -84,9 +85,8 @@ mpl_in_to_pt = 1. / mpl_pt_to_in
 _NO_ESCAPE = r"(?<!\\)(?:\\\\)*"
 _split_math = re.compile(_NO_ESCAPE + r"\$").split
 _replace_escapetext = functools.partial(
-    # When the next character is _, ^, $, or % (not preceded by an escape),
-    # insert a backslash.
-    re.compile(_NO_ESCAPE + "(?=[_^$%])").sub, "\\\\")
+    # When the next character is an unescaped % or ^, insert a backslash.
+    re.compile(_NO_ESCAPE + "(?=[%^])").sub, "\\\\")
 _replace_mathdefault = functools.partial(
     # Replace \mathdefault (when not preceded by an escape) by empty string.
     re.compile(_NO_ESCAPE + r"(\\mathdefault)").sub, "")
@@ -106,7 +106,7 @@ def _tex_escape(text):
     ``$`` with ``\(\displaystyle %s\)``. Escaped math separators (``\$``)
     are ignored.
 
-    The following characters are escaped in text segments: ``_^$%``
+    The following characters are escaped in text segments: ``^%``
     """
     # Sometimes, matplotlib adds the unknown command \mathdefault.
     # Not using \mathnormal instead since this looks odd for the latex cm font.
@@ -229,11 +229,8 @@ class LatexManager:
 
     @staticmethod
     def _build_latex_header():
-        # Create LaTeX header with some content, else LaTeX will load some math
-        # fonts later when we don't expect the additional output on stdout.
-        # TODO: is this sufficient?
         latex_header = [
-            r"\documentclass{minimal}",
+            r"\documentclass{article}",
             # Include TeX program name as a comment for cache invalidation.
             # TeX does not allow this to be the first line.
             rf"% !TeX program = {mpl.rcParams['pgf.texsystem']}",
@@ -241,7 +238,6 @@ class LatexManager:
             r"\usepackage{graphicx}",
             _get_preamble(),
             r"\begin{document}",
-            r"text $math \mu$",  # force latex to load fonts now
             r"\typeout{pgf_backend_query_start}",
         ]
         return "\n".join(latex_header)
@@ -290,41 +286,41 @@ class LatexManager:
         self._finalize_tmpdir = weakref.finalize(self, self._tmpdir.cleanup)
 
         # test the LaTeX setup to ensure a clean startup of the subprocess
-        self.texcommand = mpl.rcParams["pgf.texsystem"]
-        self.latex_header = LatexManager._build_latex_header()
-        latex_end = "\n\\makeatletter\n\\@@end\n"
         try:
-            latex = subprocess.Popen(
-                [self.texcommand, "-halt-on-error"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                encoding="utf-8", cwd=self.tmpdir)
+            self._setup_latex_process(expect_reply=False)
         except FileNotFoundError as err:
             raise RuntimeError(
-                f"{self.texcommand} not found.  Install it or change "
+                f"{self.latex.args[0]!r} not found.  Install it or change "
                 f"rcParams['pgf.texsystem'] to an available TeX "
                 f"implementation.") from err
         except OSError as err:
-            raise RuntimeError("Error starting process %r" %
-                               self.texcommand) from err
-        test_input = self.latex_header + latex_end
-        stdout, stderr = latex.communicate(test_input)
-        if latex.returncode != 0:
-            raise LatexError("LaTeX returned an error, probably missing font "
-                             "or error in preamble.", stdout)
+            raise RuntimeError(
+                f"Error starting process {self.latex.args[0]!r}") from err
+        stdout, stderr = self.latex.communicate("\n\\makeatletter\\@@end\n")
+        if self.latex.returncode != 0:
+            raise LatexError(
+                f"LaTeX errored (probably missing font or error in preamble) "
+                f"while processing the following input:\n"
+                f"{self._build_latex_header()}",
+                stdout)
 
         self.latex = None  # Will be set up on first use.
         # Per-instance cache.
         self._get_box_metrics = functools.lru_cache()(self._get_box_metrics)
 
     str_cache = _api.deprecated("3.5")(property(lambda self: {}))
+    texcommand = _api.deprecated("3.6")(
+        property(lambda self: mpl.rcParams["pgf.texsystem"]))
+    latex_header = _api.deprecated("3.6")(
+        property(lambda self: self._build_latex_header()))
 
-    def _setup_latex_process(self):
+    def _setup_latex_process(self, *, expect_reply=True):
         # Open LaTeX process for real work; register it for deletion.  On
         # Windows, we must ensure that the subprocess has quit before being
         # able to delete the tmpdir in which it runs; in order to do so, we
         # must first `kill()` it, and then `communicate()` with it.
         self.latex = subprocess.Popen(
-            [self.texcommand, "-halt-on-error"],
+            [mpl.rcParams["pgf.texsystem"], "-halt-on-error"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             encoding="utf-8", cwd=self.tmpdir)
 
@@ -336,9 +332,9 @@ class LatexManager:
             self, finalize_latex, self.latex)
         # write header with 'pgf_backend_query_start' token
         self._stdin_writeln(self._build_latex_header())
-        # read all lines until our 'pgf_backend_query_start' token appears
-        self._expect("*pgf_backend_query_start")
-        self._expect_prompt()
+        if expect_reply:  # read until 'pgf_backend_query_start' token appears
+            self._expect("*pgf_backend_query_start")
+            self._expect_prompt()
 
     def get_width_height_descent(self, text, prop):
         """
@@ -358,14 +354,16 @@ class LatexManager:
         try:
             answer = self._expect_prompt()
         except LatexError as err:
-            raise ValueError("Error measuring {!r}\nLaTeX Output:\n{}"
+            # Here and below, use '{}' instead of {!r} to avoid doubling all
+            # backslashes.
+            raise ValueError("Error measuring {}\nLaTeX Output:\n{}"
                              .format(tex, err.latex_output)) from err
         try:
             # Parse metrics from the answer string.  Last line is prompt, and
             # next-to-last-line is blank line from \typeout.
             width, height, offset = answer.splitlines()[-3].split(",")
         except Exception as err:
-            raise ValueError("Error measuring {!r}\nLaTeX Output:\n{}"
+            raise ValueError("Error measuring {}\nLaTeX Output:\n{}"
                              .format(tex, answer)) from err
         w, h, o = float(width[:-2]), float(height[:-2]), float(offset[:-2])
         # The height returned from LaTeX goes from base to top;
@@ -695,9 +693,9 @@ class RendererPgf(RendererBase):
                   interp, w, h, fname_img))
         _writeln(self.fh, r"\end{pgfscope}")
 
-    def draw_tex(self, gc, x, y, s, prop, angle, ismath="TeX", mtext=None):
+    def draw_tex(self, gc, x, y, s, prop, angle, *, mtext=None):
         # docstring inherited
-        self.draw_text(gc, x, y, s, prop, angle, ismath, mtext)
+        self.draw_text(gc, x, y, s, prop, angle, ismath="TeX", mtext=mtext)
 
     def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
         # docstring inherited
@@ -812,7 +810,7 @@ class FigureCanvasPgf(FigureCanvasBase):
 
         # get figure size in inch
         w, h = self.figure.get_figwidth(), self.figure.get_figheight()
-        dpi = self.figure.get_dpi()
+        dpi = self.figure.dpi
 
         # create pgfpicture environment and write the pgf code
         fh.write(header_text)
@@ -859,13 +857,12 @@ class FigureCanvasPgf(FigureCanvasBase):
             self.print_pgf(tmppath / "figure.pgf", **kwargs)
             (tmppath / "figure.tex").write_text(
                 "\n".join([
-                    r"\PassOptionsToPackage{pdfinfo={%s}}{hyperref}" % pdfinfo,
-                    r"\RequirePackage{hyperref}",
-                    r"\documentclass[12pt]{minimal}",
+                    r"\documentclass[12pt]{article}",
+                    r"\usepackage[pdfinfo={%s}]{hyperref}" % pdfinfo,
                     r"\usepackage[papersize={%fin,%fin}, margin=0in]{geometry}"
                     % (w, h),
-                    _get_preamble(),
                     r"\usepackage{pgf}",
+                    _get_preamble(),
                     r"\begin{document}",
                     r"\centering",
                     r"\input{figure.pgf}",
@@ -970,13 +967,12 @@ class PdfPages:
         pdfinfo = ','.join(
             _metadata_to_str(k, v) for k, v in self._info_dict.items())
         latex_header = "\n".join([
-            r"\PassOptionsToPackage{pdfinfo={%s}}{hyperref}" % pdfinfo,
-            r"\RequirePackage{hyperref}",
-            r"\documentclass[12pt]{minimal}",
+            r"\documentclass[12pt]{article}",
+            r"\usepackage[pdfinfo={%s}]{hyperref}" % pdfinfo,
             r"\usepackage[papersize={%fin,%fin}, margin=0in]{geometry}"
             % (width_inches, height_inches),
-            _get_preamble(),
             r"\usepackage{pgf}",
+            _get_preamble(),
             r"\setlength{\parindent}{0pt}",
             r"\begin{document}%",
         ])

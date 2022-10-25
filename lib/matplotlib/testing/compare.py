@@ -103,7 +103,7 @@ class _GSConverter(_Converter):
         if not self._proc:
             self._proc = subprocess.Popen(
                 [mpl._get_executable_info("gs").executable,
-                 "-dNOSAFER", "-dNOPAUSE", "-sDEVICE=png16m"],
+                 "-dNOSAFER", "-dNOPAUSE", "-dEPSCrop", "-sDEVICE=png16m"],
                 # As far as I can see, ghostscript never outputs to stderr.
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE)
             try:
@@ -214,6 +214,21 @@ class _SVGConverter(_Converter):
             self._tmpdir.cleanup()
 
 
+class _SVGWithMatplotlibFontsConverter(_SVGConverter):
+    """
+    A SVG converter which explicitly adds the fonts shipped by Matplotlib to
+    Inkspace's font search path, to better support `svg.fonttype = "none"`
+    (which is in particular used by certain mathtext tests).
+    """
+
+    def __call__(self, orig, dest):
+        if not hasattr(self, "_tmpdir"):
+            self._tmpdir = TemporaryDirectory()
+            shutil.copytree(cbook._get_data_path("fonts/ttf"),
+                            Path(self._tmpdir.name, "fonts"))
+        return super().__call__(orig, dest)
+
+
 def _update_converter():
     try:
         mpl._get_executable_info("gs")
@@ -235,6 +250,7 @@ def _update_converter():
 #: extension to png format.
 converter = {}
 _update_converter()
+_svg_with_matplotlib_fonts_converter = _SVGWithMatplotlibFontsConverter()
 
 
 def comparable_formats():
@@ -284,7 +300,14 @@ def convert(filename, cache):
                 return str(newpath)
 
         _log.debug("For %s: converting to png.", filename)
-        converter[path.suffix[1:]](path, newpath)
+        convert = converter[path.suffix[1:]]
+        if path.suffix == ".svg":
+            contents = path.read_text()
+            if 'style="font:' in contents:
+                # for svg.fonttype = none, we explicitly patch the font search
+                # path so that fonts shipped by Matplotlib are found.
+                convert = _svg_with_matplotlib_fonts_converter
+        convert(path, newpath)
 
         if cache_dir is not None:
             _log.debug("For %s: caching conversion result.", filename)
@@ -346,6 +369,16 @@ def calculate_rms(expected_image, actual_image):
 
 # NOTE: compare_image and save_diff_image assume that the image does not have
 # 16-bit depth, as Pillow converts these to RGB incorrectly.
+
+
+def _load_image(path):
+    img = Image.open(path)
+    # In an RGBA image, if the smallest value in the alpha channel is 255, all
+    # values in it must be 255, meaning that the image is opaque. If so,
+    # discard the alpha channel so that it may compare equal to an RGB image.
+    if img.mode != "RGBA" or img.getextrema()[3][0] == 255:
+        img = img.convert("RGB")
+    return np.asarray(img)
 
 
 def compare_images(expected, actual, tol, in_decorator=False):
@@ -412,9 +445,9 @@ def compare_images(expected, actual, tol, in_decorator=False):
         actual = convert(actual, cache=True)
         expected = convert(expected, cache=True)
 
-    # open the image files and remove the alpha channel (if it exists)
-    expected_image = np.asarray(Image.open(expected).convert("RGB"))
-    actual_image = np.asarray(Image.open(actual).convert("RGB"))
+    # open the image files
+    expected_image = _load_image(expected)
+    actual_image = _load_image(actual)
 
     actual_image, expected_image = crop_to_same(
         actual, actual_image, expected, expected_image)
@@ -463,9 +496,8 @@ def save_diff_image(expected, actual, output):
     output : str
         File path to save difference image to.
     """
-    # Drop alpha channels, similarly to compare_images.
-    expected_image = np.asarray(Image.open(expected).convert("RGB"))
-    actual_image = np.asarray(Image.open(actual).convert("RGB"))
+    expected_image = _load_image(expected)
+    actual_image = _load_image(actual)
     actual_image, expected_image = crop_to_same(
         actual, actual_image, expected, expected_image)
     expected_image = np.array(expected_image).astype(float)
@@ -474,21 +506,13 @@ def save_diff_image(expected, actual, output):
         raise ImageComparisonFailure(
             "Image sizes do not match expected size: {} "
             "actual size {}".format(expected_image.shape, actual_image.shape))
-    abs_diff_image = np.abs(expected_image - actual_image)
+    abs_diff = np.abs(expected_image - actual_image)
 
     # expand differences in luminance domain
-    abs_diff_image *= 255 * 10
-    save_image_np = np.clip(abs_diff_image, 0, 255).astype(np.uint8)
-    height, width, depth = save_image_np.shape
+    abs_diff *= 10
+    abs_diff = np.clip(abs_diff, 0, 255).astype(np.uint8)
 
-    # The PDF renderer doesn't produce an alpha channel, but the
-    # matplotlib PNG writer requires one, so expand the array
-    if depth == 3:
-        with_alpha = np.empty((height, width, 4), dtype=np.uint8)
-        with_alpha[:, :, 0:3] = save_image_np
-        save_image_np = with_alpha
+    if abs_diff.shape[2] == 4:  # Hard-code the alpha channel to fully solid
+        abs_diff[:, :, 3] = 255
 
-    # Hard-code the alpha channel to fully solid
-    save_image_np[:, :, 3] = 255
-
-    Image.fromarray(save_image_np).save(output, format="png")
+    Image.fromarray(abs_diff).save(output, format="png")
