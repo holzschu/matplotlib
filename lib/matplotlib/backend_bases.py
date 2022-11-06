@@ -1464,7 +1464,7 @@ class PickEvent(Event):
             line = event.artist
             xdata, ydata = line.get_data()
             ind = event.ind
-            print('on pick line:', np.array([xdata[ind], ydata[ind]]).T)
+            print(f'on pick line: {xdata[ind]:.3f}, {ydata[ind]:.3f}')
 
         cid = fig.canvas.mpl_connect('pick_event', on_pick)
     """
@@ -2439,6 +2439,14 @@ class FigureCanvasBase:
             additionally, the variables ``xdata`` and ``ydata`` attributes will
             be set to the mouse location in data coordinates.  See `.KeyEvent`
             and `.MouseEvent` for more info.
+
+            .. note::
+
+                If func is a method, this only stores a weak reference to the
+                method. Thus, the figure does not influence the lifetime of
+                the associated object. Usually, you want to make sure that the
+                object is kept alive throughout the lifetime of the figure by
+                holding a reference to it.
 
         Returns
         -------
