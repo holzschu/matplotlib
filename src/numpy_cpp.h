@@ -576,7 +576,7 @@ class array_view : public detail::array_view_accessors<array_view, T, ND>
 #endif
 };
 
-#ifdef TARGET_OS_IPHONE
+#if TARGET_OS_IPHONE
 // iOS: non-static member versions of converter and converter_contiguous.
 template <typename T, int ND>
 static int numpy_converter(PyObject *obj, void *arrp)
