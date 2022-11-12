@@ -551,6 +551,9 @@ class array_view : public detail::array_view_accessors<array_view, T, ND>
 
     // iOS: we need static members because we need pointers to that function.
     // But we also need to re-initialize this pointer for each library. 
+    // Let's check that this works without the fix, then try with "thread_local"?
+    // static thread_local should not work at compile time. Not sure what the options are.
+    // Must know *where* it fails. 
 #if !TARGET_OS_IPHONE
     static int converter(PyObject *obj, void *arrp)
     {

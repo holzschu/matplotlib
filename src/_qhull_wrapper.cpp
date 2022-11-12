@@ -268,8 +268,8 @@ delaunay(PyObject *self, PyObject *args)
                           &xarray.converter_contiguous, &xarray,
                           &yarray.converter_contiguous, &yarray)) {
 #else
-                          &x_converter_contiguous, &xarray,
-                          &x_converter_contiguous, &yarray)) {
+                          x_converter_contiguous, &xarray,
+                          x_converter_contiguous, &yarray)) {
 #endif
         return NULL;
     }
