@@ -280,7 +280,6 @@ def findSystemFonts(fontpaths=None, fontext='ttf'):
             # iOS, no "fc-list" command, we just use system fonts:
             installed_fonts = []
             fontpaths = OSXFontDirectories
-            fontfiles.update(OSXInstalledFonts(fontext=fontext))
         else:
             installed_fonts = _get_fontconfig_fonts()
             if sys.platform == 'darwin':
