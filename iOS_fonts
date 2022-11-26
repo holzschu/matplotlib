@@ -1,0 +1,120 @@
+# Theory:
+font.size           : 12.0
+font.serif     : DejaVu Serif, New Century Schoolbook, Century Schoolbook L, Utopia, ITC Bookman, Bookman, Nimbus Roman No9 L, Times New Roman, Times, Palatino, Charter, serif
+font.sans-serif: DejaVu Sans, Lucida Grande, Verdana, Geneva, Lucid, Arial, Helvetica, Avant Garde, sans-serif
+font.cursive   : Apple Chancery, Textile, Zapf Chancery, Sand, Script MT, Felipa, cursive
+font.fantasy   : Comic Sans MS, Chicago, Charcoal, ImpactWestern, Humor Sans, fantasy
+font.monospace : DejaVu Sans Mono, Andale Mono, Nimbus Mono L, Courier New, Courier, Fixed, Terminal, monospace
+
+Absolutely nothing for cursive and fantasy. Probably not much for monospace
+
+# Practice: 
+font.serif     : Times New Roman, Palatino, Charter, Baskerville, Bodoni 72, Cochin, Didot, Georgia, Hoefler Text, serif
+font.sans-serif: Verdana, Arial, Helvetica, Avenir, Avenir Next, Gill Sans, sans-serif
+font.cursive   : Snell Roundhand, Zapfino, Bradley Hand, cursive
+font.fantasy   : Papyrus, Chalkboard SE, Chalkduster, Marker Felt, Noteworthy, fantasy
+font.monospace : Courier New, Menlo, monospace
+
+
+NEED to remove user-installed fonts here:
+Available fonts: [
+Gravure: 
+    Academy Engraved LET
+
+Sans-Serif:
+Verdana
+Arial
+Arial Hebrew
+Arial Rounded MT Bold
+Helvetica
+Al Nile
+Apple SD Gothic Neo
+Avenir
+Avenir Next
+Avenir Next Condensed
+Damascus
+Futura
+Galvji
+Gill Sans
+Helvetica Neue
+Trebuchet MS
+
+
+Monospace (guaranteed): 
+Courier New
+Menlo
+
+Serif: 
+Times New Roman
+Palatino
+Charter
+Baskerville
+Bodoni 72
+Cochin
+Didot
+Georgia
+Hoefler Text
+STIX Two Text
+
+Cursive:
+Bradley Hand
+Snell Roundhand
+Zapfino
+
+Fantasy:
+Chalkboard SE
+Chalkduster
+Marker Felt
+Noteworthy
+Papyrus
+Savoye LET
+
+
+Others:
+American Typewriter
+Apple Color Emoji
+Apple Symbols
+Bodoni 72 Oldstyle
+Bodoni 72 Smallcaps
+Bodoni Ornaments
+Copperplate
+Devanagari Sangam MN
+DIN Alternate
+DIN Condensed
+Euphemia UCAS
+Farah
+Geeza Pro
+Grantha Sangam MN
+Hiragino Maru Gothic ProN
+Hiragino Mincho ProN
+Hiragino Sans
+Impact
+Kailasa
+Kefa
+Khmer Sangam MN
+Kohinoor Bangla
+Kohinoor Devanagari
+Kohinoor Gujarati
+Kohinoor Telugu
+Lao Sangam MN
+Malayalam Sangam MN
+Mishafi
+Mukta Mahee
+Myanmar Sangam MN
+Noto Nastaliq Urdu
+Noto Sans Kannada
+Noto Sans Myanmar
+Noto Sans Oriya
+Optima
+Party LET
+PingFang HK
+PingFang SC
+PingFang TC
+Rockwell
+Sinhala Sangam MN
+STIX Two Math
+Symbol
+Tamil Sangam MN
+Thonburi
+Zapf Dingbats
+
