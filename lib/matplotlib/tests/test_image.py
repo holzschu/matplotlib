@@ -249,6 +249,7 @@ def test_imsave_pil_kwargs_tiff():
     buf = io.BytesIO()
     pil_kwargs = {"description": "test image"}
     plt.imsave(buf, [[0, 1], [2, 3]], format="tiff", pil_kwargs=pil_kwargs)
+    assert len(pil_kwargs) == 1
     im = Image.open(buf)
     tags = {TAGS[k].name: v for k, v in im.tag_v2.items()}
     assert tags["ImageDescription"] == "test image"
@@ -589,6 +590,20 @@ def test_get_window_extent_for_AxisImage():
 
     assert_array_equal(im_bbox.get_points(), [[400, 200], [700, 900]])
 
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=100)
+    ax.set_position([0, 0, 1, 1])
+    ax.set_xlim(1, 2)
+    ax.set_ylim(0, 1)
+    im_obj = ax.imshow(
+        im, extent=[0.4, 0.7, 0.2, 0.9], interpolation='nearest',
+        transform=ax.transAxes)
+
+    fig.canvas.draw()
+    renderer = fig.canvas.renderer
+    im_bbox = im_obj.get_window_extent(renderer)
+
+    assert_array_equal(im_bbox.get_points(), [[400, 200], [700, 900]])
+
 
 @image_comparison(['zoom_and_clip_upper_origin.png'],
                   remove_text=True, style='mpl20')
@@ -738,11 +753,7 @@ def test_log_scale_image():
     ax.set(yscale='log')
 
 
-# Increased tolerance is needed for PDF test to avoid failure. After the PDF
-# backend was modified to use indexed color, there are ten pixels that differ
-# due to how the subpixel calculation is done when converting the PDF files to
-# PNG images.
-@image_comparison(['rotate_image'], remove_text=True, tol=0.35)
+@image_comparison(['rotate_image'], remove_text=True)
 def test_rotate_image():
     delta = 0.25
     x = y = np.arange(-3.0, 3.0, delta)
@@ -1140,6 +1151,21 @@ def test_exact_vmin():
     assert np.all(from_image == direct_computation)
 
 
+@image_comparison(['image_placement'], extensions=['svg', 'pdf'],
+                  remove_text=True, style='mpl20')
+def test_image_placement():
+    """
+    The red box should line up exactly with the outside of the image.
+    """
+    fig, ax = plt.subplots()
+    ax.plot([0, 0, 1, 1, 0], [0, 1, 1, 0, 0], color='r', lw=0.1)
+    np.random.seed(19680801)
+    ax.imshow(np.random.randn(16, 16), cmap='Blues', extent=(0, 1, 0, 1),
+              interpolation='none', vmin=-1, vmax=1)
+    ax.set_xlim(-0.1, 1+0.1)
+    ax.set_ylim(-0.1, 1+0.1)
+
+
 # A basic ndarray subclass that implements a quantity
 # It does not implement an entire unit system or all quantity math.
 # There is just enough implemented to test handling of ndarray
@@ -1322,8 +1348,9 @@ def test_nonuniform_and_pcolor():
         ax.set(xlim=(0, 10))
 
 
-@image_comparison(["rgba_antialias.png"], style="mpl20",
-                  remove_text=True)
+@image_comparison(
+    ['rgba_antialias.png'], style='mpl20', remove_text=True,
+    tol=0.007 if platform.machine() in ('aarch64', 'ppc64le', 's390x') else 0)
 def test_rgba_antialias():
     fig, axs = plt.subplots(2, 2, figsize=(3.5, 3.5), sharex=False,
                             sharey=False, constrained_layout=True)

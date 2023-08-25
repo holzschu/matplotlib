@@ -24,6 +24,7 @@ Future versions may implement the Level 2 or 2.1 specifications.
 #   - 'light' is an invalid weight value, remove it.
 
 from base64 import b64encode
+from collections import namedtuple
 import copy
 import dataclasses
 from functools import lru_cache
@@ -126,6 +127,7 @@ font_family_aliases = {
     'sans',
 }
 
+_ExceptionProxy = namedtuple('_ExceptionProxy', ['klass', 'message'])
 
 # OS Font paths
 try:
@@ -186,16 +188,11 @@ def list_fonts(directory, extensions):
     recursively under the directory.
     """
     extensions = ["." + ext for ext in extensions]
-    if sys.platform == 'win32' and directory == win32FontDirectory():
-        return [os.path.join(directory, filename)
-                for filename in os.listdir(directory)
-                if os.path.isfile(filename)]
-    else:
-        return [os.path.join(dirpath, filename)
-                # os.walk ignores access errors, unlike Path.glob.
-                for dirpath, _, filenames in os.walk(directory)
-                for filename in filenames
-                if Path(filename).suffix.lower() in extensions]
+    return [os.path.join(dirpath, filename)
+            # os.walk ignores access errors, unlike Path.glob.
+            for dirpath, _, filenames in os.walk(directory)
+            for filename in filenames
+            if Path(filename).suffix.lower() in extensions]
 
 
 def win32FontDirectory():
@@ -275,7 +272,7 @@ def findSystemFonts(fontpaths=None, fontext='ttf'):
     if fontpaths is None:
         if sys.platform == 'win32':
             installed_fonts = _get_win32_installed_fonts()
-            fontpaths = MSUserFontDirectories + [win32FontDirectory()]
+            fontpaths = []
         elif sys.platform == 'darwin' and os.uname().machine.startswith('iP'): 
             # iOS, no "fc-list" command, we just use system fonts:
             installed_fonts = []
@@ -562,7 +559,7 @@ class FontProperties:
       'roman', 'semibold', 'demibold', 'demi', 'bold', 'heavy',
       'extra bold', 'black'. Default: :rc:`font.weight`
 
-    - size: Either an relative value of 'xx-small', 'x-small',
+    - size: Either a relative value of 'xx-small', 'x-small',
       'small', 'medium', 'large', 'x-large', 'xx-large' or an
       absolute font size, e.g., 10. Default: :rc:`font.size`
 
@@ -723,7 +720,7 @@ class FontProperties:
 
     def set_family(self, family):
         """
-        Change the font family.  May be either an alias (generic name
+        Change the font family.  Can be either an alias (generic name
         is CSS parlance), such as: 'serif', 'sans-serif', 'cursive',
         'fantasy', or 'monospace', a real font name or a list of real
         font names.  Real font names are not supported when
@@ -821,8 +818,8 @@ class FontProperties:
         ----------
         size : float or {'xx-small', 'x-small', 'small', 'medium', \
 'large', 'x-large', 'xx-large'}, default: :rc:`font.size`
-            If float, the font size in points. The string values denote sizes
-            relative to the default font size.
+            If a float, the font size in points. The string values denote
+            sizes relative to the default font size.
         """
         if size is None:
             size = mpl.rcParams['font.size']
@@ -883,8 +880,7 @@ class FontProperties:
             The name of the font family.
 
             Available font families are defined in the
-            matplotlibrc.template file
-            :ref:`here <customizing-with-matplotlibrc-files>`
+            :ref:`default matplotlibrc file <customizing-with-matplotlibrc-files>`.
 
         See Also
         --------
@@ -991,7 +987,7 @@ class FontManager:
     font is returned.
     """
     # Increment this version number whenever the font cache data
-    # format or behavior has changed and requires a existing font
+    # format or behavior has changed and requires an existing font
     # cache files to be rebuilt.
     __version__ = 330
 
@@ -1228,7 +1224,7 @@ class FontManager:
             If given, only search this directory and its subdirectories.
 
         fallback_to_default : bool
-            If True, will fallback to the default font family (usually
+            If True, will fall back to the default font family (usually
             "DejaVu Sans" or "Helvetica") if the first lookup hard-fails.
 
         rebuild_if_missing : bool
@@ -1268,8 +1264,8 @@ class FontManager:
         ret = self._findfont_cached(
             prop, fontext, directory, fallback_to_default, rebuild_if_missing,
             rc_params)
-        if isinstance(ret, Exception):
-            raise ret
+        if isinstance(ret, _ExceptionProxy):
+            raise ret.klass(ret.message)
         return ret
 
     def get_font_names(self):
@@ -1298,7 +1294,7 @@ class FontManager:
             If given, only search this directory and its subdirectories.
 
         fallback_to_default : bool
-            If True, will fallback to the default font family (usually
+            If True, will fall back to the default font family (usually
             "DejaVu Sans" or "Helvetica") if none of the families were found.
 
         rebuild_if_missing : bool
@@ -1315,7 +1311,7 @@ class FontManager:
         -----
         This is an extension/wrapper of the original findfont API, which only
         returns a single font for given font properties. Instead, this API
-        returns an dict containing multiple fonts and their filepaths
+        returns a dict containing multiple fonts and their filepaths
         which closely match the given font properties.  Since this internally
         uses the original API, there's no change to the logic of performing the
         nearest neighbor search.  See `findfont` for more details.
@@ -1420,10 +1416,12 @@ class FontManager:
                                      fallback_to_default=False)
             else:
                 # This return instead of raise is intentional, as we wish to
-                # cache the resulting exception, which will not occur if it was
+                # cache that it was not found, which will not occur if it was
                 # actually raised.
-                return ValueError(f"Failed to find font {prop}, and fallback "
-                                  f"to the default font was disabled")
+                return _ExceptionProxy(
+                    ValueError,
+                    f"Failed to find font {prop}, and fallback to the default font was disabled"
+                )
         else:
             _log.debug('findfont: Matching %s to %s (%r) with score of %f.',
                        prop, best_font.name, best_font.fname, best_score)
@@ -1443,9 +1441,9 @@ class FontManager:
                     prop, fontext, directory, rebuild_if_missing=False)
             else:
                 # This return instead of raise is intentional, as we wish to
-                # cache the resulting exception, which will not occur if it was
+                # cache that it was not found, which will not occur if it was
                 # actually raised.
-                return ValueError("No valid font could be found")
+                return _ExceptionProxy(ValueError, "No valid font could be found")
 
         return _cached_realpath(result)
 

@@ -131,6 +131,9 @@ point to this point" and hence are scale free. Raster backends
 generate a pixel representation of the line whose accuracy depends on a
 DPI setting.
 
+Static backends
+^^^^^^^^^^^^^^^
+
 Here is a summary of the Matplotlib renderers (there is an eponymous
 backend for each; these are *non-interactive backends*, capable of
 writing to a file):
@@ -151,6 +154,10 @@ Cairo     png, ps,   raster_ or vector_ graphics -- using the Cairo_ library
 To save plots using the non-interactive backends, use the
 ``matplotlib.pyplot.savefig('filename')`` method.
 
+
+Interactive backends
+^^^^^^^^^^^^^^^^^^^^
+
 These are the user interfaces and renderer combinations supported;
 these are *interactive backends*, capable of displaying to the screen
 and using appropriate renderers from the table above to write to
@@ -161,7 +168,9 @@ Backend   Description
 ========= ================================================================
 QtAgg     Agg rendering in a Qt_ canvas (requires PyQt_ or `Qt for Python`_,
           a.k.a. PySide).  This backend can be activated in IPython with
-          ``%matplotlib qt``.
+          ``%matplotlib qt``.  The Qt binding can be selected via the
+          :envvar:`QT_API` environment variable; see :ref:`QT_bindings` for
+          more details.
 ipympl    Agg rendering embedded in a Jupyter widget (requires ipympl_).
           This backend can be enabled in a Jupyter notebook with
           ``%matplotlib ipympl``.
@@ -229,26 +238,12 @@ or
 
 See `installing ipympl <https://matplotlib.org/ipympl/installing.html>`__ for more details.
 
-.. _QT_API-usage:
-
-How do I select the Qt implementation?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The QtAgg and QtCairo backends support both Qt 5 and 6, as well as both Python
-bindings (`PyQt`_ or `Qt for Python`_, a.k.a. PySide). If any binding has
-already been loaded, then it will be used for the Qt backend. Otherwise, the
-first available binding is used, in the order: PyQt6, PySide6, PyQt5, PySide2.
-
-The :envvar:`QT_API` environment variable can be set to override the search
-when nothing has already been loaded. It may be set to (case-insensitively)
-PyQt6, PySide6, PyQt5, or PySide2 to pick the version and binding to use. If
-the chosen implementation is unavailable, the Qt backend will fail to load
-without attempting any other Qt implementations.  See :ref:`QT_bindings` for
-more details.
-
 Using non-builtin backends
 --------------------------
 More generally, any importable backend can be selected by using any of the
 methods above. If ``name.of.the.backend`` is the module containing the
 backend, use ``module://name.of.the.backend`` as the backend name, e.g.
 ``matplotlib.use('module://name.of.the.backend')``.
+
+Information for backend implementers is available at
+:doc:`/users/explain/writing_a_backend_pyplot_interface`.

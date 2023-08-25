@@ -43,7 +43,7 @@ import numpy as np
 
 import matplotlib as mpl
 from matplotlib import (
-    _api, backend_tools as tools, cbook, colors, _docstring, textpath,
+    _api, backend_tools as tools, cbook, colors, _docstring, text,
     _tight_bbox, transforms, widgets, get_backend, is_interactive, rcParams)
 from matplotlib._pylab_helpers import Gcf
 from matplotlib.backend_managers import ToolManager
@@ -172,7 +172,7 @@ class RendererBase:
     def __init__(self):
         super().__init__()
         self._texmanager = None
-        self._text2path = textpath.TextToPath()
+        self._text2path = text.TextToPath()
         self._raster_depth = 0
         self._rasterizing = False
 
@@ -207,9 +207,9 @@ class RendererBase:
         ----------
         gc : `.GraphicsContextBase`
             The graphics context.
-        marker_trans : `matplotlib.transforms.Transform`
+        marker_trans : `~matplotlib.transforms.Transform`
             An affine transform applied to the marker.
-        trans : `matplotlib.transforms.Transform`
+        trans : `~matplotlib.transforms.Transform`
             An affine transform applied to the path.
         """
         for vertices, codes in path.iter_segments(trans, simplify=False):
@@ -299,7 +299,7 @@ class RendererBase:
             Array of (x, y) points for the triangle.
         colors : (3, 4) array-like
             RGBA colors for each point of the triangle.
-        transform : `matplotlib.transforms.Transform`
+        transform : `~matplotlib.transforms.Transform`
             An affine transform to apply to the points.
         """
         raise NotImplementedError
@@ -311,11 +311,13 @@ class RendererBase:
 
         Parameters
         ----------
-        points : (N, 3, 2) array-like
+        gc : `.GraphicsContextBase`
+            The graphics context.
+        triangles_array : (N, 3, 2) array-like
             Array of *N* (x, y) points for the triangles.
-        colors : (N, 3, 4) array-like
+        colors_array : (N, 3, 4) array-like
             Array of *N* RGBA colors for each point of the triangles.
-        transform : `matplotlib.transforms.Transform`
+        transform : `~matplotlib.transforms.Transform`
             An affine transform to apply to the points.
         """
         raise NotImplementedError
@@ -515,11 +517,11 @@ class RendererBase:
             The y location of the text baseline in display coords.
         s : str
             The TeX text string.
-        prop : `matplotlib.font_manager.FontProperties`
+        prop : `~matplotlib.font_manager.FontProperties`
             The font properties.
         angle : float
             The rotation angle in degrees anti-clockwise.
-        mtext : `matplotlib.text.Text`
+        mtext : `~matplotlib.text.Text`
             The original text object to be rendered.
         """
         self._draw_text_as_path(gc, x, y, s, prop, angle, ismath="TeX")
@@ -538,13 +540,13 @@ class RendererBase:
             The y location of the text baseline in display coords.
         s : str
             The text string.
-        prop : `matplotlib.font_manager.FontProperties`
+        prop : `~matplotlib.font_manager.FontProperties`
             The font properties.
         angle : float
             The rotation angle in degrees anti-clockwise.
         ismath : bool or "TeX"
-            If True, use mathtext parser. If "TeX", use *usetex* mode.
-        mtext : `matplotlib.text.Text`
+            If True, use mathtext parser. If "TeX", use tex for rendering.
+        mtext : `~matplotlib.text.Text`
             The original text object to be rendered.
 
         Notes
@@ -569,12 +571,18 @@ class RendererBase:
 
         Parameters
         ----------
-        prop : `matplotlib.font_manager.FontProperties`
-            The font property.
+        x : float
+            The x location of the text in display coords.
+        y : float
+            The y location of the text baseline in display coords.
         s : str
             The text to be converted.
+        prop : `~matplotlib.font_manager.FontProperties`
+            The font property.
+        angle : float
+            Angle in degrees to render the text at.
         ismath : bool or "TeX"
-            If True, use mathtext parser. If "TeX", use *usetex* mode.
+            If True, use mathtext parser. If "TeX", use tex for rendering.
         """
 
         text2path = self._text2path
@@ -599,18 +607,24 @@ class RendererBase:
 
     def _draw_text_as_path(self, gc, x, y, s, prop, angle, ismath):
         """
-        Draw the text by converting them to paths using textpath module.
+        Draw the text by converting them to paths using `.TextToPath`.
 
         Parameters
         ----------
-        prop : `matplotlib.font_manager.FontProperties`
-            The font property.
+        gc : `.GraphicsContextBase`
+            The graphics context.
+        x : float
+            The x location of the text in display coords.
+        y : float
+            The y location of the text baseline in display coords.
         s : str
             The text to be converted.
-        usetex : bool
-            Whether to use usetex mode.
+        prop : `~matplotlib.font_manager.FontProperties`
+            The font property.
+        angle : float
+            Angle in degrees to render the text at.
         ismath : bool or "TeX"
-            If True, use mathtext parser. If "TeX", use *usetex* mode.
+            If True, use mathtext parser. If "TeX", use tex for rendering.
         """
         path, transform = self._get_text_path_transform(
             x, y, s, prop, angle, ismath)
@@ -1311,16 +1325,18 @@ class LocationEvent(Event):
     ----------
     x, y : int or None
         Event location in pixels from bottom left of canvas.
-    inaxes : `~.axes.Axes` or None
+    inaxes : `~matplotlib.axes.Axes` or None
         The `~.axes.Axes` instance over which the mouse is, if any.
     xdata, ydata : float or None
         Data coordinates of the mouse within *inaxes*, or *None* if the mouse
         is not over an Axes.
+    modifiers : frozenset
+        The keyboard modifiers currently being pressed (except for KeyEvent).
     """
 
     lastevent = None  # The last event processed so far.
 
-    def __init__(self, name, canvas, x, y, guiEvent=None):
+    def __init__(self, name, canvas, x, y, guiEvent=None, *, modifiers=None):
         super().__init__(name, canvas, guiEvent=guiEvent)
         # x position - pixels from left of canvas
         self.x = int(x) if x is not None else x
@@ -1329,6 +1345,7 @@ class LocationEvent(Event):
         self.inaxes = None  # the Axes instance the mouse is over
         self.xdata = None   # x coord of mouse in data coords
         self.ydata = None   # y coord of mouse in data coords
+        self.modifiers = frozenset(modifiers if modifiers is not None else [])
 
         if x is None or y is None:
             # cannot check if event was in Axes if no (x, y) info
@@ -1387,7 +1404,9 @@ class MouseEvent(LocationEvent):
            This key is currently obtained from the last 'key_press_event' or
            'key_release_event' that occurred within the canvas.  Thus, if the
            last change of keyboard state occurred while the canvas did not have
-           focus, this attribute will be wrong.
+           focus, this attribute will be wrong.  On the other hand, the
+           ``modifiers`` attribute should always be correct, but it can only
+           report on modifier keys.
 
     step : float
         The number of scroll steps (positive for 'up', negative for 'down').
@@ -1409,8 +1428,9 @@ class MouseEvent(LocationEvent):
     """
 
     def __init__(self, name, canvas, x, y, button=None, key=None,
-                 step=0, dblclick=False, guiEvent=None):
-        super().__init__(name, canvas, x, y, guiEvent=guiEvent)
+                 step=0, dblclick=False, guiEvent=None, *, modifiers=None):
+        super().__init__(
+            name, canvas, x, y, guiEvent=guiEvent, modifiers=modifiers)
         if button in MouseButton.__members__.values():
             button = MouseButton(button)
         if name == "scroll_event" and button is None:
@@ -1445,7 +1465,7 @@ class PickEvent(Event):
     ----------
     mouseevent : `MouseEvent`
         The mouse event that generated the pick.
-    artist : `matplotlib.artist.Artist`
+    artist : `~matplotlib.artist.Artist`
         The picked artist.  Note that artists are not pickable by default
         (see `.Artist.set_picker`).
     other
@@ -1610,7 +1630,7 @@ class FigureCanvasBase:
 
     Attributes
     ----------
-    figure : `matplotlib.figure.Figure`
+    figure : `~matplotlib.figure.Figure`
         A high-level figure instance.
     """
 
@@ -1953,7 +1973,7 @@ class FigureCanvasBase:
 
     @_api.deprecated("3.6", alternative=(
         "callbacks.process('enter_notify_event', LocationEvent(...))"))
-    def enter_notify_event(self, guiEvent=None, xy=None):
+    def enter_notify_event(self, guiEvent=None, *, xy):
         """
         Callback processing for the mouse cursor entering the canvas.
 
@@ -1967,18 +1987,7 @@ class FigureCanvasBase:
         xy : (float, float)
             The coordinate location of the pointer when the canvas is entered.
         """
-        if xy is not None:
-            x, y = xy
-            self._lastx, self._lasty = x, y
-        else:
-            x = None
-            y = None
-            _api.warn_deprecated(
-                '3.0', removal='3.5', name='enter_notify_event',
-                message='Since %(since)s, %(name)s expects a location but '
-                'your backend did not pass one. This will become an error '
-                '%(removal)s.')
-
+        self._lastx, self._lasty = x, y = xy
         event = LocationEvent('figure_enter_event', self, x, y, guiEvent)
         self.callbacks.process('figure_enter_event', event)
 
@@ -2848,6 +2857,53 @@ class FigureManagerBase:
         """
         return cls(canvas_class(figure), num)
 
+    @classmethod
+    def start_main_loop(cls):
+        """
+        Start the main event loop.
+
+        This method is called by `.FigureManagerBase.pyplot_show`, which is the
+        implementation of `.pyplot.show`.  To customize the behavior of
+        `.pyplot.show`, interactive backends should usually override
+        `~.FigureManagerBase.start_main_loop`; if more customized logic is
+        necessary, `~.FigureManagerBase.pyplot_show` can also be overridden.
+        """
+
+    @classmethod
+    def pyplot_show(cls, *, block=None):
+        """
+        Show all figures.  This method is the implementation of `.pyplot.show`.
+
+        To customize the behavior of `.pyplot.show`, interactive backends
+        should usually override `~.FigureManagerBase.start_main_loop`; if more
+        customized logic is necessary, `~.FigureManagerBase.pyplot_show` can
+        also be overridden.
+
+        Parameters
+        ----------
+        block : bool, optional
+            Whether to block by calling ``start_main_loop``.  The default,
+            None, means to block if we are neither in IPython's ``%pylab`` mode
+            nor in ``interactive`` mode.
+        """
+        managers = Gcf.get_all_fig_managers()
+        if not managers:
+            return
+        for manager in managers:
+            try:
+                manager.show()  # Emits a warning for non-interactive backend.
+            except NonGuiException as exc:
+                _api.warn_external(str(exc))
+        if block is None:
+            # Hack: Are we in IPython's %pylab mode?  In pylab mode, IPython
+            # (>= 0.10) tacks a _needmain attribute onto pyplot.show (always
+            # set to False).
+            pyplot_show = getattr(sys.modules.get("matplotlib.pyplot"), "show", None)
+            ipython_pylab = hasattr(pyplot_show, "_needmain")
+            block = not ipython_pylab and not is_interactive()
+        if block:
+            cls.start_main_loop()
+
     def show(self):
         """
         For GUI backends, show the figure window and redraw.
@@ -3087,15 +3143,11 @@ class NavigationToolbar2:
                             if data_str:
                                 s = s + '\n' + data_str
                 return s
+        return ""
 
     def mouse_move(self, event):
         self._update_cursor(event)
-
-        s = self._mouse_event_to_message(event)
-        if s is not None:
-            self.set_message(s)
-        else:
-            self.set_message(self.mode)
+        self.set_message(self._mouse_event_to_message(event))
 
     def _zoom_pan_handler(self, event):
         if self.mode == _Mode.PAN:
@@ -3126,7 +3178,6 @@ class NavigationToolbar2:
             self.canvas.widgetlock(self)
         for a in self.canvas.figure.get_axes():
             a.set_navigate_mode(self.mode._navigate_mode)
-        self.set_message(self.mode)
 
     _PanInfo = namedtuple("_PanInfo", "button axes cid")
 
@@ -3182,7 +3233,6 @@ class NavigationToolbar2:
             self.canvas.widgetlock(self)
         for a in self.canvas.figure.get_axes():
             a.set_navigate_mode(self.mode._navigate_mode)
-        self.set_message(self.mode)
 
     _ZoomInfo = namedtuple("_ZoomInfo", "direction start_xy axes cid cbar")
 
@@ -3311,10 +3361,14 @@ class NavigationToolbar2:
         tool_fig = manager.canvas.figure
         tool_fig.subplots_adjust(top=0.9)
         self.subplot_tool = widgets.SubplotTool(self.canvas.figure, tool_fig)
-        tool_fig.canvas.mpl_connect(
-            "close_event", lambda e: delattr(self, "subplot_tool"))
-        self.canvas.mpl_connect(
+        cid = self.canvas.mpl_connect(
             "close_event", lambda e: manager.destroy())
+
+        def on_tool_fig_close(e):
+            self.canvas.mpl_disconnect(cid)
+            del self.subplot_tool
+
+        tool_fig.canvas.mpl_connect("close_event", on_tool_fig_close)
         manager.show()
         return self.subplot_tool
 
@@ -3526,7 +3580,12 @@ class _Backend:
 
     @classmethod
     def draw_if_interactive(cls):
-        if cls.mainloop is not None and is_interactive():
+        manager_class = cls.FigureCanvas.manager_class
+        # Interactive backends reimplement start_main_loop or pyplot_show.
+        backend_is_interactive = (
+            manager_class.start_main_loop != FigureManagerBase.start_main_loop
+            or manager_class.pyplot_show != FigureManagerBase.pyplot_show)
+        if backend_is_interactive and is_interactive():
             manager = Gcf.get_active()
             if manager:
                 manager.canvas.draw_idle()
@@ -3554,8 +3613,8 @@ class _Backend:
             # Hack: Are we in IPython's %pylab mode?  In pylab mode, IPython
             # (>= 0.10) tacks a _needmain attribute onto pyplot.show (always
             # set to False).
-            from matplotlib import pyplot
-            ipython_pylab = hasattr(pyplot.show, "_needmain")
+            pyplot_show = getattr(sys.modules.get("matplotlib.pyplot"), "show", None)
+            ipython_pylab = hasattr(pyplot_show, "_needmain")
             block = not ipython_pylab and not is_interactive()
         if block:
             cls.mainloop()

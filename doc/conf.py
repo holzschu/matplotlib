@@ -22,6 +22,7 @@ import warnings
 
 import matplotlib
 
+from datetime import timezone
 from datetime import datetime
 import time
 
@@ -36,8 +37,8 @@ CIRCLECI = 'CIRCLECI' in os.environ
 
 # Parse year using SOURCE_DATE_EPOCH, falling back to current time.
 # https://reproducible-builds.org/specs/source-date-epoch/
-sourceyear = datetime.utcfromtimestamp(
-    int(os.environ.get('SOURCE_DATE_EPOCH', time.time()))).year
+sourceyear = datetime.fromtimestamp(
+    int(os.environ.get('SOURCE_DATE_EPOCH', time.time())), timezone.utc).year
 
 # If your extensions are in another directory, add it here. If the directory
 # is relative to the documentation root, use os.path.abspath to make it
@@ -240,7 +241,7 @@ gen_rst.EXAMPLE_HEADER = """
     .. note::
         :class: sphx-glr-download-link-note
 
-        Click :ref:`here <sphx_glr_download_{1}>`
+        :ref:`Go to the end <sphx_glr_download_{1}>`
         to download the full example code{2}
 
 .. rst-class:: sphx-glr-example-title
@@ -269,6 +270,11 @@ try:
 # version number instead
 except (subprocess.CalledProcessError, FileNotFoundError):
     SHA = matplotlib.__version__
+
+
+html_context = {
+    "doc_version": SHA,
+}
 
 project = 'Matplotlib'
 copyright = (
@@ -392,7 +398,11 @@ html_theme_options = {
     "collapse_navigation": not is_release_build,
     "show_prev_next": False,
     "switcher": {
-        "json_url": "https://matplotlib.org/devdocs/_static/switcher.json",
+        # Add a unique query to the switcher.json url.  This will be ignored by
+        # the server, but will be used as part of the key for caching by browsers
+        # so when we do a new minor release the switcher will update "promptly" on
+        # the stable and devdocs.
+        "json_url": f"https://matplotlib.org/devdocs/_static/switcher.json?{SHA}",
         "version_match": (
             # The start version to show. This must be in switcher.json.
             # We either go to 'stable' or to 'devdocs'
@@ -403,11 +413,12 @@ html_theme_options = {
              "image_light": "images/logo2.svg",
              "image_dark": "images/logo_dark.svg"},
     "navbar_end": ["theme-switcher", "version-switcher", "mpl_icon_links"],
-    "page_sidebar_items": "page-toc.html",
+    "secondary_sidebar_items": "page-toc.html",
+     "footer_items": ["copyright", "sphinx-version", "doc_version"],
 }
 include_analytics = is_release_build
 if include_analytics:
-    html_theme_options["google_analytics_id"] = "UA-55954603-1"
+    html_theme_options["analytics"] = {"google_analytics_id": "UA-55954603-1"}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -458,7 +469,7 @@ html_domain_index = False
 
 # If true, an OpenSearch description file will be output, and all pages will
 # contain a <link> tag referring to it.
-html_use_opensearch = 'False'
+html_use_opensearch = 'https://matplotlib.org/stable'
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'Matplotlibdoc'
@@ -619,7 +630,12 @@ texinfo_documents = [
 
 numpydoc_show_class_members = False
 
-inheritance_node_attrs = dict(fontsize=16)
+# We want to prevent any size limit, as we'll add scroll bars with CSS.
+inheritance_graph_attrs = dict(dpi=100, size='1000.0', splines='polyline')
+# Also remove minimum node dimensions, and increase line size a bit.
+inheritance_node_attrs = dict(height=0.02, margin=0.055, penwidth=1,
+                              width=0.01)
+inheritance_edge_attrs = dict(penwidth=1)
 
 graphviz_dot = shutil.which('dot')
 # Still use PNG until SVG linking is fixed
@@ -682,7 +698,10 @@ if link_github:
                     if lineno else "")
 
         startdir = Path(matplotlib.__file__).parent.parent
-        fn = os.path.relpath(fn, start=startdir).replace(os.path.sep, '/')
+        try:
+            fn = os.path.relpath(fn, start=startdir).replace(os.path.sep, '/')
+        except ValueError:
+            return None
 
         if not fn.startswith(('matplotlib/', 'mpl_toolkits/')):
             return None

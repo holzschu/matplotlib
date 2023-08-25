@@ -21,7 +21,7 @@ reference.
 * `dateutil <https://pypi.org/project/python-dateutil/>`_ (>= 2.7)
 * `fontTools <https://fonttools.readthedocs.io/en/latest/>`_ (>= 4.22.0)
 * `kiwisolver <https://github.com/nucleic/kiwi>`_ (>= 1.0.1)
-* `NumPy <https://numpy.org>`_ (>= 1.19)
+* `NumPy <https://numpy.org>`_ (>= 1.20)
 * `packaging <https://pypi.org/project/packaging/>`_ (>= 20.0)
 * `Pillow <https://pillow.readthedocs.io/en/latest/>`_ (>= 6.2)
 * `pyparsing <https://pypi.org/project/pyparsing/>`_ (>= 2.3.1)
@@ -203,7 +203,7 @@ Setup dependencies
 - `setuptools_scm <https://pypi.org/project/setuptools-scm/>`_ (>= 7).  Used to
   update the reported ``mpl.__version__`` based on the current git commit.
   Also a runtime dependency for editable installs.
-- `NumPy <https://numpy.org>`_ (>= 1.19).  Also a runtime dependency.
+- `NumPy <https://numpy.org>`_ (>= 1.20).  Also a runtime dependency.
 
 
 .. _compile-dependencies:
@@ -213,11 +213,15 @@ C++ compiler
 
 Matplotlib requires a C++ compiler that supports C++11.
 
-- `gcc 4.8.1 <https://gcc.gnu.org/projects/cxx-status.html#cxx11>`_ or higher
-- `clang 3.3 <https://clang.llvm.org/cxx_status.html>`_ or higher
+- `gcc 4.8.1 <https://gcc.gnu.org/projects/cxx-status.html#cxx11>`_ or higher.  For gcc <6.5 you will
+  need to set ``$CFLAGS=-std=c++11`` to enable C++11 support.
+  `Installing GCC: Binaries <https://gcc.gnu.org/install/binaries.html>`_.
+- `clang 3.3 <https://clang.llvm.org/cxx_status.html>`_ or higher.
+  `LLVM Download Page <https://releases.llvm.org/download.html>`_.
 - `Visual Studio 2015
   <https://docs.microsoft.com/en-us/cpp/overview/visual-cpp-language-conformance?view=msvc-140>`_
-  (aka VS 14.0) or higher
+  (aka VS 14.0) or higher. A free version of Build Tools for Visual Studio is available for
+  `download <https://visualstudio.microsoft.com/downloads/?q=build+tools>`_.
 
 
 .. _test-dependencies:
@@ -269,7 +273,7 @@ will be skipped by pytest.
 .. _nbformat: https://pypi.org/project/nbformat/
 .. _pandas: https://pypi.org/project/pandas/
 .. _pikepdf: https://pypi.org/project/pikepdf/
-.. _psutil: https://pypi.org/project/psuitl/
+.. _psutil: https://pypi.org/project/psutil/
 .. _pytz: https://fonts.google.com/noto/use#faq
 .. _pytest-cov: https://pytest-cov.readthedocs.io/en/latest/
 .. _pytest-flake8: https://pypi.org/project/pytest-flake8/
@@ -303,9 +307,10 @@ Additional external dependencies
 --------------------------------
 Required:
 
-* a minimal working LaTeX distribution
+* a minimal working LaTeX distribution, e.g., `TeX Live <https://www.tug.org/texlive/>`_ or
+  `MikTeX <https://miktex.org/>`_
 * `Graphviz <http://www.graphviz.org/download>`_
-* the following LaTeX packages (if your OS bundles TeXLive, the
+* the following LaTeX packages (if your OS bundles TeX Live, the
   "complete" version of the installer, e.g. "texlive-full" or "texlive-all",
   will often automatically include these packages):
 

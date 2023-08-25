@@ -150,9 +150,9 @@ units : {'width', 'height', 'dots', 'inches', 'x', 'y', 'xy'}, default: 'width'
     =================  =================   ==================
     units              zoom                figure size change
     =================  =================   ==================
-    'x', 'y', 'xy'     arrow size scales   -
-    'width', 'height'  -                   arrow size scales
-    'dots', 'inches'   -                   -
+    'x', 'y', 'xy'     arrow size scales   —
+    'width', 'height'  —                   arrow size scales
+    'dots', 'inches'   —                   —
     =================  =================   ==================
 
 width : float, optional
@@ -253,7 +253,7 @@ class QuiverKey(martist.Artist):
 
         Parameters
         ----------
-        Q : `matplotlib.quiver.Quiver`
+        Q : `~matplotlib.quiver.Quiver`
             A `.Quiver` object as returned by a call to `~.Axes.quiver()`.
         X, Y : float
             The location of the key.
@@ -406,20 +406,19 @@ def _parse_args(*args, caller_name='function'):
     """
     X = Y = C = None
 
-    len_args = len(args)
-    if len_args == 2:
+    nargs = len(args)
+    if nargs == 2:
         # The use of atleast_1d allows for handling scalar arguments while also
         # keeping masked arrays
         U, V = np.atleast_1d(*args)
-    elif len_args == 3:
+    elif nargs == 3:
         U, V, C = np.atleast_1d(*args)
-    elif len_args == 4:
+    elif nargs == 4:
         X, Y, U, V = np.atleast_1d(*args)
-    elif len_args == 5:
+    elif nargs == 5:
         X, Y, U, V, C = np.atleast_1d(*args)
     else:
-        raise TypeError(f'{caller_name} takes 2-5 positional arguments but '
-                        f'{len_args} were given')
+        raise _api.nargs_error(caller_name, takes="from 2 to 5", given=nargs)
 
     nr, nc = (1, U.shape[0]) if U.ndim == 1 else U.shape
 
@@ -476,7 +475,7 @@ class Quiver(mcollections.PolyCollection):
         %s
         """
         self._axes = ax  # The attr actually set by the Artist.axes property.
-        X, Y, U, V, C = _parse_args(*args, caller_name='quiver()')
+        X, Y, U, V, C = _parse_args(*args, caller_name='quiver')
         self.X = X
         self.Y = Y
         self.XY = np.column_stack((X, Y))
@@ -723,7 +722,7 @@ class Quiver(mcollections.PolyCollection):
         # Mask handling is deferred to the caller, _make_verts.
         return X, Y
 
-    quiver_doc = _quiver_doc
+    quiver_doc = _api.deprecated("3.7")(property(lambda self: _quiver_doc))
 
 
 _barbs_doc = r"""
@@ -928,7 +927,7 @@ class Barbs(mcollections.PolyCollection):
             kwargs['linewidth'] = 1
 
         # Parse out the data arrays from the various configurations supported
-        x, y, u, v, c = _parse_args(*args, caller_name='barbs()')
+        x, y, u, v, c = _parse_args(*args, caller_name='barbs')
         self.x = x
         self.y = y
         xy = np.column_stack((x, y))
@@ -947,7 +946,7 @@ class Barbs(mcollections.PolyCollection):
 
         Parameters
         ----------
-        mag : array
+        mag : `~numpy.ndarray`
             Vector magnitudes; must be non-negative (and an actual ndarray).
         rounding : bool, default: True
             Whether to round or to truncate to the nearest half-barb.
@@ -1180,4 +1179,4 @@ class Barbs(mcollections.PolyCollection):
         super().set_offsets(xy)
         self.stale = True
 
-    barbs_doc = _barbs_doc
+    barbs_doc = _api.deprecated("3.7")(property(lambda self: _barbs_doc))

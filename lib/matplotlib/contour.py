@@ -587,7 +587,7 @@ def _find_closest_point_on_path(xys, p):
         Projection of *p* onto *xys*.
     imin : (int, int)
         Consecutive indices of vertices of segment in *xys* where *proj* is.
-        Segments are considered as including their end-points; i.e if the
+        Segments are considered as including their end-points; i.e. if the
         closest point on the path is a node in *xys* with index *i*, this
         returns ``(i-1, i)``.  For the special case where *xys* is a single
         point, this returns ``(0, 0)``.
@@ -634,7 +634,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
 
     Parameters
     ----------
-    ax : `~.axes.Axes`
+    ax : `~matplotlib.axes.Axes`
 
     levels : [level0, level1, ..., leveln]
         A list of floating point numbers indicating the contour levels.
@@ -686,7 +686,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
 
         Parameters
         ----------
-        ax : `~.axes.Axes`
+        ax : `~matplotlib.axes.Axes`
             The `~.axes.Axes` object to draw on.
 
         levels : [level0, level1, ..., leveln]
@@ -1032,13 +1032,13 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
     def _make_paths(self, segs, kinds):
         """
         Create and return Path objects for the specified segments and optional
-        kind codes.  segs is a list of numpy arrays, each array is either a
+        kind codes.  *segs* is a list of numpy arrays, each array is either a
         closed line loop or open line strip of 2D points with a shape of
-        (npoints, 2).  kinds is either None or a list (with the same length as
-        segs) of numpy arrays, each array is of shape (npoints,) and contains
-        the kinds codes for the corresponding line in segs.  If kinds is None
-        then the Path constructor creates the kind codes assuming that the line
-        is an open strip.
+        (npoints, 2).  *kinds* is either None or a list (with the same length
+        as *segs*) of numpy arrays, each array is of shape (npoints,) and
+        contains the kind codes for the corresponding line in *segs*.  If
+        *kinds* is None then the Path constructor creates the kind codes
+        assuming that the line is an open strip.
         """
         if kinds is None:
             return [mpath.Path(seg) for seg in segs]
@@ -1117,33 +1117,28 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
 
         return lev[i0:i1]
 
-    def _process_contour_level_args(self, args):
+    def _process_contour_level_args(self, args, z_dtype):
         """
         Determine the contour levels and store in self.levels.
         """
         if self.levels is None:
-            if len(args) == 0:
-                levels_arg = 7  # Default, hard-wired.
-            else:
+            if args:
                 levels_arg = args[0]
+            elif np.issubdtype(z_dtype, bool):
+                if self.filled:
+                    levels_arg = [0, .5, 1]
+                else:
+                    levels_arg = [.5]
+            else:
+                levels_arg = 7  # Default, hard-wired.
         else:
             levels_arg = self.levels
         if isinstance(levels_arg, Integral):
             self.levels = self._autolev(levels_arg)
         else:
             self.levels = np.asarray(levels_arg, np.float64)
-
-        if not self.filled:
-            inside = (self.levels > self.zmin) & (self.levels < self.zmax)
-            levels_in = self.levels[inside]
-            if len(levels_in) == 0:
-                self.levels = [self.zmin]
-                _api.warn_external(
-                    "No contour levels were found within the data range.")
-
         if self.filled and len(self.levels) < 2:
             raise ValueError("Filled contours require at least 2 levels.")
-
         if len(self.levels) > 1 and np.min(np.diff(self.levels)) <= 0.0:
             raise ValueError("Contour levels must be increasing")
 
@@ -1337,6 +1332,7 @@ class ContourSet(cm.ScalarMappable, ContourLabeler):
         d2min = np.inf
         conmin = None
         segmin = None
+        imin = None
         xmin = None
         ymin = None
 
@@ -1444,17 +1440,16 @@ class QuadContourSet(ContourSet):
             fn = 'contourf'
         else:
             fn = 'contour'
-        Nargs = len(args)
-        if Nargs <= 2:
-            z = ma.asarray(args[0], dtype=np.float64)
+        nargs = len(args)
+        if nargs <= 2:
+            z, *args = args
+            z = ma.asarray(z)
             x, y = self._initialize_x_y(z)
-            args = args[1:]
-        elif Nargs <= 4:
-            x, y, z = self._check_xyz(args[:3], kwargs)
-            args = args[3:]
+        elif nargs <= 4:
+            x, y, z_orig, *args = args
+            x, y, z = self._check_xyz(x, y, z_orig, kwargs)
         else:
-            raise TypeError("Too many arguments to %s; see help(%s)" %
-                            (fn, fn))
+            raise _api.nargs_error(fn, takes="from 1 to 4", given=nargs)
         z = ma.masked_invalid(z, copy=False)
         self.zmax = float(z.max())
         self.zmin = float(z.min())
@@ -1462,20 +1457,19 @@ class QuadContourSet(ContourSet):
             z = ma.masked_where(z <= 0, z)
             _api.warn_external('Log scale: values of z <= 0 have been masked')
             self.zmin = float(z.min())
-        self._process_contour_level_args(args)
+        self._process_contour_level_args(args, z.dtype)
         return (x, y, z)
 
-    def _check_xyz(self, args, kwargs):
+    def _check_xyz(self, x, y, z, kwargs):
         """
         Check that the shapes of the input arrays match; if x and y are 1D,
         convert them to 2D using meshgrid.
         """
-        x, y = args[:2]
         x, y = self.axes._process_unit_info([("x", x), ("y", y)], kwargs)
 
         x = np.asarray(x, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
-        z = ma.asarray(args[2], dtype=np.float64)
+        z = ma.asarray(z)
 
         if z.ndim != 2:
             raise TypeError(f"Input z must be 2D, not {z.ndim}D")

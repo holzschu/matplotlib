@@ -276,21 +276,12 @@ class GridSpecBase:
             raise ValueError("GridSpec.subplots() only works for GridSpecs "
                              "created with a parent figure")
 
-        if isinstance(sharex, bool):
+        if not isinstance(sharex, str):
             sharex = "all" if sharex else "none"
-        if isinstance(sharey, bool):
+        if not isinstance(sharey, str):
             sharey = "all" if sharey else "none"
-        # This check was added because it is very easy to type
-        # `subplots(1, 2, 1)` when `subplot(1, 2, 1)` was intended.
-        # In most cases, no error will ever occur, but mysterious behavior
-        # will result because what was intended to be the subplot index is
-        # instead treated as a bool for sharex.  This check should go away
-        # once sharex becomes kwonly.
-        if isinstance(sharex, Integral):
-            _api.warn_external(
-                "sharex argument to subplots() was an integer.  Did you "
-                "intend to use subplot() (without 's')?")
-        _api.check_in_list(["all", "row", "col", "none"],
+
+        _api.check_in_list(["all", "row", "col", "none", False, True],
                            sharex=sharex, sharey=sharey)
         if subplot_kw is None:
             subplot_kw = {}
@@ -428,6 +419,8 @@ class GridSpec(GridSpecBase):
         - non-*None* attributes of the GridSpec
         - the provided *figure*
         - :rc:`figure.subplot.*`
+
+        Note that the ``figure`` attribute of the GridSpec is always ignored.
         """
         if figure is None:
             kw = {k: mpl.rcParams["figure.subplot."+k]
@@ -456,6 +449,10 @@ class GridSpec(GridSpecBase):
 
         Parameters
         ----------
+        figure : `.Figure`
+            The figure.
+        renderer :  `.RendererBase` subclass, optional
+            The renderer to be used.
         pad : float
             Padding between the figure edge and the edges of subplots, as a
             fraction of the font-size.
@@ -538,17 +535,17 @@ class SubplotSpec:
 
     .. note::
 
-        Likely, you'll never instantiate a `SubplotSpec` yourself. Instead you
-        will typically obtain one from a `GridSpec` using item-access.
+        Likely, you will never instantiate a `SubplotSpec` yourself. Instead,
+        you will typically obtain one from a `GridSpec` using item-access.
 
     Parameters
     ----------
     gridspec : `~matplotlib.gridspec.GridSpec`
         The GridSpec, which the subplot is referencing.
     num1, num2 : int
-        The subplot will occupy the num1-th cell of the given
-        gridspec.  If num2 is provided, the subplot will span between
-        num1-th cell and num2-th cell *inclusive*.
+        The subplot will occupy the *num1*-th cell of the given
+        *gridspec*.  If *num2* is provided, the subplot will span between
+        *num1*-th cell and *num2*-th cell **inclusive**.
 
         The index starts from 0.
     """
@@ -587,8 +584,7 @@ class SubplotSpec:
         elif len(args) == 3:
             rows, cols, num = args
         else:
-            raise TypeError(f"subplot() takes 1 or 3 positional arguments but "
-                            f"{len(args)} were given")
+            raise _api.nargs_error("subplot", takes="1 or 3", given=len(args))
 
         gs = GridSpec._check_gridspec_exists(figure, rows, cols)
         if gs is None:
@@ -602,7 +598,9 @@ class SubplotSpec:
         else:
             if not isinstance(num, Integral) or num < 1 or num > rows*cols:
                 raise ValueError(
-                    f"num must be 1 <= num <= {rows*cols}, not {num!r}")
+                    f"num must be an integer with 1 <= num <= {rows*cols}, "
+                    f"not {num!r}"
+                )
             i = j = num
         return gs[i-1:j]
 
@@ -711,7 +709,7 @@ class SubplotSpec:
             Number of rows in grid.
 
         ncols : int
-            Number or columns in grid.
+            Number of columns in grid.
 
         Returns
         -------

@@ -11,7 +11,6 @@
 [![AzurePipelines](https://dev.azure.com/matplotlib/matplotlib/_apis/build/status/matplotlib.matplotlib?branchName=main)](https://dev.azure.com/matplotlib/matplotlib/_build/latest?definitionId=1&branchName=main)
 [![AppVeyor](https://ci.appveyor.com/api/projects/status/github/matplotlib/matplotlib?branch=main&svg=true)](https://ci.appveyor.com/project/matplotlib/matplotlib)
 [![Codecov](https://codecov.io/github/matplotlib/matplotlib/badge.svg?branch=main&service=github)](https://codecov.io/github/matplotlib/matplotlib?branch=main)
-[![LGTM](https://img.shields.io/lgtm/grade/python/github/matplotlib/matplotlib.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/matplotlib/matplotlib)
 
 ![image](https://matplotlib.org/_static/logo2.svg)
 
@@ -72,18 +71,3 @@ acknowledge this by citing Matplotlib.
 [A ready-made citation
 entry](https://matplotlib.org/stable/users/project/citing.html) is
 available.
-
-### Research notice
-
-Please note that this repository is participating in a study into
-sustainability of open source projects. Data will be gathered about this
-repository for approximately the next 12 months, starting from June
-2021.
-
-Data collected will include number of contributors, number of PRs, time
-taken to close/merge these PRs, and issues closed.
-
-For more information, please visit [the informational
-page](https://sustainable-open-science-and-software.github.io/) or
-download the [participant information
-sheet](https://sustainable-open-science-and-software.github.io/assets/PIS_sustainable_software.pdf).

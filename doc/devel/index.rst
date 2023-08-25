@@ -45,7 +45,7 @@ process or how to fix something feel free to ask on `gitter
 
 .. rst-class:: sd-d-inline-block
 
-    .. button-ref:: contributing_documentation
+    .. button-ref:: documenting-matplotlib
         :class: sd-fs-6
         :color: primary
 
@@ -57,14 +57,15 @@ process or how to fix something feel free to ask on `gitter
    contributing.rst
    triage.rst
    development_setup.rst
+   development_workflow.rst
    testing.rst
    documenting_mpl.rst
    style_guide.rst
-   gitwash/index.rst
    coding_guide.rst
    release_guide.rst
    dependencies.rst
    min_dep_policy.rst
+   maintainer_workflow.rst
    MEP/index
 
 .. toctree::

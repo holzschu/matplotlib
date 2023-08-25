@@ -4,13 +4,76 @@
 Contributing
 ============
 
+You've discovered a bug or something else you want to change
+in Matplotlib — excellent!
+
+You've worked out a way to fix it — even better!
+
+You want to tell us about it — best of all!
+
 This project is a community effort, and everyone is welcome to
 contribute. Everyone within the community
 is expected to abide by our
 `code of conduct <https://github.com/matplotlib/matplotlib/blob/main/CODE_OF_CONDUCT.md>`_.
 
-The project is hosted on
-https://github.com/matplotlib/matplotlib
+Below, you can find a number of ways to contribute, and how to connect with the
+Matplotlib community.
+
+.. _start-contributing:
+
+Getting started with contributing?
+==================================
+
+There is no pre-defined pathway for new contributors -- we recommend looking at
+existing issue and pull request discussions, and following the conversations
+during pull request reviews to get context. Or you can deep-dive into a subset
+of the code-base to understand what is going on.
+
+There are a few typical new contributor profiles:
+
+* **You are a Matplotlib user, and you see a bug, a potential improvement, or
+  something that annoys you, and you can fix it.**
+
+  You can search our issue tracker for an existing issue that describes your
+  problem or open a new issue to inform us of the problem you observed and
+  discuss the best approach to fix it. If your contributions would not be
+  captured on GitHub (social media, communication, educational content), you can
+  also reach out to us on gitter_,
+  `Discourse <https://discourse.matplotlib.org/>`__ or attend any of our
+  `community meetings <https://scientific-python.org/calendars>`__.
+
+* **You are not a regular Matplotlib user but a domain expert: you know about
+  visualization, 3D plotting, design, technical writing, statistics, or some
+  other field where Matplotlib could be improved.**
+
+  Awesome -- you have a focus on a specific application and domain and can
+  start there. In this case, maintainers can help you figure out the best
+  implementation; open an issue or pull request with a starting point, and we'll
+  be happy to discuss technical approaches.
+
+  If you prefer, you can use the
+  `GitHub functionality for "draft" pull requests <https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/changing-the-stage-of-a-pull-request#converting-a-pull-request-to-a-draft>`__
+  and request early feedback on whatever you are working on, but you should be
+  aware that maintainers may not review your contribution unless it has the
+  "Ready to review" state on GitHub.
+
+* **You are new to Matplotlib, both as a user and contributor, and want to start
+  contributing but have yet to develop a particular interest.**
+
+  Having some previous experience or relationship with the library can be very
+  helpful when making open-source contributions. It helps you understand why
+  things are the way they are and how they *should* be. Having first-hand
+  experience and context is valuable both for what you can bring to the
+  conversation (and given the breadth of Matplotlib's usage, there is a good
+  chance it is a unique context in any given conversation) and make it easier to
+  understand where other people are coming from.
+
+  Understanding the entire codebase is a long-term project, and nobody expects
+  you to do this right away. If you are determined to get started with
+  Matplotlib and want to learn, going through the basic functionality,
+  choosing something to focus on (3d, testing, documentation, animations, etc.)
+  and gaining context on this area by reading the issues and pull requests
+  touching these subjects is a reasonable approach.
 
 Get Connected
 =============
@@ -29,17 +92,16 @@ Contributor incubator
 ---------------------
 
 The incubator is our non-public communication channel for new contributors. It
-is a private gitter room moderated by core Matplotlib developers where you can
-get guidance and support for your first few PRs. It's a place you can ask
-questions about anything: how to use git, github, how our PR review process
-works, technical questions about the code, what makes for good documentation
-or a blog post, how to get involved in community work, or get
+is a private gitter_ (chat) room moderated by core Matplotlib developers where
+you can get guidance and support for your first few PRs. It's a place where you
+can ask questions about anything: how to use git, GitHub, how our PR review
+process works, technical questions about the code, what makes for good
+documentation or a blog post, how to get involved in community work, or get a
 "pre-review" on your PR.
 
-To join, please go to our public `gitter
-<https://gitter.im/matplotlib/matplotlib>`_ community channel, and ask to be
-added to '#incubator'. One of our core developers will see your message and will
-add you.
+To join, please go to our public community_ channel, and ask to be added
+to ``#incubator``. One of our core developers will see your message and
+will add you.
 
 New Contributors meeting
 ------------------------
@@ -50,14 +112,13 @@ Among our attendees are fellow new contributors, as well as maintainers, and
 veteran contributors, who are keen to support onboarding of new folks and
 share their experience. You can find our community calendar link at the
 `Scientific Python website <https://scientific-python.org/calendars/>`_, and
-you can browse previous meeting notes on `github
+you can browse previous meeting notes on `GitHub
 <https://github.com/matplotlib/ProjectManagement/tree/master/
 new_contributor_meeting>`_.
 We recommend joining the meeting to clarify any doubts, or lingering
 questions you might have, and to get to know a few of the people behind the
-GitHub handles 😉. You can reach out to @noatamir on `gitter
-<https://gitter.im/matplotlib/matplotlib>`_ for any clarifications or
-suggestions. We <3 feedback!
+GitHub handles 😉. You can reach out to us on gitter_ for any clarifications or
+suggestions. We ❤ feedback!
 
 .. _new_contributors:
 
@@ -81,6 +142,9 @@ though not necessarily all at the same time:
   path to resolve the issue.
 - It involves Python features such as decorators and context managers, which
   have subtleties due to our implementation decisions.
+
+Assigning issues and duplicating pull requests
+----------------------------------------------
 
 In general, the Matplotlib project does not assign issues. Issues are
 "assigned" or "claimed" by opening a PR; there is no other assignment
@@ -192,96 +256,8 @@ A brief overview is:
 Finally, go to the web page of your fork of the Matplotlib repo, and click
 'Pull request' to send your changes to the maintainers for review.
 
-.. seealso::
-
-  * `Git documentation <https://git-scm.com/doc>`_
-  * `Git-Contributing to a Project <https://git-scm.com/book/en/v2/GitHub-Contributing-to-a-Project>`_
-  * `Introduction to GitHub  <https://lab.github.com/githubtraining/introduction-to-github>`_
-  * :ref:`development-workflow` for best practices for Matplotlib
-  * :ref:`using-git`
-
-Contributing pull requests
---------------------------
-
-It is recommended to check that your contribution complies with the following
-rules before submitting a pull request:
-
-* If your pull request addresses an issue, please use the title to describe the
-  issue and mention the issue number in the pull request description to ensure
-  that a link is created to the original issue.
-
-* All public methods should have informative docstrings with sample usage when
-  appropriate. Use the `numpy docstring standard
-  <https://numpydoc.readthedocs.io/en/latest/format.html>`_.
-
-* Formatting should follow the recommendations of PEP8_, as enforced by
-  flake8_.  You can check flake8 compliance from the command line with ::
-
-    python -m pip install flake8
-    flake8 /path/to/module.py
-
-  or your editor may provide integration with it.  Note that Matplotlib
-  intentionally does not use the black_ auto-formatter (1__), in particular due
-  to its inability to understand the semantics of mathematical expressions
-  (2__, 3__).
-
-  .. _PEP8: https://www.python.org/dev/peps/pep-0008/
-  .. _flake8: https://flake8.pycqa.org/
-  .. _black: https://black.readthedocs.io/
-  .. __: https://github.com/matplotlib/matplotlib/issues/18796
-  .. __: https://github.com/psf/black/issues/148
-  .. __: https://github.com/psf/black/issues/1984
-
-* Each high-level plotting function should have a simple example in the
-  ``Example`` section of the docstring.  This should be as simple as possible
-  to demonstrate the method.  More complex examples should go in the
-  ``examples`` tree.
-
-* Changes (both new features and bugfixes) should have good test coverage. See
-  :ref:`testing` for more details.
-
-* Import the following modules using the standard scipy conventions::
-
-     import numpy as np
-     import numpy.ma as ma
-     import matplotlib as mpl
-     import matplotlib.pyplot as plt
-     import matplotlib.cbook as cbook
-     import matplotlib.patches as mpatches
-
-  In general, Matplotlib modules should **not** import `.rcParams` using ``from
-  matplotlib import rcParams``, but rather access it as ``mpl.rcParams``.  This
-  is because some modules are imported very early, before the `.rcParams`
-  singleton is constructed.
-
-* If your change is a major new feature, add an entry to the ``What's new``
-  section by adding a new file in ``doc/users/next_whats_new`` (see
-  :file:`doc/users/next_whats_new/README.rst` for more information).
-
-* If you change the API in a backward-incompatible way, please document it in
-  :file:`doc/api/next_api_changes/behavior`, by adding a new file with the
-  naming convention ``99999-ABC.rst`` where the pull request number is followed
-  by the contributor's initials. (see :file:`doc/api/api_changes.rst` for more
-  information)
-
-* See below for additional points about :ref:`keyword-argument-processing`, if
-  applicable for your pull request.
-
-.. note::
-
-    The current state of the Matplotlib code base is not compliant with all
-    of those guidelines, but we expect that enforcing those constraints on all
-    new contributions will move the overall code base quality in the right
-    direction.
-
-
-.. seealso::
-
-  * :ref:`coding_guidelines`
-  * :ref:`testing`
-  * :ref:`documenting-matplotlib`
-
-
+For more detailed instructions on how to set up Matplotlib for development and
+best practices for contribution, see :ref:`installing_for_devs`.
 
 
 .. _contributing_documentation:
@@ -624,3 +600,6 @@ example code you can load it into a file handle with::
 
     import matplotlib.cbook as cbook
     fh = cbook.get_sample_data('mydata.dat')
+
+.. _gitter: https://gitter.im/matplotlib/matplotlib
+.. _community: https://gitter.im/matplotlib/community

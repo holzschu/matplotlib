@@ -1,9 +1,9 @@
 r"""
 .. _axes_grid1_users-guide-index:
 
-==========================================
-Overview of :mod:`mpl_toolkits.axes_grid1`
-==========================================
+======================
+The axes_grid1 toolkit
+======================
 
 :mod:`.axes_grid1` provides the following features:
 
@@ -138,14 +138,14 @@ legend command in host, creates a legend that includes lines in the
 parasite axes.  To create a host axes, you may use ``host_subplot`` or
 ``host_axes`` command.
 
-Example 1. twinx
+Example 1: twinx
 ~~~~~~~~~~~~~~~~
 
 .. figure:: ../../gallery/axes_grid1/images/sphx_glr_parasite_simple_001.png
    :target: ../../gallery/axes_grid1/parasite_simple.html
    :align: center
 
-Example 2. twin
+Example 2: twin
 ~~~~~~~~~~~~~~~
 
 ``twin`` without a transform argument assumes that the parasite axes has the
@@ -268,13 +268,13 @@ axes in a 3x4 grid (note that `.Divider` makes row indices start from the
 
 .. code-block:: none
 
-   +--------+--------+--------+--------+
-   | (2, 0) | (2, 1) | (2, 2) | (2, 3) |
-   +--------+--------+--------+--------+
-   | (1, 0) | (1, 1) | (1, 2) | (1, 3) |
-   +--------+--------+--------+--------+
-   | (0, 0) | (0, 1) | (0, 2) | (0, 3) |
-   +--------+--------+--------+--------+
+   ┌────────┬────────┬────────┬────────┐
+   │ (2, 0) │ (2, 1) │ (2, 2) │ (2, 3) │
+   ├────────┼────────┼────────┼────────┤
+   │ (1, 0) │ (1, 1) │ (1, 2) │ (1, 3) │
+   ├────────┼────────┼────────┼────────┤
+   │ (0, 0) │ (0, 1) │ (0, 2) │ (0, 3) │
+   └────────┴────────┴────────┴────────┘
 
 such that the bottom row has a fixed height of 2 (inches) and the top two rows
 have a height ratio of 2 (middle) to 3 (top).  (For example, if the grid has

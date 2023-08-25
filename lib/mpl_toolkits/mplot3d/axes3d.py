@@ -45,6 +45,12 @@ from . import axis3d
 class Axes3D(Axes):
     """
     3D Axes object.
+
+    .. note::
+
+        As a user, you do not instantiate Axes directly, but use Axes creation
+        methods instead; e.g. from `.pyplot` or `.Figure`:
+        `~.pyplot.subplots`, `~.pyplot.subplot_mosaic` or `.Figure.add_axes`.
     """
     name = '3d'
 
@@ -318,9 +324,6 @@ class Axes3D(Axes):
         """
         _api.check_in_list(('auto', 'equal', 'equalxy', 'equalyz', 'equalxz'),
                            aspect=aspect)
-        if adjustable is None:
-            adjustable = self._adjustable
-        _api.check_in_list(('box', 'datalim'), adjustable=adjustable)
         super().set_aspect(
             aspect='auto', adjustable=adjustable, anchor=anchor, share=share)
         self._aspect = aspect
@@ -332,11 +335,10 @@ class Axes3D(Axes):
                                        self.yaxis.get_view_interval(),
                                        self.zaxis.get_view_interval()])
             ptp = np.ptp(view_intervals, axis=1)
-            if adjustable == 'datalim':
+            if self._adjustable == 'datalim':
                 mean = np.mean(view_intervals, axis=1)
-                delta = max(ptp[ax_indices])
-                scale = self._box_aspect[ptp == delta][0]
-                deltas = delta * self._box_aspect / scale
+                scale = max(ptp[ax_indices] / self._box_aspect[ax_indices])
+                deltas = scale * self._box_aspect
 
                 for i, set_lim in enumerate((self.set_xlim3d,
                                              self.set_ylim3d,
@@ -384,9 +386,8 @@ class Axes3D(Axes):
 
         The box aspect is the ratio of height to width in display
         units for each face of the box when viewed perpendicular to
-        that face.  This is not to be confused with the data aspect
-        (which for Axes3D is always 'auto').  The default ratios are
-        4:4:3 (x:y:z).
+        that face.  This is not to be confused with the data aspect (see
+        `~.Axes3D.set_aspect`). The default ratios are 4:4:3 (x:y:z).
 
         To simulate having equal aspect in data space, set the box
         aspect to match your data range in each dimension.
@@ -748,7 +749,7 @@ class Axes3D(Axes):
     get_zminorticklabels = _axis_method_wrapper("zaxis", "get_minorticklabels")
     get_zticklabels = _axis_method_wrapper("zaxis", "get_ticklabels")
     set_zticklabels = _axis_method_wrapper(
-        "zaxis", "_set_ticklabels",
+        "zaxis", "set_ticklabels",
         doc_sub={"Axis.set_ticks": "Axes3D.set_zticks"})
 
     zaxis_date = _axis_method_wrapper("zaxis", "axis_date")
@@ -975,7 +976,7 @@ class Axes3D(Axes):
         """
         Share the z-axis with *other*.
 
-        This is equivalent to passing ``sharex=other`` when constructing the
+        This is equivalent to passing ``sharez=other`` when constructing the
         Axes, and cannot be used if the z-axis is already being shared with
         another Axes.
         """
@@ -1064,7 +1065,7 @@ class Axes3D(Axes):
         # nearest edge
         p0, p1 = min(self._tunit_edges(),
                      key=lambda edge: proj3d._line2d_seg_dist(
-                         edge[0], edge[1], (xd, yd)))
+                         (xd, yd), edge[0][:2], edge[1][:2]))
 
         # scale the z value to match
         x0, y0, z0 = p0
@@ -1402,12 +1403,7 @@ class Axes3D(Axes):
         bottom, top = self.get_zlim()
         self.set_zlim(top, bottom, auto=None)
 
-    def zaxis_inverted(self):
-        """
-        Returns True if the z-axis is inverted.
-        """
-        bottom, top = self.get_zlim()
-        return top < bottom
+    zaxis_inverted = _axis_method_wrapper("zaxis", "get_inverted")
 
     def get_zbound(self):
         """
@@ -1564,7 +1560,7 @@ class Axes3D(Axes):
             The lightsource to use when *shade* is True.
 
         **kwargs
-            Other arguments are forwarded to `.Poly3DCollection`.
+            Other keyword arguments are forwarded to `.Poly3DCollection`.
         """
 
         had_data = self.has_data()
@@ -1601,14 +1597,13 @@ class Axes3D(Axes):
             rstride = int(max(np.ceil(rows / rcount), 1))
             cstride = int(max(np.ceil(cols / ccount), 1))
 
-        if 'facecolors' in kwargs:
-            fcolors = kwargs.pop('facecolors')
-        else:
+        fcolors = kwargs.pop('facecolors', None)
+
+        if fcolors is None:
             color = kwargs.pop('color', None)
             if color is None:
                 color = self._get_lines.get_next_color()
             color = np.array(mcolors.to_rgba(color))
-            fcolors = None
 
         cmap = kwargs.get('cmap', None)
         shade = kwargs.pop('shade', cmap is None)
@@ -1728,7 +1723,7 @@ class Axes3D(Axes):
             of the new default of ``rcount = ccount = 50``.
 
         **kwargs
-            Other arguments are forwarded to `.Line3DCollection`.
+            Other keyword arguments are forwarded to `.Line3DCollection`.
         """
 
         had_data = self.has_data()
@@ -1855,7 +1850,7 @@ class Axes3D(Axes):
         lightsource : `~matplotlib.colors.LightSource`
             The lightsource to use when *shade* is True.
         **kwargs
-            All other arguments are passed on to
+            All other keyword arguments are passed on to
             :class:`~mpl_toolkits.mplot3d.art3d.Poly3DCollection`
 
         Examples
@@ -2256,7 +2251,7 @@ class Axes3D(Axes):
         data : indexable object, optional
             DATA_PARAMETER_PLACEHOLDER
         **kwargs
-            All other arguments are passed on to `~.axes.Axes.scatter`.
+            All other keyword arguments are passed on to `~.axes.Axes.scatter`.
 
         Returns
         -------
@@ -2308,7 +2303,8 @@ class Axes3D(Axes):
         data : indexable object, optional
             DATA_PARAMETER_PLACEHOLDER
         **kwargs
-            Other arguments are forwarded to `matplotlib.axes.Axes.bar`.
+            Other keyword arguments are forwarded to
+            `matplotlib.axes.Axes.bar`.
 
         Returns
         -------
@@ -2349,7 +2345,7 @@ class Axes3D(Axes):
         """
         Generate a 3D barplot.
 
-        This method creates three dimensional barplot where the width,
+        This method creates three-dimensional barplot where the width,
         depth, height, and color of the bars can all be uniquely set.
 
         Parameters
@@ -2402,8 +2398,7 @@ class Axes3D(Axes):
         Returns
         -------
         collection : `~.art3d.Poly3DCollection`
-            A collection of three dimensional polygons representing
-            the bars.
+            A collection of three-dimensional polygons representing the bars.
         """
 
         had_data = self.has_data()
@@ -2513,19 +2508,16 @@ class Axes3D(Axes):
         return ret
 
     @_preprocess_data()
-    def quiver(self, *args,
+    def quiver(self, X, Y, Z, U, V, W, *,
                length=1, arrow_length_ratio=.3, pivot='tail', normalize=False,
                **kwargs):
         """
-        ax.quiver(X, Y, Z, U, V, W, /, length=1, arrow_length_ratio=.3, \
-pivot='tail', normalize=False, **kwargs)
-
         Plot a 3D field of arrows.
 
-        The arguments could be array-like or scalars, so long as they
-        they can be broadcast together. The arguments can also be
-        masked arrays. If an element in any of argument is masked, then
-        that corresponding quiver element will not be plotted.
+        The arguments can be array-like or scalars, so long as they can be
+        broadcast together. The arguments can also be masked arrays. If an
+        element in any of argument is masked, then that corresponding quiver
+        element will not be plotted.
 
         Parameters
         ----------
@@ -2555,7 +2547,7 @@ pivot='tail', normalize=False, **kwargs)
 
         **kwargs
             Any additional keyword arguments are delegated to
-            :class:`~matplotlib.collections.LineCollection`
+            :class:`.Line3DCollection`
         """
 
         def calc_arrows(UVW, angle=15):
@@ -2586,22 +2578,15 @@ pivot='tail', normalize=False, **kwargs)
 
         had_data = self.has_data()
 
-        # handle args
-        argi = 6
-        if len(args) < argi:
-            raise ValueError('Wrong number of arguments. Expected %d got %d' %
-                             (argi, len(args)))
-
-        # first 6 arguments are X, Y, Z, U, V, W
-        input_args = args[:argi]
+        input_args = [X, Y, Z, U, V, W]
 
         # extract the masks, if any
         masks = [k.mask for k in input_args
                  if isinstance(k, np.ma.MaskedArray)]
         # broadcast to match the shape
         bcast = np.broadcast_arrays(*input_args, *masks)
-        input_args = bcast[:argi]
-        masks = bcast[argi:]
+        input_args = bcast[:6]
+        masks = bcast[6:]
         if masks:
             # combine the masks into one
             mask = functools.reduce(np.logical_or, masks)
@@ -2613,7 +2598,7 @@ pivot='tail', normalize=False, **kwargs)
 
         if any(len(v) == 0 for v in input_args):
             # No quivers, so just make an empty collection and return early
-            linec = art3d.Line3DCollection([], *args[argi:], **kwargs)
+            linec = art3d.Line3DCollection([], **kwargs)
             self.add_collection(linec)
             return linec
 
@@ -2627,7 +2612,7 @@ pivot='tail', normalize=False, **kwargs)
             shaft_dt -= length / 2
 
         XYZ = np.column_stack(input_args[:3])
-        UVW = np.column_stack(input_args[3:argi]).astype(float)
+        UVW = np.column_stack(input_args[3:]).astype(float)
 
         # Normalize rows of UVW
         norm = np.linalg.norm(UVW, axis=1)
@@ -2656,7 +2641,7 @@ pivot='tail', normalize=False, **kwargs)
         else:
             lines = []
 
-        linec = art3d.Line3DCollection(lines, *args[argi:], **kwargs)
+        linec = art3d.Line3DCollection(lines, **kwargs)
         self.add_collection(linec)
 
         self.auto_scale_xyz(XYZ[:, 0], XYZ[:, 1], XYZ[:, 2], had_data)
@@ -2702,10 +2687,10 @@ pivot='tail', normalize=False, **kwargs)
               can be either a string, or a 1D rgb/rgba array
             - ``None``, the default, to use a single color for the faces, and
               the style default for the edges.
-            - A 3D ndarray of color names, with each item the color for the
-              corresponding voxel. The size must match the voxels.
-            - A 4D ndarray of rgb/rgba data, with the components along the
-              last axis.
+            - A 3D `~numpy.ndarray` of color names, with each item the color
+              for the corresponding voxel. The size must match the voxels.
+            - A 4D `~numpy.ndarray` of rgb/rgba data, with the components
+              along the last axis.
 
         shade : bool, default: True
             Whether to shade the facecolors.
@@ -2908,7 +2893,7 @@ pivot='tail', normalize=False, **kwargs)
             The format for the data points / data lines. See `.plot` for
             details.
 
-            Use 'none' (case insensitive) to plot errorbars without any data
+            Use 'none' (case-insensitive) to plot errorbars without any data
             markers.
 
         ecolor : color, default: None

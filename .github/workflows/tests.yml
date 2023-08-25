@@ -1,3 +1,4 @@
+---
 name: Tests
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
@@ -12,8 +13,8 @@ on:
     branches-ignore:
       - v[0-9]+.[0-9]+.[0-9x]+-doc
   schedule:
-    # 3:47 UTC on Saturdays
-    - cron: "47 3 * * 6"
+    # 5:47 UTC on Saturdays
+    - cron: "47 5 * * 6"
   workflow_dispatch:
     workflow: "*"
 
@@ -25,6 +26,8 @@ env:
 jobs:
   test:
     if: "github.event_name == 'workflow_dispatch' || github.repository == 'matplotlib/matplotlib' && !contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[skip github]')"
+    permissions:
+      contents: read
     name: "Python ${{ matrix.python-version }} on ${{ matrix.os }} ${{ matrix.name-suffix }}"
     runs-on: ${{ matrix.os }}
 
@@ -45,16 +48,34 @@ jobs:
             python-version: 3.8
             extra-requirements: '-r requirements/testing/extra.txt'
             CFLAGS: "-fno-lto"  # Ensure that disabling LTO works.
+            # https://github.com/matplotlib/matplotlib/pull/26052#issuecomment-1574595954
+            pyqt6-ver: '!=6.5.1'
+            # https://bugreports.qt.io/projects/PYSIDE/issues/PYSIDE-2346
+            pyside6-ver: '!=6.5.1'
           - os: ubuntu-20.04
             python-version: 3.9
             extra-requirements: '-r requirements/testing/extra.txt'
+            # https://github.com/matplotlib/matplotlib/pull/26052#issuecomment-1574595954
+            pyqt6-ver: '!=6.5.1'
+            # https://bugreports.qt.io/projects/PYSIDE/issues/PYSIDE-2346
+            pyside6-ver: '!=6.5.1'
           - os: ubuntu-20.04
             python-version: '3.10'
             extra-requirements: '-r requirements/testing/extra.txt'
+            # https://github.com/matplotlib/matplotlib/pull/26052#issuecomment-1574595954
+            pyqt6-ver: '!=6.5.1'
+            # https://bugreports.qt.io/projects/PYSIDE/issues/PYSIDE-2346
+            pyside6-ver: '!=6.5.1'
           - os: ubuntu-20.04
-            python-version: '3.11.0-rc.1'
+            python-version: '3.11'
+            # https://github.com/matplotlib/matplotlib/pull/26052#issuecomment-1574595954
+            pyqt6-ver: '!=6.5.1'
+            # https://bugreports.qt.io/projects/PYSIDE/issues/PYSIDE-2346
+            pyside6-ver: '!=6.5.1'
           - os: macos-latest
             python-version: 3.8
+            # https://bugreports.qt.io/projects/PYSIDE/issues/PYSIDE-2346
+            pyside6-ver: '!=6.5.1'
 
     steps:
       - uses: actions/checkout@v3
@@ -89,6 +110,7 @@ jobs:
               libgirepository1.0-dev \
               libsdl2-2.0-0 \
               libxkbcommon-x11-0 \
+              libxcb-cursor0 \
               libxcb-icccm4 \
               libxcb-image0 \
               libxcb-keysyms1 \
@@ -163,13 +185,18 @@ jobs:
           # Install dependencies from PyPI.
           python -m pip install --upgrade $PRE \
             'contourpy>=1.0.1' cycler fonttools kiwisolver importlib_resources \
-            numpy packaging pillow pyparsing python-dateutil setuptools-scm \
+            numpy packaging pillow 'pyparsing!=3.1.0' python-dateutil setuptools-scm \
             -r requirements/testing/all.txt \
             ${{ matrix.extra-requirements }}
 
+          # Preinstall pybind11 on no-build-isolation builds.
+          if [[ "${{ matrix.name-suffix }}" == '(Minimum Versions)' ]]; then
+            python -m pip install 'pybind11>=2.6'
+          fi
+
           # Install optional dependencies from PyPI.
           # Sphinx is needed to run sphinxext tests
-          python -m pip install --upgrade sphinx
+          python -m pip install --upgrade sphinx!=6.1.2
 
           # GUI toolkits are pip-installable only for some versions of Python
           # so don't fail if we can't install them.  Make it easier to check
@@ -285,9 +312,11 @@ jobs:
 
   # Separate dependent job to only upload one issue from the matrix of jobs
   create-issue:
-    runs-on: ubuntu-latest
-    needs: [test]
     if: ${{ failure() && github.event_name == 'schedule' }}
+    needs: [test]
+    permissions:
+      issues: write
+    runs-on: ubuntu-latest
     name: "Create issue on failure"
 
     steps:

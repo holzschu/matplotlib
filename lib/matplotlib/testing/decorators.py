@@ -2,6 +2,7 @@ import contextlib
 import functools
 import inspect
 import os
+from platform import uname
 from pathlib import Path
 import shutil
 import string
@@ -199,6 +200,8 @@ class _ImageComparisonBase:
             with contextlib.suppress(OSError):
                 os.remove(expected_fname)
             try:
+                if 'microsoft' in uname().release.lower():
+                    raise OSError  # On WSL, symlink breaks silently
                 os.symlink(orig_expected_path, expected_fname)
             except OSError:  # On Windows, symlink *may* be unavailable.
                 shutil.copyfile(orig_expected_path, expected_fname)
@@ -453,7 +456,7 @@ def check_figures_equal(*, extensions=("png", "pdf", "svg"), tol=0):
 
         if not {"fig_test", "fig_ref"}.issubset(old_sig.parameters):
             raise ValueError("The decorated function must have at least the "
-                             "parameters 'fig_ref' and 'fig_test', but your "
+                             "parameters 'fig_test' and 'fig_ref', but your "
                              f"function has the signature {old_sig}")
 
         @pytest.mark.parametrize("ext", extensions)

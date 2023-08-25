@@ -7,8 +7,9 @@ import sys
 
 import pytest
 
-from matplotlib.testing import subprocess_run_helper
 from matplotlib import _c_internal_utils
+from matplotlib.testing import subprocess_run_helper
+
 
 _test_timeout = 60  # A reasonably safe value for slower architectures.
 
@@ -36,6 +37,11 @@ def _isolated_tk_test(success_count, func=None):
     @pytest.mark.skipif(
         sys.platform == "linux" and not _c_internal_utils.display_is_valid(),
         reason="$DISPLAY and $WAYLAND_DISPLAY are unset"
+    )
+    @pytest.mark.xfail(  # https://github.com/actions/setup-python/issues/649
+        ('TF_BUILD' in os.environ or 'GITHUB_ACTION' in os.environ) and
+        sys.platform == 'darwin' and sys.version_info[:2] < (3, 11),
+        reason='Tk version mismatch on Azure macOS CI'
     )
     @functools.wraps(func)
     def test_func():

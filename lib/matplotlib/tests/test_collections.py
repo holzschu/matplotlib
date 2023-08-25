@@ -1,4 +1,6 @@
+from datetime import datetime
 import io
+import re
 from types import SimpleNamespace
 
 import numpy as np
@@ -609,6 +611,12 @@ def test_lslw_bcast():
     assert (col.get_linewidths() == [1, 2, 3]).all()
 
 
+def test_set_wrong_linestyle():
+    c = Collection()
+    with pytest.raises(ValueError, match="Do not know how to convert 'fuzzy'"):
+        c.set_linestyle('fuzzy')
+
+
 @mpl.style.context('default')
 def test_capstyle():
     col = mcollections.PathCollection([], capstyle='round')
@@ -816,19 +824,39 @@ def test_quadmesh_set_array_validation():
     fig, ax = plt.subplots()
     coll = ax.pcolormesh(x, y, z)
 
-    # Test deprecated warning when faulty shape is passed.
-    with pytest.raises(ValueError, match=r"For X \(11\) and Y \(8\) with flat "
-                       r"shading, the expected shape of A is \(7, 10\), not "
-                       r"\(10, 7\)"):
+    with pytest.raises(ValueError, match=re.escape(
+            "For X (11) and Y (8) with flat shading, A should have shape "
+            "(7, 10, 3) or (7, 10, 4) or (7, 10) or (70,), not (10, 7)")):
         coll.set_array(z.reshape(10, 7))
 
     z = np.arange(54).reshape((6, 9))
-    with pytest.raises(TypeError, match=r"Dimensions of A \(6, 9\) "
-                       r"are incompatible with X \(11\) and/or Y \(8\)"):
+    with pytest.raises(ValueError, match=re.escape(
+            "For X (11) and Y (8) with flat shading, A should have shape "
+            "(7, 10, 3) or (7, 10, 4) or (7, 10) or (70,), not (6, 9)")):
         coll.set_array(z)
-    with pytest.raises(TypeError, match=r"Dimensions of A \(54,\) "
-                       r"are incompatible with X \(11\) and/or Y \(8\)"):
+    with pytest.raises(ValueError, match=re.escape(
+            "For X (11) and Y (8) with flat shading, A should have shape "
+            "(7, 10, 3) or (7, 10, 4) or (7, 10) or (70,), not (54,)")):
         coll.set_array(z.ravel())
+
+    # RGB(A) tests
+    z = np.ones((9, 6, 3))  # RGB with wrong X/Y dims
+    with pytest.raises(ValueError, match=re.escape(
+            "For X (11) and Y (8) with flat shading, A should have shape "
+            "(7, 10, 3) or (7, 10, 4) or (7, 10) or (70,), not (9, 6, 3)")):
+        coll.set_array(z)
+
+    z = np.ones((9, 6, 4))  # RGBA with wrong X/Y dims
+    with pytest.raises(ValueError, match=re.escape(
+            "For X (11) and Y (8) with flat shading, A should have shape "
+            "(7, 10, 3) or (7, 10, 4) or (7, 10) or (70,), not (9, 6, 4)")):
+        coll.set_array(z)
+
+    z = np.ones((7, 10, 2))  # Right X/Y dims, bad 3rd dim
+    with pytest.raises(ValueError, match=re.escape(
+            "For X (11) and Y (8) with flat shading, A should have shape "
+            "(7, 10, 3) or (7, 10, 4) or (7, 10) or (70,), not (7, 10, 2)")):
+        coll.set_array(z)
 
     x = np.arange(10)
     y = np.arange(7)
@@ -1048,6 +1076,9 @@ def test_array_wrong_dimensions():
     pc = plt.pcolormesh(z)
     pc.set_array(z)  # 2D is OK for Quadmesh
     pc.update_scalarmappable()
+    # 3D RGB is OK as well
+    z = np.arange(36).reshape(3, 4, 3)
+    pc.set_array(z)
 
 
 def test_get_segments():
@@ -1108,3 +1139,55 @@ def test_set_offset_units():
     off0 = sc.get_offsets()
     sc.set_offsets(list(zip(y, d)))
     np.testing.assert_allclose(off0, sc.get_offsets())
+
+
+@image_comparison(baseline_images=["test_check_masked_offsets"],
+                  extensions=["png"], remove_text=True, style="mpl20")
+def test_check_masked_offsets():
+    # Check if masked data is respected by scatter
+    # Ref: Issue #24545
+    unmasked_x = [
+        datetime(2022, 12, 15, 4, 49, 52),
+        datetime(2022, 12, 15, 4, 49, 53),
+        datetime(2022, 12, 15, 4, 49, 54),
+        datetime(2022, 12, 15, 4, 49, 55),
+        datetime(2022, 12, 15, 4, 49, 56),
+    ]
+
+    masked_y = np.ma.array([1, 2, 3, 4, 5], mask=[0, 1, 1, 0, 0])
+
+    fig, ax = plt.subplots()
+    ax.scatter(unmasked_x, masked_y)
+
+
+@check_figures_equal(extensions=["png"])
+def test_masked_set_offsets(fig_ref, fig_test):
+    x = np.ma.array([1, 2, 3, 4, 5], mask=[0, 0, 1, 1, 0])
+    y = np.arange(1, 6)
+
+    ax_test = fig_test.add_subplot()
+    scat = ax_test.scatter(x, y)
+    scat.set_offsets(np.ma.column_stack([x, y]))
+    ax_test.set_xticks([])
+    ax_test.set_yticks([])
+
+    ax_ref = fig_ref.add_subplot()
+    ax_ref.scatter([1, 2, 5], [1, 2, 5])
+    ax_ref.set_xticks([])
+    ax_ref.set_yticks([])
+
+
+def test_check_offsets_dtype():
+    # Check that setting offsets doesn't change dtype
+    x = np.ma.array([1, 2, 3, 4, 5], mask=[0, 0, 1, 1, 0])
+    y = np.arange(1, 6)
+
+    fig, ax = plt.subplots()
+    scat = ax.scatter(x, y)
+    masked_offsets = np.ma.column_stack([x, y])
+    scat.set_offsets(masked_offsets)
+    assert isinstance(scat.get_offsets(), type(masked_offsets))
+
+    unmasked_offsets = np.column_stack([x, y])
+    scat.set_offsets(unmasked_offsets)
+    assert isinstance(scat.get_offsets(), type(unmasked_offsets))

@@ -100,7 +100,7 @@ class TextToPath:
         from those::
 
             from matplotlib.path import Path
-            from matplotlib.textpath import TextToPath
+            from matplotlib.text import TextToPath
             from matplotlib.font_manager import FontProperties
 
             fp = FontProperties(family="Humor Sans", style="italic")
@@ -325,9 +325,9 @@ class TextPath(Path):
             Font size in points. Defaults to the size specified via the font
             properties *prop*.
 
-        prop : `matplotlib.font_manager.FontProperties`, optional
+        prop : `~matplotlib.font_manager.FontProperties`, optional
             Font property. If not provided, will use a default
-            ``FontProperties`` with parameters from the
+            `.FontProperties` with parameters from the
             :ref:`rcParams<customizing-with-dynamic-rc-settings>`.
 
         _interpolation_steps : int, optional
@@ -341,7 +341,7 @@ class TextPath(Path):
         The following creates a path from the string "ABC" with Helvetica
         font face; and another path from the latex fraction 1/2::
 
-            from matplotlib.textpath import TextPath
+            from matplotlib.text import TextPath
             from matplotlib.font_manager import FontProperties
 
             fp = FontProperties(family="Helvetica", style="italic")

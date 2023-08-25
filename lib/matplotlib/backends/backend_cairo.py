@@ -15,7 +15,8 @@ import numpy as np
 try:
     import cairo
     if cairo.version_info < (1, 14, 0):  # Introduced set_device_scale.
-        raise ImportError
+        raise ImportError(f"Cairo backend requires cairo>=1.14.0, "
+                          f"but only {cairo.version_info} is available")
 except ImportError:
     try:
         import cairocffi as cairo
@@ -70,35 +71,6 @@ def _cairo_font_args_from_font_prop(prop):
               if font_manager.weight_dict.get(weight, weight) < 550
               else cairo.FONT_WEIGHT_BOLD)
     return name, slant, weight
-
-
-# Mappings used for deprecated properties in RendererCairo, see below.
-_f_weights = {
-    100:          cairo.FONT_WEIGHT_NORMAL,
-    200:          cairo.FONT_WEIGHT_NORMAL,
-    300:          cairo.FONT_WEIGHT_NORMAL,
-    400:          cairo.FONT_WEIGHT_NORMAL,
-    500:          cairo.FONT_WEIGHT_NORMAL,
-    600:          cairo.FONT_WEIGHT_BOLD,
-    700:          cairo.FONT_WEIGHT_BOLD,
-    800:          cairo.FONT_WEIGHT_BOLD,
-    900:          cairo.FONT_WEIGHT_BOLD,
-    'ultralight': cairo.FONT_WEIGHT_NORMAL,
-    'light':      cairo.FONT_WEIGHT_NORMAL,
-    'normal':     cairo.FONT_WEIGHT_NORMAL,
-    'medium':     cairo.FONT_WEIGHT_NORMAL,
-    'regular':    cairo.FONT_WEIGHT_NORMAL,
-    'semibold':   cairo.FONT_WEIGHT_BOLD,
-    'bold':       cairo.FONT_WEIGHT_BOLD,
-    'heavy':      cairo.FONT_WEIGHT_BOLD,
-    'ultrabold':  cairo.FONT_WEIGHT_BOLD,
-    'black':      cairo.FONT_WEIGHT_BOLD,
-}
-_f_angles = {
-    'italic':  cairo.FONT_SLANT_ITALIC,
-    'normal':  cairo.FONT_SLANT_NORMAL,
-    'oblique': cairo.FONT_SLANT_OBLIQUE,
-}
 
 
 class RendererCairo(RendererBase):

@@ -398,7 +398,7 @@ class _ImageBase(martist.Artist, cm.ScalarMappable):
         # So that the image is aligned with the edge of the axes, we want to
         # round up the output width to the next integer.  This also means
         # scaling the transform slightly to account for the extra subpixel.
-        if (t.is_affine and round_to_pixel_border and
+        if ((not unsampled) and t.is_affine and round_to_pixel_border and
                 (out_width_base % 1.0 != 0.0 or out_height_base % 1.0 != 0.0)):
             out_width = math.ceil(out_width_base)
             out_height = math.ceil(out_height_base)
@@ -860,7 +860,7 @@ class AxesImage(_ImageBase):
 
     Parameters
     ----------
-    ax : `~.axes.Axes`
+    ax : `~matplotlib.axes.Axes`
         The axes the image will belong to.
     cmap : str or `~matplotlib.colors.Colormap`, default: :rc:`image.cmap`
         The Colormap instance or registered colormap name used to map scalar
@@ -899,7 +899,7 @@ class AxesImage(_ImageBase):
     resample : bool, default: False
         When True, use a full resampling method. When False, only resample when
         the output image is larger than the input image.
-    **kwargs : `.Artist` properties
+    **kwargs : `~matplotlib.artist.Artist` properties
     """
 
     @_api.make_keyword_only("3.6", name="cmap")
@@ -935,7 +935,7 @@ class AxesImage(_ImageBase):
     def get_window_extent(self, renderer=None):
         x0, x1, y0, y1 = self._extent
         bbox = Bbox.from_extents([x0, y0, x1, y1])
-        return bbox.transformed(self.axes.transData)
+        return bbox.transformed(self.get_transform())
 
     def make_image(self, renderer, magnification=1.0, unsampled=False):
         # docstring inherited
@@ -978,11 +978,8 @@ class AxesImage(_ImageBase):
             [("x", [extent[0], extent[1]]),
              ("y", [extent[2], extent[3]])],
             kwargs)
-        if len(kwargs):
-            raise ValueError(
-                "set_extent did not consume all of the kwargs passed." +
-                f"{list(kwargs)!r} were unused"
-            )
+        if kwargs:
+            raise _api.kwarg_error("set_extent", kwargs)
         xmin = self.axes._validate_converted_limits(
             xmin, self.convert_xunits)
         xmax = self.axes._validate_converted_limits(
@@ -1051,8 +1048,10 @@ class NonUniformImage(AxesImage):
         """
         Parameters
         ----------
+        ax : `~matplotlib.axes.Axes`
+            The axes the image will belong to.
         interpolation : {'nearest', 'bilinear'}, default: 'nearest'
-
+            The interpolation scheme used in the resampling.
         **kwargs
             All other keyword arguments are identical to those of `.AxesImage`.
         """
@@ -1143,8 +1142,8 @@ class NonUniformImage(AxesImage):
             Monotonic arrays of shapes (N,) and (M,), respectively, specifying
             pixel centers.
         A : array-like
-            (M, N) ndarray or masked array of values to be colormapped, or
-            (M, N, 3) RGB array, or (M, N, 4) RGBA array.
+            (M, N) `~numpy.ndarray` or masked array of values to be
+            colormapped, or (M, N, 3) RGB array, or (M, N, 4) RGBA array.
         """
         x = np.array(x, np.float32)
         y = np.array(y, np.float32)
@@ -1222,7 +1221,7 @@ class PcolorImage(AxesImage):
         """
         Parameters
         ----------
-        ax : `~.axes.Axes`
+        ax : `~matplotlib.axes.Axes`
             The axes the image will belong to.
         x, y : 1D array-like, optional
             Monotonic arrays of length N+1 and M+1, respectively, specifying
@@ -1232,7 +1231,7 @@ class PcolorImage(AxesImage):
             The data to be color-coded. The interpretation depends on the
             shape:
 
-            - (M, N) ndarray or masked array: values to be colormapped
+            - (M, N) `~numpy.ndarray` or masked array: values to be colormapped
             - (M, N, 3): RGB array
             - (M, N, 4): RGBA array
 
@@ -1241,7 +1240,7 @@ class PcolorImage(AxesImage):
             scalar data to colors.
         norm : str or `~matplotlib.colors.Normalize`
             Maps luminance to 0-1.
-        **kwargs : `.Artist` properties
+        **kwargs : `~matplotlib.artist.Artist` properties
         """
         super().__init__(ax, norm=norm, cmap=cmap)
         self._internal_update(kwargs)
@@ -1298,7 +1297,7 @@ class PcolorImage(AxesImage):
             The data to be color-coded. The interpretation depends on the
             shape:
 
-            - (M, N) ndarray or masked array: values to be colormapped
+            - (M, N) `~numpy.ndarray` or masked array: values to be colormapped
             - (M, N, 3): RGB array
             - (M, N, 4): RGBA array
         """
@@ -1510,7 +1509,7 @@ def imread(fname, format=None):
     format : str, optional
         The image file format assumed for reading the data.  The image is
         loaded as a PNG file if *format* is set to "png", if *fname* is a path
-        or opened file with a ".png" extension, or if it is an URL.  In all
+        or opened file with a ".png" extension, or if it is a URL.  In all
         other cases, *format* is ignored and the format is auto-detected by
         `PIL.Image.open`.
 
@@ -1575,7 +1574,7 @@ def imsave(fname, arr, vmin=None, vmax=None, cmap=None, format=None,
     RGB(A) images are passed through.  Single channel images will be
     colormapped according to *cmap* and *norm*.
 
-    .. note ::
+    .. note::
 
        If you want to save a single channel image as gray scale please use an
        image I/O library (such as pillow, tifffile, or imageio) directly.
@@ -1653,6 +1652,9 @@ def imsave(fname, arr, vmin=None, vmax=None, cmap=None, format=None,
             rgba = sm.to_rgba(arr, bytes=True)
         if pil_kwargs is None:
             pil_kwargs = {}
+        else:
+            # we modify this below, so make a copy (don't modify caller's dict)
+            pil_kwargs = pil_kwargs.copy()
         pil_shape = (rgba.shape[1], rgba.shape[0])
         image = PIL.Image.frombuffer(
             "RGBA", pil_shape, rgba, "raw", "RGBA", 0, 1)

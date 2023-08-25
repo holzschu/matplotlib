@@ -16,6 +16,7 @@ from tempfile import TemporaryDirectory
 import textwrap
 import urllib.request
 
+from pybind11.setup_helpers import Pybind11Extension
 from setuptools import Distribution, Extension
 
 _log = logging.getLogger(__name__)
@@ -118,6 +119,13 @@ def get_and_extract_tarball(urls, sha, dirname):
     """
     toplevel = Path("build", dirname)
     if not toplevel.exists():  # Download it or load it from cache.
+        try:
+            import certifi  # noqa
+        except ImportError as e:
+            raise ImportError(
+                f"`certifi` is unavailable ({e}) so unable to download any of "
+                f"the following: {urls}.") from None
+
         Path("build").mkdir(exist_ok=True)
         for url in urls:
             try:
@@ -452,12 +460,12 @@ class Matplotlib(SetupPackage):
         add_libagg_flags(ext)
         yield ext
         # tri
-        ext = Extension(
+        ext = Pybind11Extension(
             "matplotlib._tri", [
                 "src/tri/_tri.cpp",
                 "src/tri/_tri_wrapper.cpp",
-            ])
-        add_numpy_flags(ext)
+            ],
+            cxx_std=11)
         yield ext
         # ttconv
         ext = Extension(
@@ -487,7 +495,12 @@ class Tests(OptionalPackage):
                 'tests/test_*.ipynb',
             ],
             'mpl_toolkits': [
-                *_pkg_data_helper('mpl_toolkits', 'tests/baseline_images'),
+                *_pkg_data_helper('mpl_toolkits',
+                                  'axes_grid1/tests/baseline_images'),
+                *_pkg_data_helper('mpl_toolkits',
+                                  'axisartist/tests/baseline_images'),
+                *_pkg_data_helper('mpl_toolkits',
+                                  'mplot3d/tests/baseline_images'),
             ]
         }
 

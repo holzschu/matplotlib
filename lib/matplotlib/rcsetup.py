@@ -9,8 +9,8 @@ and is referenced throughout Matplotlib.
 
 The default values of the rc settings are set in the default matplotlibrc file.
 Any additions or deletions to the parameter set listed here should also be
-propagated to the :file:`matplotlibrc.template` in Matplotlib's root source
-directory.
+propagated to the :file:`lib/matplotlib/mpl-data/matplotlibrc` in Matplotlib's
+root source directory.
 """
 
 import ast
@@ -68,7 +68,7 @@ class ValidateInStrings:
             name, = (k for k, v in globals().items() if v is self)
             _api.warn_deprecated(
                 self._deprecated_since, name=name, obj_type="function")
-        if self.ignorecase:
+        if self.ignorecase and isinstance(s, str):
             s = s.lower()
         if s in self.valid:
             return self.valid[s]
@@ -182,10 +182,7 @@ def _make_type_validator(cls, *, allow_none=False):
                 (s is None or isinstance(s, str) and s.lower() == "none")):
             return None
         if cls is str and not isinstance(s, str):
-            _api.warn_deprecated(
-                "3.5", message="Support for setting an rcParam that expects a "
-                "str value to a non-str value is deprecated since %(since)s "
-                "and support will be removed %(removal)s.")
+            raise ValueError(f'Could not convert {s!r} to str')
         try:
             return cls(s)
         except (TypeError, ValueError) as e:
@@ -218,7 +215,7 @@ def _validate_pathlike(s):
         # between "" (cwd) and "." (cwd, but gets updated by user selections).
         return os.fsdecode(s)
     else:
-        return validate_string(s)  # Emit deprecation warning.
+        return validate_string(s)
 
 
 def validate_fonttype(s):
@@ -811,11 +808,12 @@ def _convert_validator_spec(key, conv):
 # Mapping of rcParams to validators.
 # Converters given as lists or _ignorecase are converted to ValidateInStrings
 # immediately below.
-# The rcParams defaults are defined in matplotlibrc.template, which gets copied
-# to matplotlib/mpl-data/matplotlibrc by the setup script.
+# The rcParams defaults are defined in lib/matplotlib/mpl-data/matplotlibrc, which
+# gets copied to matplotlib/mpl-data/matplotlibrc by the setup script.
 _validators = {
     "backend":           validate_backend,
     "backend_fallback":  validate_bool,
+    "figure.hooks":      validate_stringlist,
     "toolbar":           _validate_toolbar,
     "interactive":       validate_bool,
     "timezone":          validate_string,
@@ -1257,7 +1255,8 @@ _validators = {
     # altogether.  For that use `matplotlib.style.use("classic")`.
     "_internal.classic_mode": validate_bool
 }
-_hardcoded_defaults = {  # Defaults not inferred from matplotlibrc.template...
+_hardcoded_defaults = {  # Defaults not inferred from
+    # lib/matplotlib/mpl-data/matplotlibrc...
     # ... because they are private:
     "_internal.classic_mode": False,
     # ... because they are deprecated:

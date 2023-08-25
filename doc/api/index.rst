@@ -118,7 +118,6 @@ Alphabetical list of modules:
    dviread.rst
    figure_api.rst
    font_manager_api.rst
-   fontconfig_pattern_api.rst
    ft2font.rst
    gridspec_api.rst
    hatch_api.rst
@@ -148,7 +147,6 @@ Alphabetical list of modules:
    testing_api.rst
    text_api.rst
    texmanager_api.rst
-   textpath_api.rst
    ticker_api.rst
    tight_bbox_api.rst
    tight_layout_api.rst

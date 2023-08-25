@@ -825,7 +825,7 @@ class FigureCanvasPS(FigureCanvasBase):
     def _print_ps(
             self, fmt, outfile, *,
             metadata=None, papertype=None, orientation='portrait',
-            **kwargs):
+            bbox_inches_restore=None, **kwargs):
 
         dpi = self.figure.dpi
         self.figure.dpi = 72  # Override the dpi kwarg
@@ -841,8 +841,9 @@ class FigureCanvasPS(FigureCanvasBase):
         # See https://reproducible-builds.org/specs/source-date-epoch/
         source_date_epoch = os.getenv("SOURCE_DATE_EPOCH")
         dsc_comments["CreationDate"] = (
-            datetime.datetime.utcfromtimestamp(
-                int(source_date_epoch)).strftime("%a %b %d %H:%M:%S %Y")
+            datetime.datetime.fromtimestamp(
+                int(source_date_epoch),
+                datetime.timezone.utc).strftime("%a %b %d %H:%M:%S %Y")
             if source_date_epoch
             else time.ctime())
         dsc_comments = "\n".join(
@@ -860,7 +861,8 @@ class FigureCanvasPS(FigureCanvasBase):
                    if mpl.rcParams['text.usetex'] else
                    self._print_figure)
         printer(fmt, outfile, dpi=dpi, dsc_comments=dsc_comments,
-                orientation=orientation, papertype=papertype, **kwargs)
+                orientation=orientation, papertype=papertype,
+                bbox_inches_restore=bbox_inches_restore, **kwargs)
 
     def _print_figure(
             self, fmt, outfile, *,
@@ -870,7 +872,7 @@ class FigureCanvasPS(FigureCanvasBase):
         Render the figure to a filesystem path or a file-like object.
 
         Parameters are as for `.print_figure`, except that *dsc_comments* is a
-        all string containing Document Structuring Convention comments,
+        string containing Document Structuring Convention comments,
         generated from the *metadata* parameter to `.print_figure`.
         """
         is_eps = fmt == 'eps'
@@ -1187,7 +1189,7 @@ def gs_distill(tmpfile, eps=False, ptype='letter', bbox=None, rotated=False):
     # the original bbox can be restored during the pstoeps step.
 
     if eps:
-        # For some versions of gs, above steps result in an ps file where the
+        # For some versions of gs, above steps result in a ps file where the
         # original bbox is no more correct. Do not adjust bbox for now.
         pstoeps(tmpfile, bbox, rotated=rotated)
 

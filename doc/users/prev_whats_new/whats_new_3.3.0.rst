@@ -50,7 +50,7 @@ or as a string (with single-character Axes labels):
                ha='center', va='center', fontsize=36,
                color='darkgrey')
 
-See :doc:`/tutorials/provisional/mosaic` for more details and examples.
+See :doc:`/gallery/subplots_axes_and_figures/mosaic` for more details and examples.
 
 ``GridSpec.subplots()``
 -----------------------
@@ -373,8 +373,8 @@ set with the new rcParameter :rc:`axes.titley`.
 .. plot::
 
     fig, axs = plt.subplots(1, 2, constrained_layout=True, figsize=(5, 2))
-    axs[0].set_title('y=0.7\n$\sum_{j_n} x_j$', y=0.7)
-    axs[1].set_title('y=None\n$\sum_{j_n} x_j$')
+    axs[0].set_title('y=0.7\n$\\sum_{j_n} x_j$', y=0.7)
+    axs[1].set_title('y=None\n$\\sum_{j_n} x_j$')
     plt.show()
 
 Offset text is now set to the top when using ``axis.tick_top()``

@@ -1222,7 +1222,7 @@ bool convert_to_string(PathIterator &path,
     clipped_t clipped(nan_removed, do_clip, clip_rect);
     simplify_t simplified(clipped, simplify, path.simplify_threshold());
 
-    buffersize = path.total_vertices() * (precision + 5) * 4;
+    buffersize = (size_t) path.total_vertices() * (precision + 5) * 4;
     if (buffersize == 0) {
         return true;
     }
@@ -1244,70 +1244,28 @@ bool convert_to_string(PathIterator &path,
 }
 
 template<class T>
-struct _is_sorted
+bool is_sorted_and_has_non_nan(PyArrayObject *array)
 {
-    bool operator()(PyArrayObject *array)
-    {
-        npy_intp size;
-        npy_intp i;
-        T last_value;
-        T current_value;
+    char* ptr = PyArray_BYTES(array);
+    npy_intp size = PyArray_DIM(array, 0),
+             stride = PyArray_STRIDE(array, 0);
+    using limits = std::numeric_limits<T>;
+    T last = limits::has_infinity ? -limits::infinity() : limits::min();
+    bool found_non_nan = false;
 
-        size = PyArray_DIM(array, 0);
-
-        // std::isnan is only in C++11, which we don't yet require,
-        // so we use the "self == self" trick
-        for (i = 0; i < size; ++i) {
-            last_value = *((T *)PyArray_GETPTR1(array, i));
-            if (last_value == last_value) {
-                break;
-            }
-        }
-
-        if (i == size) {
-            // The whole array is non-finite
-            return false;
-        }
-
-        for (; i < size; ++i) {
-            current_value = *((T *)PyArray_GETPTR1(array, i));
-            if (current_value == current_value) {
-                if (current_value < last_value) {
-                    return false;
-                }
-                last_value = current_value;
-            }
-        }
-
-        return true;
-    }
-};
-
-
-template<class T>
-struct _is_sorted_int
-{
-    bool operator()(PyArrayObject *array)
-    {
-        npy_intp size;
-        npy_intp i;
-        T last_value;
-        T current_value;
-
-        size = PyArray_DIM(array, 0);
-
-        last_value = *((T *)PyArray_GETPTR1(array, 0));
-
-        for (i = 1; i < size; ++i) {
-            current_value = *((T *)PyArray_GETPTR1(array, i));
-            if (current_value < last_value) {
+    for (npy_intp i = 0; i < size; ++i, ptr += stride) {
+        T current = *(T*)ptr;
+        // The following tests !isnan(current), but also works for integral
+        // types.  (The isnan(IntegralType) overload is absent on MSVC.)
+        if (current == current) {
+            found_non_nan = true;
+            if (current < last) {
                 return false;
             }
-            last_value = current_value;
+            last = current;
         }
-
-        return true;
     }
+    return found_non_nan;
 };
 
 

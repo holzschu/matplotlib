@@ -4,6 +4,8 @@ Oscilloscope
 ============
 
 Emulates an oscilloscope.
+
+Output generated via `matplotlib.animation.Animation.to_jshtml`.
 """
 
 import numpy as np
@@ -26,13 +28,16 @@ class Scope:
 
     def update(self, y):
         lastt = self.tdata[-1]
-        if lastt > self.tdata[0] + self.maxt:  # reset the arrays
+        if lastt >= self.tdata[0] + self.maxt:  # reset the arrays
             self.tdata = [self.tdata[-1]]
             self.ydata = [self.ydata[-1]]
             self.ax.set_xlim(self.tdata[0], self.tdata[0] + self.maxt)
             self.ax.figure.canvas.draw()
 
-        t = self.tdata[-1] + self.dt
+        # This slightly more complex calculation avoids floating-point issues
+        # from just repeatedly adding `self.dt` to the previous value.
+        t = self.tdata[0] + len(self.tdata) * self.dt
+
         self.tdata.append(t)
         self.ydata.append(y)
         self.line.set_data(self.tdata, self.ydata)
@@ -42,11 +47,11 @@ class Scope:
 def emitter(p=0.1):
     """Return a random value in [0, 1) with probability p, else 0."""
     while True:
-        v = np.random.rand(1)
+        v = np.random.rand()
         if v > p:
             yield 0.
         else:
-            yield np.random.rand(1)
+            yield np.random.rand()
 
 
 # Fixing random state for reproducibility
@@ -58,6 +63,6 @@ scope = Scope(ax)
 
 # pass a generator in "emitter" to produce data for the update func
 ani = animation.FuncAnimation(fig, scope.update, emitter, interval=50,
-                              blit=True)
+                              blit=True, save_count=100)
 
 plt.show()

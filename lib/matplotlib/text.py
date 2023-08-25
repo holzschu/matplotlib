@@ -15,7 +15,7 @@ from . import _api, artist, cbook, _docstring
 from .artist import Artist
 from .font_manager import FontProperties
 from .patches import FancyArrowPatch, FancyBboxPatch, Rectangle
-from .textpath import TextPath  # noqa # Unused, but imported by others.
+from .textpath import TextPath, TextToPath  # noqa # Logically located here
 from .transforms import (
     Affine2D, Bbox, BboxBase, BboxTransformTo, IdentityTransform, Transform)
 
@@ -367,7 +367,7 @@ class Text(Artist):
         of a rotated text when necessary.
         """
         thisx, thisy = 0.0, 0.0
-        lines = self.get_text().split("\n")  # Ensures lines is not empty.
+        lines = self._get_wrapped_text().split("\n")  # Ensures lines is not empty.
 
         ws = []
         hs = []
@@ -1043,7 +1043,7 @@ class Text(Artist):
 
     def set_fontfamily(self, fontname):
         """
-        Set the font family.  May be either a single string, or a list of
+        Set the font family.  Can be either a single string, or a list of
         strings in decreasing priority.  Each string may be either a real font
         name or a generic font class name.  If the latter, the specific font
         names will be looked up in the corresponding rcParams.
@@ -1103,7 +1103,7 @@ class Text(Artist):
         ----------
         fontsize : float or {'xx-small', 'x-small', 'small', 'medium', \
 'large', 'x-large', 'xx-large'}
-            If float, the fontsize in points. The string values denote sizes
+            If a float, the fontsize in points. The string values denote sizes
             relative to the default font size.
 
         See Also
@@ -1138,7 +1138,7 @@ class Text(Artist):
             The name of the font family.
 
             Available font families are defined in the
-            :ref:`matplotlibrc.template file
+            :ref:`default matplotlibrc file
             <customizing-with-matplotlibrc-files>`.
 
         See Also
@@ -1378,7 +1378,7 @@ class OffsetFrom:
         """
         Parameters
         ----------
-        artist : `.Artist` or `.BboxBase` or `.Transform`
+        artist : `~matplotlib.artist.Artist` or `.BboxBase` or `.Transform`
             The object to compute the offset from.
 
         ref_coord : (float, float)
@@ -1626,6 +1626,9 @@ class _AnnotationBase:
         state : bool or None
             - True or False: set the draggability.
             - None: toggle the draggability.
+        use_blit : bool, default: False
+            Use blitting for faster image composition. For details see
+            :ref:`func-animation`.
 
         Returns
         -------
@@ -1698,8 +1701,8 @@ class Annotation(Text, _AnnotationBase):
             The position *(x, y)* to place the text at. The coordinate system
             is determined by *textcoords*.
 
-        xycoords : str or `.Artist` or `.Transform` or callable or \
-(float, float), default: 'data'
+        xycoords : single or two-tuple of str or `.Artist` or `.Transform` or \
+callable, default: 'data'
 
             The coordinate system that *xy* is given in. The following types
             of values are supported:
@@ -1751,8 +1754,8 @@ class Annotation(Text, _AnnotationBase):
 
             See :ref:`plotting-guide-annotation` for more details.
 
-        textcoords : str or `.Artist` or `.Transform` or callable or \
-(float, float), default: value of *xycoords*
+        textcoords : single or two-tuple of str or `.Artist` or `.Transform` \
+or callable, default: value of *xycoords*
             The coordinate system that *xytext* is given in.
 
             All *xycoords* values are valid as well as the following
@@ -1817,8 +1820,8 @@ class Annotation(Text, _AnnotationBase):
             *relpos*. It's a tuple of relative coordinates of the text box,
             where (0, 0) is the lower left corner and (1, 1) is the upper
             right corner. Values <0 and >1 are supported and specify points
-            outside the text box. By default (0.5, 0.5) the starting point is
-            centered in the text box.
+            outside the text box. By default (0.5, 0.5), so the starting point
+            is centered in the text box.
 
         annotation_clip : bool or None, default: None
             Whether to clip (i.e. not draw) the annotation when the annotation

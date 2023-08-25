@@ -53,6 +53,24 @@ webagg_server_thread = threading.Thread(
 class FigureManagerWebAgg(core.FigureManagerWebAgg):
     _toolbar2_class = core.NavigationToolbar2WebAgg
 
+    @classmethod
+    def pyplot_show(cls, *, block=None):
+        WebAggApplication.initialize()
+
+        url = "http://{address}:{port}{prefix}".format(
+            address=WebAggApplication.address,
+            port=WebAggApplication.port,
+            prefix=WebAggApplication.url_prefix)
+
+        if mpl.rcParams['webagg.open_in_browser']:
+            import webbrowser
+            if not webbrowser.open(url):
+                print("To view figure, visit {0}".format(url))
+        else:
+            print("To view figure, visit {0}".format(url))
+
+        WebAggApplication.start()
+
 
 class FigureCanvasWebAgg(core.FigureCanvasWebAggCore):
     manager_class = FigureManagerWebAgg
@@ -247,6 +265,14 @@ class WebAggApplication(tornado.web.Application):
 
     @classmethod
     def start(cls):
+        import asyncio
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            cls.started = True
+
         if cls.started:
             return
 
@@ -288,8 +314,12 @@ def ipython_inline_display(figure):
     import tornado.template
 
     WebAggApplication.initialize()
-    if not webagg_server_thread.is_alive():
-        webagg_server_thread.start()
+    import asyncio
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        if not webagg_server_thread.is_alive():
+            webagg_server_thread.start()
 
     fignum = figure.number
     tpl = Path(core.FigureManagerWebAgg.get_static_file_path(),
@@ -307,21 +337,3 @@ def ipython_inline_display(figure):
 class _BackendWebAgg(_Backend):
     FigureCanvas = FigureCanvasWebAgg
     FigureManager = FigureManagerWebAgg
-
-    @staticmethod
-    def show(*, block=None):
-        WebAggApplication.initialize()
-
-        url = "http://{address}:{port}{prefix}".format(
-            address=WebAggApplication.address,
-            port=WebAggApplication.port,
-            prefix=WebAggApplication.url_prefix)
-
-        if mpl.rcParams['webagg.open_in_browser']:
-            import webbrowser
-            if not webbrowser.open(url):
-                print("To view figure, visit {0}".format(url))
-        else:
-            print("To view figure, visit {0}".format(url))
-
-        WebAggApplication.start()

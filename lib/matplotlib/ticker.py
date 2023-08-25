@@ -55,7 +55,7 @@ and you will probably want to override the autoscale method to set the
 view limits from the data limits.
 
 If you want to override the default locator, use one of the above or a custom
-locator and pass it to the x or y axis instance. The relevant methods are::
+locator and pass it to the x- or y-axis instance. The relevant methods are::
 
   ax.xaxis.set_major_locator(xmajor_locator)
   ax.xaxis.set_minor_locator(xminor_locator)
@@ -623,7 +623,7 @@ class ScalarFormatter(Formatter):
 
     def format_data_short(self, value):
         # docstring inherited
-        if isinstance(value, np.ma.MaskedArray) and value.mask:
+        if value is np.ma.masked:
             return ""
         if isinstance(value, Integral):
             fmt = "%d"
@@ -743,7 +743,7 @@ class ScalarFormatter(Formatter):
 
     def _set_order_of_magnitude(self):
         # if scientific notation is to be used, find the appropriate exponent
-        # if using an numerical offset, find the exponent after applying the
+        # if using a numerical offset, find the exponent after applying the
         # offset. When lower power limit = upper <> 0, use provided exponent.
         if not self._scientific:
             self.orderOfMagnitude = 0
@@ -1432,7 +1432,7 @@ class EngFormatter(Formatter):
         >>> format_eng(1000000)  # for self.places = 1
         '1.0 M'
 
-        >>> format_eng("-1e-6")  # for self.places = 2
+        >>> format_eng(-1e-6)  # for self.places = 2
         '-1.00 \N{MICRO SIGN}'
         """
         sign = 1
@@ -1520,17 +1520,14 @@ class PercentFormatter(Formatter):
         decimal point is set based on the *display_range* of the axis
         as follows:
 
-        +---------------+----------+------------------------+
-        | display_range | decimals |          sample        |
-        +---------------+----------+------------------------+
-        | >50           |     0    | ``x = 34.5`` => 35%    |
-        +---------------+----------+------------------------+
-        | >5            |     1    | ``x = 34.5`` => 34.5%  |
-        +---------------+----------+------------------------+
-        | >0.5          |     2    | ``x = 34.5`` => 34.50% |
-        +---------------+----------+------------------------+
-        |      ...      |    ...   |          ...           |
-        +---------------+----------+------------------------+
+        ============= ======== =======================
+        display_range decimals sample
+        ============= ======== =======================
+        >50           0        ``x = 34.5`` => 35%
+        >5            1        ``x = 34.5`` => 34.5%
+        >0.5          2        ``x = 34.5`` => 34.50%
+        ...           ...      ...
+        ============= ======== =======================
 
         This method will not be very good for tiny axis ranges or
         extremely large ones. It assumes that the values on the chart
@@ -1718,6 +1715,7 @@ class FixedLocator(Locator):
 
     def __init__(self, locs, nbins=None):
         self.locs = np.asarray(locs)
+        _api.check_shape((None,), locs=self.locs)
         self.nbins = max(nbins, 2) if nbins is not None else None
 
     def set_params(self, nbins=None):
@@ -2071,9 +2069,7 @@ class MaxNLocator(Locator):
         if 'integer' in kwargs:
             self._integer = kwargs.pop('integer')
         if kwargs:
-            key, _ = kwargs.popitem()
-            raise TypeError(
-                f"set_params() got an unexpected keyword argument '{key}'")
+            raise _api.kwarg_error("set_params", kwargs)
 
     def _raw_ticks(self, vmin, vmax):
         """
@@ -2254,35 +2250,37 @@ def _is_close_to_int(x):
 
 class LogLocator(Locator):
     """
-    Determine the tick locations for log axes
+
+    Determine the tick locations for log axes.
+
+    Place ticks on the locations : ``subs[j] * base**i``
+
+    Parameters
+    ----------
+    base : float, default: 10.0
+        The base of the log used, so major ticks are placed at
+        ``base**n``, where ``n`` is an integer.
+    subs : None or {'auto', 'all'} or sequence of float, default: (1.0,)
+        Gives the multiples of integer powers of the base at which
+        to place ticks.  The default of ``(1.0, )`` places ticks only at
+        integer powers of the base.
+        Permitted string values are ``'auto'`` and ``'all'``.
+        Both of these use an algorithm based on the axis view
+        limits to determine whether and how to put ticks between
+        integer powers of the base.  With ``'auto'``, ticks are
+        placed only between integer powers; with ``'all'``, the
+        integer powers are included.  A value of None is
+        equivalent to ``'auto'``.
+    numticks : None or int, default: None
+        The maximum number of ticks to allow on a given axis. The default
+        of ``None`` will try to choose intelligently as long as this
+        Locator has already been assigned to an axis using
+        `~.axis.Axis.get_tick_space`, but otherwise falls back to 9.
+
     """
 
     def __init__(self, base=10.0, subs=(1.0,), numdecs=4, numticks=None):
-        """
-        Place ticks on the locations : subs[j] * base**i
-
-        Parameters
-        ----------
-        base : float, default: 10.0
-            The base of the log used, so major ticks are placed at
-            ``base**n``, n integer.
-        subs : None or str or sequence of float, default: (1.0,)
-            Gives the multiples of integer powers of the base at which
-            to place ticks.  The default places ticks only at
-            integer powers of the base.
-            The permitted string values are ``'auto'`` and ``'all'``,
-            both of which use an algorithm based on the axis view
-            limits to determine whether and how to put ticks between
-            integer powers of the base.  With ``'auto'``, ticks are
-            placed only between integer powers; with ``'all'``, the
-            integer powers are included.  A value of None is
-            equivalent to ``'auto'``.
-        numticks : None or int, default: None
-            The maximum number of ticks to allow on a given axis. The default
-            of ``None`` will try to choose intelligently as long as this
-            Locator has already been assigned to an axis using
-            `~.axis.Axis.get_tick_space`, but otherwise falls back to 9.
-        """
+        """Place ticks on the locations : subs[j] * base**i."""
         if numticks is None:
             if mpl.rcParams['_internal.classic_mode']:
                 numticks = 15
@@ -2352,14 +2350,6 @@ class LogLocator(Locator):
             numticks = self.numticks
 
         b = self._base
-        # dummy axis has no axes attribute
-        if hasattr(self.axis, 'axes') and self.axis.axes.name == 'polar':
-            vmax = math.ceil(math.log(vmax) / math.log(b))
-            decades = np.arange(vmax - self.numdecs, vmax)
-            ticklocs = b ** decades
-
-            return ticklocs
-
         if vmin <= 0.0:
             if self.axis is not None:
                 vmin = self.axis.get_minpos()
@@ -2443,10 +2433,6 @@ class LogLocator(Locator):
         b = self._base
 
         vmin, vmax = self.nonsingular(vmin, vmax)
-
-        if self.axis.axes.name == 'polar':
-            vmax = math.ceil(math.log(vmax) / math.log(b))
-            vmin = b ** (vmax - self.numdecs)
 
         if mpl.rcParams['axes.autolimit_mode'] == 'round_numbers':
             vmin = _decade_less_equal(vmin, self._base)

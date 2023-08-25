@@ -17,7 +17,7 @@ to the graph:
 .. image:: ../_static/transforms.png
 
 The framework can be used for both affine and non-affine
-transformations.  However, for speed, we want use the backend
+transformations.  However, for speed, we want to use the backend
 renderers to perform affine transformations whenever possible.
 Therefore, it is possible to perform just the affine or non-affine
 part of a transformation on a set of data.  The affine is always
@@ -755,7 +755,7 @@ class Bbox(BboxBase):
         """
         Parameters
         ----------
-        points : ndarray
+        points : `~numpy.ndarray`
             A 2x2 numpy array of the form ``[[x0, y0], [x1, y1]]``.
         """
         super().__init__(**kwargs)
@@ -897,7 +897,7 @@ class Bbox(BboxBase):
 
         Parameters
         ----------
-        x : ndarray
+        x : `~numpy.ndarray`
             Array of x-values.
 
         ignore : bool, optional
@@ -917,7 +917,7 @@ class Bbox(BboxBase):
 
         Parameters
         ----------
-        y : ndarray
+        y : `~numpy.ndarray`
             Array of y-values.
 
         ignore : bool, optional
@@ -937,7 +937,7 @@ class Bbox(BboxBase):
 
         Parameters
         ----------
-        xy : ndarray
+        xy : `~numpy.ndarray`
             A numpy array of 2D points.
 
         ignore : bool, optional
@@ -1143,6 +1143,14 @@ class TransformedBbox(BboxBase):
             points = self._get_points()
             self._check(points)
             return points
+
+    def contains(self, x, y):
+        # Docstring inherited.
+        return self._bbox.contains(*self._transform.inverted().transform((x, y)))
+
+    def fully_contains(self, x, y):
+        # Docstring inherited.
+        return self._bbox.fully_contains(*self._transform.inverted().transform((x, y)))
 
 
 class LockableBbox(BboxBase):
@@ -1699,15 +1707,8 @@ class TransformWrapper(Transform):
         be replaced with :meth:`set`.
         """
         _api.check_isinstance(Transform, child=child)
-        self._init(child)
-        self.set_children(child)
-
-    def _init(self, child):
-        Transform.__init__(self)
-        self.input_dims = child.input_dims
-        self.output_dims = child.output_dims
-        self._set(child)
-        self._invalid = 0
+        super().__init__()
+        self.set(child)
 
     def __eq__(self, other):
         return self._child.__eq__(other)
@@ -1718,8 +1719,25 @@ class TransformWrapper(Transform):
         # docstring inherited
         return self._child.frozen()
 
-    def _set(self, child):
+    def set(self, child):
+        """
+        Replace the current child of this transform with another one.
+
+        The new child must have the same number of input and output
+        dimensions as the current child.
+        """
+        if hasattr(self, "_child"):  # Absent during init.
+            self.invalidate()
+            new_dims = (child.input_dims, child.output_dims)
+            old_dims = (self._child.input_dims, self._child.output_dims)
+            if new_dims != old_dims:
+                raise ValueError(
+                    f"The input and output dims of the new child {new_dims} "
+                    f"do not match those of current child {old_dims}")
+            self._child._parents.pop(id(self), None)
+
         self._child = child
+        self.set_children(child)
 
         self.transform = child.transform
         self.transform_affine = child.transform_affine
@@ -1730,31 +1748,16 @@ class TransformWrapper(Transform):
         self.get_affine = child.get_affine
         self.inverted = child.inverted
         self.get_matrix = child.get_matrix
-
         # note we do not wrap other properties here since the transform's
         # child can be changed with WrappedTransform.set and so checking
         # is_affine and other such properties may be dangerous.
-
-    def set(self, child):
-        """
-        Replace the current child of this transform with another one.
-
-        The new child must have the same number of input and output
-        dimensions as the current child.
-        """
-        if (child.input_dims != self.input_dims or
-                child.output_dims != self.output_dims):
-            raise ValueError(
-                "The new child must have the same number of input and output "
-                "dimensions as the current child")
-
-        self.set_children(child)
-        self._set(child)
 
         self._invalid = 0
         self.invalidate()
         self._invalid = 0
 
+    input_dims = property(lambda self: self._child.input_dims)
+    output_dims = property(lambda self: self._child.output_dims)
     is_affine = property(lambda self: self._child.is_affine)
     is_separable = property(lambda self: self._child.is_separable)
     has_inverse = property(lambda self: self._child.has_inverse)
@@ -1860,7 +1863,7 @@ class Affine2DBase(AffineBase):
             # The major speed trap here is just converting to the
             # points to an array in the first place.  If we can use
             # more arrays upstream, that should help here.
-            if not isinstance(points, (np.ma.MaskedArray, np.ndarray)):
+            if not isinstance(points, np.ndarray):
                 _api.warn_external(
                     f'A non-numpy array of type {type(points)} was passed in '
                     f'for transformation, which results in poor performance.')
@@ -1896,7 +1899,7 @@ class Affine2D(Affine2DBase):
         super().__init__(**kwargs)
         if matrix is None:
             # A bit faster than np.identity(3).
-            matrix = IdentityTransform._mtx.copy()
+            matrix = IdentityTransform._mtx
         self._mtx = matrix.copy()
         self._invalid = 0
 
@@ -2973,6 +2976,7 @@ def offset_copy(trans, fig=None, x=0.0, y=0.0, units='inches'):
     `Transform` subclass
         Transform with applied offset.
     """
+    _api.check_in_list(['dots', 'points', 'inches'], units=units)
     if units == 'dots':
         return trans + Affine2D().translate(x, y)
     if fig is None:
@@ -2980,8 +2984,5 @@ def offset_copy(trans, fig=None, x=0.0, y=0.0, units='inches'):
     if units == 'points':
         x /= 72.0
         y /= 72.0
-    elif units == 'inches':
-        pass
-    else:
-        _api.check_in_list(['dots', 'points', 'inches'], units=units)
+    # Default units are 'inches'
     return trans + ScaledTranslation(x, y, fig.dpi_scale_trans)

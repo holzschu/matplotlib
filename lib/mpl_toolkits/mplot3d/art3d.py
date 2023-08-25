@@ -11,6 +11,8 @@ import math
 
 import numpy as np
 
+from contextlib import contextmanager
+
 from matplotlib import (
     artist, cbook, colors as mcolors, lines, text as mtext,
     path as mpath)
@@ -181,6 +183,12 @@ def text_2d_to_3d(obj, z=0, zdir='z'):
 class Line3D(lines.Line2D):
     """
     3D line object.
+
+    .. note:: Use `get_data_3d` to obtain the data associated with the line.
+            `~.Line2D.get_data`, `~.Line2D.get_xdata`, and `~.Line2D.get_ydata` return
+            the x- and y-coordinates of the projected 2D-line, not the x- and y-data of
+            the 3D-line. Similarly, use `set_data_3d` to set the data, not
+            `~.Line2D.set_data`, `~.Line2D.set_xdata`, and `~.Line2D.set_ydata`.
     """
 
     def __init__(self, xs, ys, zs, *args, **kwargs):
@@ -194,11 +202,11 @@ class Line3D(lines.Line2D):
             The y-data to be plotted.
         zs : array-like
             The z-data to be plotted.
-
-        Additional arguments are passed onto :func:`~matplotlib.lines.Line2D`.
+        *args, **kwargs :
+            Additional arguments are passed to `~matplotlib.lines.Line2D`.
         """
         super().__init__([], [], *args, **kwargs)
-        self._verts3d = xs, ys, zs
+        self.set_data_3d(xs, ys, zs)
 
     def set_3d_properties(self, zs=0, zdir='z'):
         """
@@ -238,9 +246,11 @@ class Line3D(lines.Line2D):
         Accepts x, y, z arguments or a single array-like (x, y, z)
         """
         if len(args) == 1:
-            self._verts3d = args[0]
-        else:
-            self._verts3d = args
+            args = args[0]
+        for name, xyz in zip('xyz', args):
+            if not np.iterable(xyz):
+                raise RuntimeError(f'{name} must be a sequence')
+        self._verts3d = args
         self.stale = True
 
     def get_data_3d(self):
@@ -512,10 +522,9 @@ class Patch3DCollection(PatchCollection):
         :class:`~matplotlib.collections.PatchCollection`. In addition,
         keywords *zs=0* and *zdir='z'* are available.
 
-        Also, the keyword argument *depthshade* is available to
-        indicate whether or not to shade the patches in order to
-        give the appearance of depth (default is *True*).
-        This is typically desired in scatter plots.
+        Also, the keyword argument *depthshade* is available to indicate
+        whether to shade the patches in order to give the appearance of depth
+        (default is *True*). This is typically desired in scatter plots.
         """
         self._depthshade = depthshade
         super().__init__(*args, **kwargs)
@@ -620,19 +629,20 @@ class Path3DCollection(PathCollection):
         :class:`~matplotlib.collections.PathCollection`. In addition,
         keywords *zs=0* and *zdir='z'* are available.
 
-        Also, the keyword argument *depthshade* is available to
-        indicate whether or not to shade the patches in order to
-        give the appearance of depth (default is *True*).
-        This is typically desired in scatter plots.
+        Also, the keyword argument *depthshade* is available to indicate
+        whether to shade the patches in order to give the appearance of depth
+        (default is *True*). This is typically desired in scatter plots.
         """
         self._depthshade = depthshade
         self._in_draw = False
         super().__init__(*args, **kwargs)
         self.set_3d_properties(zs, zdir)
+        self._offset_zordered = None
 
     def draw(self, renderer):
-        with cbook._setattr_cm(self, _in_draw=True):
-            super().draw(renderer)
+        with self._use_zordered_offset():
+            with cbook._setattr_cm(self, _in_draw=True):
+                super().draw(renderer)
 
     def set_sort_zpos(self, val):
         """Set the position to use for z-sorting."""
@@ -731,14 +741,31 @@ class Path3DCollection(PathCollection):
         if len(self._linewidths3d) > 1:
             self._linewidths = self._linewidths3d[z_markers_idx]
 
+        PathCollection.set_offsets(self, np.column_stack((vxs, vys)))
+
         # Re-order items
         vzs = vzs[z_markers_idx]
         vxs = vxs[z_markers_idx]
         vys = vys[z_markers_idx]
 
-        PathCollection.set_offsets(self, np.column_stack((vxs, vys)))
+        # Store ordered offset for drawing purpose
+        self._offset_zordered = np.column_stack((vxs, vys))
 
         return np.min(vzs) if vzs.size else np.nan
+
+    @contextmanager
+    def _use_zordered_offset(self):
+        if self._offset_zordered is None:
+            # Do nothing
+            yield
+        else:
+            # Swap offset with z-ordered offset
+            old_offset = self._offsets
+            super().set_offsets(self._offset_zordered)
+            try:
+                yield
+            finally:
+                self._offsets = old_offset
 
     def _maybe_depth_shade_and_sort_colors(self, color_array):
         color_array = (
@@ -827,7 +854,7 @@ class Poly3DCollection(PolyCollection):
 
             .. versionadded:: 3.7
 
-        lightsource : `~matplotlib.colors.LightSource`
+        lightsource : `~matplotlib.colors.LightSource`, optional
             The lightsource to use when *shade* is True.
 
             .. versionadded:: 3.7

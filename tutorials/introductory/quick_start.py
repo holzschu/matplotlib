@@ -23,14 +23,19 @@ import numpy as np
 # Matplotlib graphs your data on `.Figure`\s (e.g., windows, Jupyter
 # widgets, etc.), each of which can contain one or more `~.axes.Axes`, an
 # area where points can be specified in terms of x-y coordinates (or theta-r
-# in a polar plot, x-y-z in a 3D plot, etc).  The simplest way of
+# in a polar plot, x-y-z in a 3D plot, etc.).  The simplest way of
 # creating a Figure with an Axes is using `.pyplot.subplots`. We can then use
 # `.Axes.plot` to draw some data on the Axes:
 
 fig, ax = plt.subplots()  # Create a figure containing a single axes.
 ax.plot([1, 2, 3, 4], [1, 4, 2, 3])  # Plot some data on the axes.
 
-###############################################################################
+# %%
+#
+# Note that to get this Figure to display, you may have to call ``plt.show()``,
+# depending on your backend.  For more details of Figures and backends, see
+# :ref:`figure_explanation`.
+#
 # .. _figure_parts:
 #
 # Parts of a Figure
@@ -53,11 +58,16 @@ ax.plot([1, 2, 3, 4], [1, 4, 2, 3])  # Plot some data on the axes.
 #    fig = plt.figure()  # an empty figure with no Axes
 #    fig, ax = plt.subplots()  # a figure with a single Axes
 #    fig, axs = plt.subplots(2, 2)  # a figure with a 2x2 grid of Axes
+#    # a figure with one axes on the left, and two on the right:
+#    fig, axs = plt.subplot_mosaic([['left', 'right_top'],
+#                                   ['left', 'right_bottom']])
 #
 # It is often convenient to create the Axes together with the Figure, but you
 # can also manually add Axes later on.  Note that many
 # :doc:`Matplotlib backends </users/explain/backends>` support zooming and
 # panning on figure windows.
+#
+# For more on Figures, see :ref:`figure_explanation`.
 #
 # :class:`~matplotlib.axes.Axes`
 # ------------------------------
@@ -113,9 +123,9 @@ ax.plot([1, 2, 3, 4], [1, 4, 2, 3])  # Plot some data on the axes.
 #   b_asarray = np.asarray(b)
 #
 # Most methods will also parse an addressable object like a *dict*, a
-# `numpy.recarray`, or a `pandas.DataFrame`.  Matplotlib allows you provide
-# the ``data`` keyword argument and generate plots passing the strings
-# corresponding to the *x* and *y* variables.
+# `numpy.recarray`, or a `pandas.DataFrame`.  Matplotlib allows you to
+# provide the ``data`` keyword argument and generate plots passing the
+# strings corresponding to the *x* and *y* variables.
 np.random.seed(19680801)  # seed the random number generator.
 data = {'a': np.arange(50),
         'c': np.random.randint(0, 50, 50),
@@ -566,7 +576,7 @@ axd['right'].set_title('right')
 ###############################################################################
 # Matplotlib has quite sophisticated tools for arranging Axes: See
 # :doc:`/tutorials/intermediate/arranging_axes` and
-# :doc:`/tutorials/provisional/mosaic`.
+# :doc:`/gallery/subplots_axes_and_figures/mosaic`.
 #
 #
 # More reading

@@ -71,6 +71,10 @@ Ghostscript, FFmpeg) support as old as practical.  These can be difficult to
 install for end-users and we want to be usable on as many systems as
 possible.  We will bump these on a case-by-case basis.
 
+In the case of GUI frameworks for which we rely on Python bindings being
+available, we will also drop support for bindings so old that they don't
+support any Python version that we support.
+
 .. _list-of-dependency-min-versions:
 
 List of dependency versions
@@ -83,6 +87,7 @@ specification of the dependencies.
 ==========  ========  ======
 Matplotlib  Python    NumPy
 ==========  ========  ======
+`3.7`_      3.8       1.20.0
 `3.6`_      3.8       1.19.0
 `3.5`_      3.7       1.17.0
 `3.4`_      3.7       1.16.0
@@ -101,6 +106,7 @@ Matplotlib  Python    NumPy
 1.0         2.4       1.1
 ==========  ========  ======
 
+.. _`3.7`: https://matplotlib.org/3.7.0/devel/dependencies.html
 .. _`3.6`: https://matplotlib.org/3.6.0/devel/dependencies.html
 .. _`3.5`: https://matplotlib.org/3.5.0/devel/dependencies.html
 .. _`3.4`: https://matplotlib.org/3.4.0/devel/dependencies.html

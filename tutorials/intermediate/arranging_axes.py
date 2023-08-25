@@ -32,9 +32,10 @@ or
 
 `~matplotlib.pyplot.subplot_mosaic`
     A simple way to create figures and a grid of Axes, with the added
-    flexibility that Axes can also span rows or columns. The Axes
-    are returned in a labelled dictionary instead of an array.  See also
-    `.Figure.subplot_mosaic` and :doc:`/tutorials/provisional/mosaic`.
+    flexibility that Axes can also span rows or columns. The Axes are returned
+    in a labelled dictionary instead of an array.  See also
+    `.Figure.subplot_mosaic` and
+    :doc:`/gallery/subplots_axes_and_figures/mosaic`.
 
 Sometimes it is natural to have more than one distinct group of Axes grids,
 in which case Matplotlib has the concept of `.SubFigure`:
@@ -111,7 +112,7 @@ for row in range(2):
 fig.suptitle('plt.subplots()')
 
 ##############################################################################
-# We will annotate a lot of Axes, so lets encapsulate the annotation, rather
+# We will annotate a lot of Axes, so let's encapsulate the annotation, rather
 # than having that large piece of annotation code every time we need it:
 
 
@@ -393,7 +394,8 @@ plt.show()
 # More reading
 # ============
 #
-#  - More details about :doc:`subplot mosaic </tutorials/provisional/mosaic>`.
+#  - More details about :doc:`subplot mosaic
+#    </gallery/subplots_axes_and_figures/mosaic>`.
 #  - More details about :doc:`constrained layout
 #    </tutorials/intermediate/constrainedlayout_guide>`, used to align
 #    spacing in most of these examples.

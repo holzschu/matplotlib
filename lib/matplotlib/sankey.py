@@ -70,7 +70,7 @@ class Sankey:
 
         Other Parameters
         ----------------
-        ax : `~.axes.Axes`
+        ax : `~matplotlib.axes.Axes`
             Axes onto which the data should be plotted.  If *ax* isn't
             provided, new Axes will be created.
         scale : float
@@ -371,7 +371,7 @@ class Sankey:
             the outside in.
 
             If the sum of the inputs and outputs is
-            nonzero, the discrepancy will appear as a cubic Bezier curve along
+            nonzero, the discrepancy will appear as a cubic Bézier curve along
             the top and bottom edges of the trunk.
 
         orientations : list of {-1, 0, 1}

@@ -55,32 +55,10 @@ class Divider:
         self._locator = None
 
     def get_horizontal_sizes(self, renderer):
-        return [s.get_size(renderer) for s in self.get_horizontal()]
+        return np.array([s.get_size(renderer) for s in self.get_horizontal()])
 
     def get_vertical_sizes(self, renderer):
-        return [s.get_size(renderer) for s in self.get_vertical()]
-
-    @staticmethod
-    def _calc_k(l, total_size):
-
-        rs_sum, as_sum = 0., 0.
-
-        for _rs, _as in l:
-            rs_sum += _rs
-            as_sum += _as
-
-        if rs_sum != 0.:
-            k = (total_size - as_sum) / rs_sum
-            return k
-        else:
-            return 0.
-
-    @staticmethod
-    def _calc_offsets(l, k):
-        offsets = [0.]
-        for _rs, _as in l:
-            offsets.append(offsets[-1] + _rs*k + _as)
-        return offsets
+        return np.array([s.get_size(renderer) for s in self.get_vertical()])
 
     def set_position(self, pos):
         """
@@ -171,15 +149,28 @@ class Divider:
         else:
             return self._locator(ax, renderer).bounds
 
+    @staticmethod
+    def _calc_k(sizes, total):
+        # sizes is a (n, 2) array of (rel_size, abs_size); this method finds
+        # the k factor such that sum(rel_size * k + abs_size) == total.
+        rel_sum, abs_sum = sizes.sum(0)
+        return (total - abs_sum) / rel_sum if rel_sum else 0
+
+    @staticmethod
+    def _calc_offsets(sizes, k):
+        # Apply k factors to (n, 2) sizes array of (rel_size, abs_size); return
+        # the resulting cumulative offset positions.
+        return np.cumsum([0, *(sizes @ [k, 1])])
+
     def locate(self, nx, ny, nx1=None, ny1=None, axes=None, renderer=None):
         """
         Parameters
         ----------
         nx, nx1 : int
-            Integers specifying the column-position of the
-            cell. When *nx1* is None, a single *nx*-th column is
-            specified. Otherwise location of columns spanning between *nx*
-            to *nx1* (but excluding *nx1*-th column) is specified.
+            Integers specifying the column-position of the cell. When *nx1* is
+            None, a single *nx*-th column is specified. Otherwise, the
+            location of columns spanning between *nx* to *nx1* (but excluding
+            *nx1*-th column) is specified.
         ny, ny1 : int
             Same as *nx* and *nx1*, but for row positions.
         axes
@@ -211,17 +202,9 @@ class Divider:
             x0, y0 = x, y
 
         if nx1 is None:
-            _api.warn_deprecated(
-                "3.5", message="Support for passing nx1=None to mean nx+1 is "
-                "deprecated since %(since)s; in a future version, nx1=None "
-                "will mean 'up to the last cell'.")
-            nx1 = nx + 1
+            nx1 = -1
         if ny1 is None:
-            _api.warn_deprecated(
-                "3.5", message="Support for passing ny1=None to mean ny+1 is "
-                "deprecated since %(since)s; in a future version, ny1=None "
-                "will mean 'up to the last cell'.")
-            ny1 = ny + 1
+            ny1 = -1
 
         x1, w1 = x0 + ox[nx] / fig_w, (ox[nx1] - ox[nx]) / fig_w
         y1, h1 = y0 + oy[ny] / fig_h, (oy[ny1] - oy[ny]) / fig_h
@@ -308,17 +291,9 @@ class AxesLocator:
         self._nx, self._ny = nx - _xrefindex, ny - _yrefindex
 
         if nx1 is None:
-            _api.warn_deprecated(
-                "3.5", message="Support for passing nx1=None to mean nx+1 is "
-                "deprecated since %(since)s; in a future version, nx1=None "
-                "will mean 'up to the last cell'.")
-            nx1 = nx + 1
+            nx1 = len(self._axes_divider)
         if ny1 is None:
-            _api.warn_deprecated(
-                "3.5", message="Support for passing ny1=None to mean ny+1 is "
-                "deprecated since %(since)s; in a future version, ny1=None "
-                "will mean 'up to the last cell'.")
-            ny1 = ny + 1
+            ny1 = len(self._axes_divider[0])
 
         self._nx1 = nx1 - _xrefindex
         self._ny1 = ny1 - _yrefindex
@@ -495,8 +470,8 @@ class AxesDivider(Divider):
         pad : :mod:`~mpl_toolkits.axes_grid1.axes_size` or float or str
             Padding between the axes.  float or str arguments are interpreted
             as for *size*.  Defaults to :rc:`figure.subplot.wspace` times the
-            main axes width (left or right axes) or :rc:`figure.subplot.hspace`
-            times the main axes height (bottom or top axes).
+            main Axes width (left or right axes) or :rc:`figure.subplot.hspace`
+            times the main Axes height (bottom or top axes).
         axes_class : subclass type of `~.axes.Axes`, optional
             The type of the new axes.  Defaults to the type of the main axes.
         **kwargs
@@ -542,48 +517,33 @@ class AxesDivider(Divider):
 
 # Helper for HBoxDivider/VBoxDivider.
 # The variable names are written for a horizontal layout, but the calculations
-# work identically for vertical layouts (and likewise for the helpers below).
-def _determine_karray(summed_widths, equal_heights, total_width, max_height):
-    n = len(equal_heights)
-    eq_rs, eq_as = np.asarray(equal_heights).T
-    sm_rs, sm_as = np.asarray(summed_widths).T
-    A = np.zeros((n + 1, n + 1))
-    B = np.zeros(n + 1)
-    np.fill_diagonal(A[:n, :n], eq_rs)
-    A[:n, -1] = -1
-    A[-1, :-1] = sm_rs
-    B[:n] = -eq_as
-    B[-1] = total_width - sum(sm_as)
-    # A @ K = B: This solves for {k_0, ..., k_{N-1}, H} so that
-    #   eq_r_i * k_i + eq_a_i = H for all i: all axes have the same height
-    #   sum(sm_r_i * k_i + sm_a_i) = total_summed_width: fixed total width
-    # (foo_r_i * k_i + foo_a_i will end up being the size of foo.)
-    karray_and_height = np.linalg.solve(A, B)
-    karray = karray_and_height[:-1]
-    height = karray_and_height[-1]
-    if height > max_height:  # Additionally, upper-bound the height.
-        karray = (max_height - eq_as) / eq_rs
-    return karray
-
-
-# Helper for HBoxDivider/VBoxDivider (see above re: variable naming).
-def _calc_offsets(summed_sizes, karray):
-    offsets = [0.]
-    for (r, a), k in zip(summed_sizes, karray):
-        offsets.append(offsets[-1] + r*k + a)
-    return offsets
-
-
-# Helper for HBoxDivider/VBoxDivider (see above re: variable naming).
+# work identically for vertical layouts.
 def _locate(x, y, w, h, summed_widths, equal_heights, fig_w, fig_h, anchor):
-    karray = _determine_karray(
-        summed_widths, equal_heights,
-        total_width=fig_w * w, max_height=fig_h * h)
-    ox = _calc_offsets(summed_widths, karray)
 
+    total_width = fig_w * w
+    max_height = fig_h * h
+
+    # Determine the k factors.
+    n = len(equal_heights)
+    eq_rels, eq_abss = equal_heights.T
+    sm_rels, sm_abss = summed_widths.T
+    A = np.diag([*eq_rels, 0])
+    A[:n, -1] = -1
+    A[-1, :-1] = sm_rels
+    B = [*(-eq_abss), total_width - sm_abss.sum()]
+    # A @ K = B: This finds factors {k_0, ..., k_{N-1}, H} so that
+    #   eq_rel_i * k_i + eq_abs_i = H for all i: all axes have the same height
+    #   sum(sm_rel_i * k_i + sm_abs_i) = total_width: fixed total width
+    # (foo_rel_i * k_i + foo_abs_i will end up being the size of foo.)
+    *karray, height = np.linalg.solve(A, B)
+    if height > max_height:  # Additionally, upper-bound the height.
+        karray = (max_height - eq_abss) / eq_rels
+
+    # Compute the offsets corresponding to these factors.
+    ox = np.cumsum([0, *(sm_rels * karray + sm_abss)])
     ww = (ox[-1] - ox[0]) / fig_w
-    h0_r, h0_a = equal_heights[0]
-    hh = (karray[0]*h0_r + h0_a) / fig_h
+    h0_rel, h0_abs = equal_heights[0]
+    hh = (karray[0]*h0_rel + h0_abs) / fig_h
     pb = mtransforms.Bbox.from_bounds(x, y, w, h)
     pb1 = mtransforms.Bbox.from_bounds(x, y, ww, hh)
     x0, y0 = pb1.anchored(anchor, pb).p0
@@ -624,11 +584,7 @@ class HBoxDivider(SubplotDivider):
         x0, y0, ox, hh = _locate(
             x, y, w, h, summed_ws, equal_hs, fig_w, fig_h, self.get_anchor())
         if nx1 is None:
-            _api.warn_deprecated(
-                "3.5", message="Support for passing nx1=None to mean nx+1 is "
-                "deprecated since %(since)s; in a future version, nx1=None "
-                "will mean 'up to the last cell'.")
-            nx1 = nx + 1
+            nx1 = -1
         x1, w1 = x0 + ox[nx] / fig_w, (ox[nx1] - ox[nx]) / fig_w
         y1, h1 = y0, hh
         return mtransforms.Bbox.from_bounds(x1, y1, w1, h1)
@@ -663,11 +619,7 @@ class VBoxDivider(SubplotDivider):
         y0, x0, oy, ww = _locate(
             y, x, h, w, summed_hs, equal_ws, fig_h, fig_w, self.get_anchor())
         if ny1 is None:
-            _api.warn_deprecated(
-                "3.5", message="Support for passing ny1=None to mean ny+1 is "
-                "deprecated since %(since)s; in a future version, ny1=None "
-                "will mean 'up to the last cell'.")
-            ny1 = ny + 1
+            ny1 = -1
         x1, w1 = x0, ww
         y1, h1 = y0 + oy[ny] / fig_h, (oy[ny1] - oy[ny]) / fig_h
         return mtransforms.Bbox.from_bounds(x1, y1, w1, h1)

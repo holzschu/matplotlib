@@ -1,4 +1,5 @@
 from io import BytesIO, StringIO
+import gc
 import multiprocessing
 import os
 from pathlib import Path
@@ -16,7 +17,7 @@ from matplotlib.font_manager import (
     json_dump, json_load, get_font, is_opentype_cff_font,
     MSUserFontDirectories, _get_fontconfig_fonts, ft2font,
     ttfFontProperty, cbook)
-from matplotlib import pyplot as plt, rc_context
+from matplotlib import pyplot as plt, rc_context, figure as mfigure
 
 has_fclist = shutil.which('fc-list') is not None
 
@@ -73,7 +74,8 @@ def test_otf():
             assert res == is_opentype_cff_font(f.fname)
 
 
-@pytest.mark.skipif(not has_fclist, reason='no fontconfig installed')
+@pytest.mark.skipif(sys.platform == "win32" or not has_fclist,
+                    reason='no fontconfig installed')
 def test_get_fontconfig_fonts():
     assert len(_get_fontconfig_fonts()) > 1
 
@@ -146,7 +148,7 @@ def test_find_invalid(tmpdir):
 
     # Not really public, but get_font doesn't expose non-filename constructor.
     from matplotlib.ft2font import FT2Font
-    with pytest.raises(TypeError, match='path or binary-mode file'):
+    with pytest.raises(TypeError, match='font file or a binary-mode file'):
         FT2Font(StringIO())
 
 
@@ -199,7 +201,7 @@ def test_user_fonts_win32():
         pytest.xfail("This test should only run on CI (appveyor or azure) "
                      "as the developer's font directory should remain "
                      "unchanged.")
-
+    pytest.xfail("We need to update the registry for this test to work")
     font_test_file = 'mpltest.ttf'
 
     # Precondition: the test font should not be available
@@ -323,3 +325,25 @@ def test_get_font_names():
     assert set(available_fonts) == set(mpl_font_names)
     assert len(available_fonts) == len(mpl_font_names)
     assert available_fonts == mpl_font_names
+
+
+def test_donot_cache_tracebacks():
+
+    class SomeObject:
+        pass
+
+    def inner():
+        x = SomeObject()
+        fig = mfigure.Figure()
+        ax = fig.subplots()
+        fig.text(.5, .5, 'aardvark', family='doesnotexist')
+        with BytesIO() as out:
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore')
+                fig.savefig(out, format='png')
+
+    inner()
+
+    for obj in gc.get_objects():
+        if isinstance(obj, SomeObject):
+            pytest.fail("object from inner stack still alive")

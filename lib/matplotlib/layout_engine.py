@@ -5,9 +5,10 @@ Figures have a ``layout_engine`` property that holds a subclass of
 `~.LayoutEngine` defined here (or *None* for no layout).  At draw time
 ``figure.get_layout_engine().execute()`` is called, the goal of which is
 usually to rearrange Axes on the figure to produce a pleasing layout. This is
-like a ``draw`` callback, however when printing we disable the layout engine
-for the final draw and it is useful to know the layout engine while the figure
-is being created, in particular to deal with colorbars.
+like a ``draw`` callback but with two differences.  First, when printing we
+disable the layout engine for the final draw. Second, it is useful to know the
+layout engine while the figure is being created.  In particular, colorbars are
+made differently with different layout engines (for historical reasons).
 
 Matplotlib supplies two layout engines, `.TightLayoutEngine` and
 `.ConstrainedLayoutEngine`.  Third parties can create their own layout engine
@@ -54,7 +55,7 @@ class LayoutEngine:
     3. override `LayoutEngine.execute` with your implementation
 
     """
-    # override these is sub-class
+    # override these in subclass
     _adjust_compatible = None
     _colorbar_gridspec = None
 
@@ -63,6 +64,9 @@ class LayoutEngine:
         self._params = {}
 
     def set(self, **kwargs):
+        """
+        Set the parameters for the layout engine.
+        """
         raise NotImplementedError
 
     @property
@@ -103,7 +107,7 @@ class PlaceHolderLayoutEngine(LayoutEngine):
     """
     This layout engine does not adjust the figure layout at all.
 
-    The purpose of this `.LayoutEngine` is to act as a place holder when the
+    The purpose of this `.LayoutEngine` is to act as a placeholder when the
     user removes a layout engine to ensure an incompatible `.LayoutEngine` can
     not be set later.
 
@@ -120,6 +124,9 @@ class PlaceHolderLayoutEngine(LayoutEngine):
         super().__init__(**kwargs)
 
     def execute(self, fig):
+        """
+        Do nothing.
+        """
         return
 
 
@@ -138,7 +145,7 @@ class TightLayoutEngine(LayoutEngine):
 
         Parameters
         ----------
-        pad : float, 1.08
+        pad : float, default: 1.08
             Padding between the figure edge and the edges of subplots, as a
             fraction of the font size.
         h_pad, w_pad : float
@@ -166,7 +173,10 @@ class TightLayoutEngine(LayoutEngine):
         ----------
         fig : `.Figure` to perform layout on.
 
-        See also: `.figure.Figure.tight_layout` and `.pyplot.tight_layout`.
+        See Also
+        --------
+        .figure.Figure.tight_layout
+        .pyplot.tight_layout
         """
         info = self._params
         renderer = fig._get_renderer()
@@ -179,6 +189,21 @@ class TightLayoutEngine(LayoutEngine):
             fig.subplots_adjust(**kwargs)
 
     def set(self, *, pad=None, w_pad=None, h_pad=None, rect=None):
+        """
+        Set the pads for tight_layout.
+
+        Parameters
+        ----------
+        pad : float
+            Padding between the figure edge and the edges of subplots, as a
+            fraction of the font size.
+        w_pad, h_pad : float
+            Padding (width/height) between edges of adjacent subplots.
+            Defaults to *pad*.
+        rect : tuple (left, bottom, right, top)
+            rectangle in normalized figure coordinates that the subplots
+            (including labels) will fit into.
+        """
         for td in self.set.__kwdefaults__:
             if locals()[td] is not None:
                 self._params[td] = locals()[td]

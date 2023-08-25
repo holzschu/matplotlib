@@ -63,7 +63,8 @@ def plot_colored_circles(ax, prng, nb_samples=15):
     the color cycle, because different styles may have different numbers
     of colors.
     """
-    for sty_dict, j in zip(plt.rcParams['axes.prop_cycle'], range(nb_samples)):
+    for sty_dict, j in zip(plt.rcParams['axes.prop_cycle'](),
+                           range(nb_samples)):
         ax.add_patch(plt.Circle(prng.normal(scale=3, size=2),
                                 radius=1.0, color=sty_dict['color']))
     ax.grid(visible=True)
@@ -115,7 +116,7 @@ def plot_figure(style_label=""):
     prng = np.random.RandomState(96917002)
 
     fig, axs = plt.subplots(ncols=6, nrows=1, num=style_label,
-                            figsize=(14.8, 2.8), constrained_layout=True)
+                            figsize=(14.8, 2.8), layout='constrained')
 
     # make a suptitle, in the same style for all subfigures,
     # except those with dark backgrounds, which get a lighter color:
@@ -143,7 +144,7 @@ def plot_figure(style_label=""):
 
 if __name__ == "__main__":
 
-    # Setup a list of all available styles, in alphabetical order but
+    # Set up a list of all available styles, in alphabetical order but
     # the `default` and `classic` ones, which will be forced resp. in
     # first and second position.
     # styles with leading underscores are for internal use such as testing

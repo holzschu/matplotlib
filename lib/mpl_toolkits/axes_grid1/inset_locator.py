@@ -73,7 +73,7 @@ class AnchoredLocatorBase(AnchoredOffsetbox):
         bbox = self.get_window_extent(renderer)
         px, py = self.get_offset(bbox.width, bbox.height, 0, 0, renderer)
         bbox_canvas = Bbox.from_bounds(px, py, bbox.width, bbox.height)
-        tr = ax.figure.transFigure.inverted()
+        tr = ax.figure.transSubfigure.inverted()
         return TransformedBbox(bbox_canvas, tr)
 
 
@@ -88,7 +88,7 @@ class AnchoredSizeLocator(AnchoredLocatorBase):
         self.x_size = Size.from_any(x_size)
         self.y_size = Size.from_any(y_size)
 
-    def get_extent(self, renderer):
+    def get_bbox(self, renderer):
         bbox = self.get_bbox_to_anchor()
         dpi = renderer.points_to_pixels(72.)
 
@@ -97,12 +97,10 @@ class AnchoredSizeLocator(AnchoredLocatorBase):
         r, a = self.y_size.get_size(renderer)
         height = bbox.height * r + a * dpi
 
-        xd, yd = 0, 0
-
         fontsize = renderer.points_to_pixels(self.prop.get_size_in_points())
         pad = self.pad * fontsize
 
-        return width + 2 * pad, height + 2 * pad, xd + pad, yd + pad
+        return Bbox.from_bounds(0, 0, width, height).padded(pad)
 
 
 class AnchoredZoomLocator(AnchoredLocatorBase):
@@ -118,13 +116,14 @@ class AnchoredZoomLocator(AnchoredLocatorBase):
             bbox_to_anchor, None, loc, borderpad=borderpad,
             bbox_transform=bbox_transform)
 
-    def get_extent(self, renderer):
+    def get_bbox(self, renderer):
         bb = self.parent_axes.transData.transform_bbox(self.axes.viewLim)
         fontsize = renderer.points_to_pixels(self.prop.get_size_in_points())
         pad = self.pad * fontsize
-        return (abs(bb.width * self.zoom) + 2 * pad,
-                abs(bb.height * self.zoom) + 2 * pad,
-                pad, pad)
+        return (
+            Bbox.from_bounds(
+                0, 0, abs(bb.width * self.zoom), abs(bb.height * self.zoom))
+            .padded(pad))
 
 
 class BboxPatch(Patch):
@@ -342,7 +341,7 @@ def inset_axes(parent_axes, width, height, loc='upper right',
         Location to place the inset axes.  Valid locations are
         'upper left', 'upper center', 'upper right',
         'center left', 'center', 'center right',
-        'lower left', 'lower center, 'lower right'.
+        'lower left', 'lower center', 'lower right'.
         For backward compatibility, numeric values are accepted as well.
         See the parameter *loc* of `.Legend` for details.
 
@@ -450,7 +449,7 @@ def zoomed_inset_axes(parent_axes, zoom, loc='upper right',
         Location to place the inset axes.  Valid locations are
         'upper left', 'upper center', 'upper right',
         'center left', 'center', 'center right',
-        'lower left', 'lower center, 'lower right'.
+        'lower left', 'lower center', 'lower right'.
         For backward compatibility, numeric values are accepted as well.
         See the parameter *loc* of `.Legend` for details.
 

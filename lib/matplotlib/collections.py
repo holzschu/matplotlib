@@ -322,7 +322,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
                 paths.append(mpath.Path(np.column_stack([xs, ys]), path.codes))
             xs = self.convert_xunits(offsets[:, 0])
             ys = self.convert_yunits(offsets[:, 1])
-            offsets = np.column_stack([xs, ys])
+            offsets = np.ma.column_stack([xs, ys])
 
         if not transform.is_affine:
             paths = [transform.transform_path_non_affine(path)
@@ -545,9 +545,11 @@ class Collection(artist.Artist, cm.ScalarMappable):
         offsets = np.asanyarray(offsets)
         if offsets.shape == (2,):  # Broadcast (2,) -> (1, 2) but nothing else.
             offsets = offsets[None, :]
-        self._offsets = np.column_stack(
-            (np.asarray(self.convert_xunits(offsets[:, 0]), float),
-             np.asarray(self.convert_yunits(offsets[:, 1]), float)))
+        cstack = (np.ma.column_stack if isinstance(offsets, np.ma.MaskedArray)
+                  else np.column_stack)
+        self._offsets = cstack(
+            (np.asanyarray(self.convert_xunits(offsets[:, 0]), float),
+             np.asanyarray(self.convert_yunits(offsets[:, 1]), float)))
         self.stale = True
 
     def get_offsets(self):
@@ -606,18 +608,13 @@ class Collection(artist.Artist, cm.ScalarMappable):
             complete description.
         """
         try:
-            if isinstance(ls, str):
-                ls = cbook.ls_mapper.get(ls, ls)
-                dashes = [mlines._get_dash_pattern(ls)]
-            else:
-                try:
-                    dashes = [mlines._get_dash_pattern(ls)]
-                except ValueError:
-                    dashes = [mlines._get_dash_pattern(x) for x in ls]
-
-        except ValueError as err:
-            raise ValueError('Do not know how to convert {!r} to '
-                             'dashes'.format(ls)) from err
+            dashes = [mlines._get_dash_pattern(ls)]
+        except ValueError:
+            try:
+                dashes = [mlines._get_dash_pattern(x) for x in ls]
+            except ValueError as err:
+                emsg = f'Do not know how to convert {ls!r} to dashes'
+                raise ValueError(emsg) from err
 
         # get the list of raw 'unscaled' dash patterns
         self._us_linestyles = dashes
@@ -715,7 +712,7 @@ class Collection(artist.Artist, cm.ScalarMappable):
 
         Parameters
         ----------
-        c : color or list of rgba tuples
+        c : color or list of RGBA tuples
 
         See Also
         --------
@@ -951,7 +948,7 @@ class _CollectionWithSizes(Collection):
 
         Parameters
         ----------
-        sizes : ndarray or None
+        sizes : `numpy.ndarray` or None
             The size to set for each element of the collection.  The
             value is the 'area' of the element.
         dpi : float, default: 72
@@ -1228,7 +1225,26 @@ class PolyCollection(_CollectionWithSizes):
                        for xy, cds in zip(verts, codes)]
         self.stale = True
 
+    @classmethod
+    @_api.deprecated("3.7", alternative="fill_between")
+    def span_where(cls, x, ymin, ymax, where, **kwargs):
+        """
+        Return a `.BrokenBarHCollection` that plots horizontal bars from
+        over the regions in *x* where *where* is True.  The bars range
+        on the y-axis from *ymin* to *ymax*
 
+        *kwargs* are passed on to the collection.
+        """
+        xranges = []
+        for ind0, ind1 in cbook.contiguous_regions(where):
+            xslice = x[ind0:ind1]
+            if not len(xslice):
+                continue
+            xranges.append((xslice[0], xslice[-1] - xslice[0]))
+        return BrokenBarHCollection(xranges, [ymin, ymax - ymin], **kwargs)
+
+
+@_api.deprecated("3.7")
 class BrokenBarHCollection(PolyCollection):
     """
     A collection of horizontal bars spanning *yrange* with a sequence of
@@ -1253,23 +1269,6 @@ class BrokenBarHCollection(PolyCollection):
                   (xmin + xwidth, ymin),
                   (xmin, ymin)] for xmin, xwidth in xranges]
         super().__init__(verts, **kwargs)
-
-    @classmethod
-    def span_where(cls, x, ymin, ymax, where, **kwargs):
-        """
-        Return a `.BrokenBarHCollection` that plots horizontal bars from
-        over the regions in *x* where *where* is True.  The bars range
-        on the y-axis from *ymin* to *ymax*
-
-        *kwargs* are passed on to the collection.
-        """
-        xranges = []
-        for ind0, ind1 in cbook.contiguous_regions(where):
-            xslice = x[ind0:ind1]
-            if not len(xslice):
-                continue
-            xranges.append((xslice[0], xslice[-1] - xslice[0]))
-        return cls(xranges, [ymin, ymax - ymin], **kwargs)
 
 
 class RegularPolyCollection(_CollectionWithSizes):
@@ -1390,7 +1389,7 @@ class LineCollection(Collection):
             allowed).
         antialiaseds : bool or list of bool, default: :rc:`lines.antialiased`
             Whether to use antialiasing for each line.
-        zorder : int, default: 2
+        zorder : float, default: 2
             zorder of the lines once drawn.
 
         facecolors : color or list of color, default: 'none'
@@ -1468,7 +1467,7 @@ class LineCollection(Collection):
         ----------
         c : color or list of colors
             Single color (all lines have same color), or a
-            sequence of rgba tuples; if it is a sequence the lines will
+            sequence of RGBA tuples; if it is a sequence the lines will
             cycle through the sequence.
         """
         self.set_edgecolor(c)
@@ -1955,7 +1954,16 @@ class QuadMesh(Collection):
 
         Parameters
         ----------
-        A : (M, N) array-like or M*N array-like
+        A : array-like
+            The mesh data. Supported array shapes are:
+
+            - (M, N) or (M*N,): a mesh with scalar data. The values are mapped
+              to colors using normalization and a colormap. See parameters
+              *norm*, *cmap*, *vmin*, *vmax*.
+            - (M, N, 3): an image with RGB values (0-1 float or 0-255 int).
+            - (M, N, 4): an image with RGBA values (0-1 float or 0-255 int),
+              i.e. including transparency.
+
             If the values are provided as a 2D grid, the shape must match the
             coordinates grid. If the values are 1D, they are reshaped to 2D.
             M, N follow from the coordinates grid, where the coordinates grid
@@ -1963,36 +1971,18 @@ class QuadMesh(Collection):
             shading.
         """
         height, width = self._coordinates.shape[0:-1]
-        misshapen_data = False
-        faulty_data = False
-
         if self._shading == 'flat':
-            h, w = height-1, width-1
+            h, w = height - 1, width - 1
         else:
             h, w = height, width
-
+        ok_shapes = [(h, w, 3), (h, w, 4), (h, w), (h * w,)]
         if A is not None:
             shape = np.shape(A)
-            if len(shape) == 1:
-                if shape[0] != (h*w):
-                    faulty_data = True
-            elif shape != (h, w):
-                if np.prod(shape) == (h * w):
-                    misshapen_data = True
-                else:
-                    faulty_data = True
-
-            if misshapen_data:
+            if shape not in ok_shapes:
                 raise ValueError(
                     f"For X ({width}) and Y ({height}) with {self._shading} "
-                    f"shading, the expected shape of A is ({h}, {w}), not "
-                    f"{A.shape}")
-
-            if faulty_data:
-                raise TypeError(
-                    f"Dimensions of A {A.shape} are incompatible with "
-                    f"X ({width}) and/or Y ({height})")
-
+                    f"shading, A should have shape "
+                    f"{' or '.join(map(str, ok_shapes))}, not {A.shape}")
         return super().set_array(A)
 
     def get_datalim(self, transData):

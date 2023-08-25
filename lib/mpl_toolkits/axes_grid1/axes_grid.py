@@ -20,7 +20,6 @@ def _tick_only(ax, bottom_on, left_on):
 class CbarAxesBase:
     def __init__(self, *args, orientation, **kwargs):
         self.orientation = orientation
-        self._locator = None  # deprecated.
         super().__init__(*args, **kwargs)
 
     def colorbar(self, mappable, *, ticks=None, **kwargs):
@@ -48,7 +47,7 @@ class Grid:
     """
     A grid of Axes.
 
-    In Matplotlib, the axes location (and size) is specified in normalized
+    In Matplotlib, the Axes location (and size) is specified in normalized
     figure coordinates. This may not be ideal for images that needs to be
     displayed with a given aspect ratio; for example, it is difficult to
     display multiple images of a same size with some fixed padding between
@@ -99,13 +98,14 @@ class Grid:
             Whether all axes of a column share their x-axis.
         share_y : bool, default: True
             Whether all axes of a row share their y-axis.
-        label_mode : {"L", "1", "all"}, default: "L"
+        label_mode : {"L", "1", "all", "keep"}, default: "L"
             Determines which axes will get tick labels:
 
             - "L": All axes on the left column get vertical tick labels;
               all axes on the bottom row get horizontal tick labels.
             - "1": Only the bottom left axes is labelled.
-            - "all": all axes are labelled.
+            - "all": All axes are labelled.
+            - "keep": Do not do anything.
 
         axes_class : subclass of `matplotlib.axes.Axes`, default: None
         aspect : bool, default: False
@@ -258,13 +258,14 @@ class Grid:
 
         Parameters
         ----------
-        mode : {"L", "1", "all"}
+        mode : {"L", "1", "all", "keep"}
             The label mode:
 
             - "L": All axes on the left column get vertical tick labels;
               all axes on the bottom row get horizontal tick labels.
             - "1": Only the bottom left axes is labelled.
-            - "all": all axes are labelled.
+            - "all": All axes are labelled.
+            - "keep": Do not do anything.
         """
         if mode == "all":
             for ax in self.axes_all:
@@ -292,6 +293,16 @@ class Grid:
 
             ax = self.axes_llc
             _tick_only(ax, bottom_on=False, left_on=False)
+        else:
+            # Use _api.check_in_list at the top of the method when deprecation
+            # period expires
+            if mode != 'keep':
+                _api.warn_deprecated(
+                    '3.7', name="Grid label_mode",
+                    message='Passing an undefined label_mode is deprecated '
+                            'since %(since)s and will become an error '
+                            '%(removal)s. To silence this warning, pass '
+                            '"keep", which gives the same behaviour.')
 
     def get_divider(self):
         return self._divider
