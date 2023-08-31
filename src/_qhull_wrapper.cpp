@@ -271,7 +271,7 @@ delaunay(PyObject *self, PyObject *args)
                           &verbose)) {
 #else
                           x_converter_contiguous, &xarray,
-                          x_converter_contiguous, &yarray, 
+                          x_converter_contiguous, &yarray,
                           &verbose)) {
 #endif
         return NULL;
