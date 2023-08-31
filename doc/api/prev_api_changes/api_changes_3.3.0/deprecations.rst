@@ -232,7 +232,7 @@ Deprecated rcParams validators
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The following validators, defined in `.rcsetup`, are deprecated:
 ``validate_fontset``, ``validate_mathtext_default``, ``validate_alignment``,
-``validate_svg_fontset``, ``validate_pgf_texsystem``,
+``validate_svg_fonttype``, ``validate_pgf_texsystem``,
 ``validate_movie_frame_fmt``, ``validate_axis_locator``,
 ``validate_movie_html_fmt``, ``validate_grid_axis``,
 ``validate_axes_titlelocation``, ``validate_toolbar``,
@@ -273,13 +273,13 @@ mathtext glues
 The *copy* parameter of ``mathtext.Glue`` is deprecated (the underlying glue
 spec is now immutable).  ``mathtext.GlueSpec`` is deprecated.
 
-Signatures of `.Artist.draw` and `.Axes.draw`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The *inframe* parameter to `.Axes.draw` is deprecated.  Use
+Signatures of `.Artist.draw` and `matplotlib.axes.Axes.draw`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The *inframe* parameter to `matplotlib.axes.Axes.draw` is deprecated.  Use
 `.Axes.redraw_in_frame` instead.
 
-Not passing the *renderer* parameter to `.Axes.draw` is deprecated.  Use
-``axes.draw_artist(axes)`` instead.
+Not passing the *renderer* parameter to `matplotlib.axes.Axes.draw` is
+deprecated. Use ``axes.draw_artist(axes)`` instead.
 
 These changes make the signature of the ``draw`` (``artist.draw(renderer)``)
 method consistent across all artists; thus, additional parameters to

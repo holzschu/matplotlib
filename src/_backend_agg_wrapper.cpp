@@ -53,7 +53,7 @@ static PyObject *PyBufferRegion_to_string(PyBufferRegion *self, PyObject *args)
         return NULL;
     }
     return PyBytes_FromStringAndSize((const char *)self->x->get_data(),
-                                     self->x->get_height() * self->x->get_stride());
+                                     (Py_ssize_t) self->x->get_height() * self->x->get_stride());
 }
 
 /* TODO: This doesn't seem to be used internally.  Remove? */
@@ -98,8 +98,10 @@ static PyObject *PyBufferRegion_to_string_argb(PyBufferRegion *self, PyObject *a
     }
     PyObject *bufobj;
     uint8_t *buf;
-
-    bufobj = PyBytes_FromStringAndSize(NULL, self->x->get_height() * self->x->get_stride());
+    Py_ssize_t height, stride;
+    height = self->x->get_height();
+    stride = self->x->get_stride();
+    bufobj = PyBytes_FromStringAndSize(NULL, height * stride);
     buf = (uint8_t *)PyBytes_AS_STRING(bufobj);
 
     CALL_CPP_CLEANUP("to_string_argb", (self->x->to_string_argb(buf)), Py_DECREF(bufobj));
@@ -511,14 +513,16 @@ PyRendererAgg_draw_gouraud_triangle(PyRendererAgg *self, PyObject *args)
 
     if (points.dim(0) != 3 || points.dim(1) != 2) {
         PyErr_Format(PyExc_ValueError,
-                     "points must be a 3x2 array, got %" NPY_INTP_FMT "x%" NPY_INTP_FMT,
+                     "points must have shape (3, 2), "
+                     "got (%" NPY_INTP_FMT ", %" NPY_INTP_FMT ")",
                      points.dim(0), points.dim(1));
         return NULL;
     }
 
     if (colors.dim(0) != 3 || colors.dim(1) != 4) {
         PyErr_Format(PyExc_ValueError,
-                     "colors must be a 3x4 array, got %" NPY_INTP_FMT "x%" NPY_INTP_FMT,
+                     "colors must have shape (3, 4), "
+                     "got (%" NPY_INTP_FMT ", %" NPY_INTP_FMT ")",
                      colors.dim(0), colors.dim(1));
         return NULL;
     }
@@ -561,24 +565,16 @@ PyRendererAgg_draw_gouraud_triangles(PyRendererAgg *self, PyObject *args)
                           &trans)) {
         return NULL;
     }
-
-    if (points.size() != 0 && (points.dim(1) != 3 || points.dim(2) != 2)) {
-        PyErr_Format(PyExc_ValueError,
-                     "points must be a Nx3x2 array, got %" NPY_INTP_FMT "x%" NPY_INTP_FMT "x%" NPY_INTP_FMT,
-                     points.dim(0), points.dim(1), points.dim(2));
+    if (points.size() && !check_trailing_shape(points, "points", 3, 2)) {
         return NULL;
     }
-
-    if (colors.size() != 0 && (colors.dim(1) != 3 || colors.dim(2) != 4)) {
-        PyErr_Format(PyExc_ValueError,
-                     "colors must be a Nx3x4 array, got %" NPY_INTP_FMT "x%" NPY_INTP_FMT "x%" NPY_INTP_FMT,
-                     colors.dim(0), colors.dim(1), colors.dim(2));
+    if (colors.size() && !check_trailing_shape(colors, "colors", 3, 4)) {
         return NULL;
     }
-
     if (points.size() != colors.size()) {
         PyErr_Format(PyExc_ValueError,
-                     "points and colors arrays must be the same length, got %" NPY_INTP_FMT " and %" NPY_INTP_FMT,
+                     "points and colors arrays must be the same length, got "
+                     "%" NPY_INTP_FMT " points and %" NPY_INTP_FMT "colors",
                      points.dim(0), colors.dim(0));
         return NULL;
     }
@@ -700,8 +696,6 @@ static PyTypeObject *PyRendererAgg_init_type()
 
 static struct PyModuleDef moduledef = { PyModuleDef_HEAD_INIT, "_backend_agg" };
 
-#pragma GCC visibility push(default)
-
 PyMODINIT_FUNC PyInit__backend_agg(void)
 {
     import_array();
@@ -716,5 +710,3 @@ PyMODINIT_FUNC PyInit__backend_agg(void)
     }
     return m;
 }
-
-#pragma GCC visibility pop

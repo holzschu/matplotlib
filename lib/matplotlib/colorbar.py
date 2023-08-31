@@ -20,7 +20,6 @@ from matplotlib import _api, cbook, collections, cm, colors, contour, ticker
 import matplotlib.artist as martist
 import matplotlib.patches as mpatches
 import matplotlib.path as mpath
-import matplotlib.scale as mscale
 import matplotlib.spines as mspines
 import matplotlib.transforms as mtransforms
 from matplotlib import _docstring
@@ -246,49 +245,64 @@ class Colorbar:
     alpha : float
         The colorbar transparency between 0 (transparent) and 1 (opaque).
 
-    orientation : {'vertical', 'horizontal'}
+    orientation : None or {'vertical', 'horizontal'}
+        If None, use the value determined by *location*. If both
+        *orientation* and *location* are None then defaults to 'vertical'.
 
     ticklocation : {'auto', 'left', 'right', 'top', 'bottom'}
+        The location of the colorbar ticks. The *ticklocation* must match
+        *orientation*. For example, a horizontal colorbar can only have ticks
+        at the top or the bottom. If 'auto', the ticks will be the same as
+        *location*, so a colorbar to the left will have ticks to the left. If
+        *location* is None, the ticks will be at the bottom for a horizontal
+        colorbar and at the right for a vertical.
 
     drawedges : bool
+        Whether to draw lines at color boundaries.
 
-    filled : bool
+
     %(_colormap_kw_doc)s
+
+    location : None or {'left', 'right', 'top', 'bottom'}
+        Set the *orientation* and *ticklocation* of the colorbar using a
+        single argument. Colorbars on the left and right are vertical,
+        colorbars at the top and bottom are horizontal. The *ticklocation* is
+        the same as *location*, so if *location* is 'top', the ticks are on
+        the top. *orientation* and/or *ticklocation* can be provided as well
+        and overrides the value set by *location*, but there will be an error
+        for incompatible combinations.
+
+        .. versionadded:: 3.7
     """
 
     n_rasterize = 50  # rasterize solids if number of colors >= n_rasterize
 
-    @_api.delete_parameter("3.6", "filled")
     def __init__(self, ax, mappable=None, *, cmap=None,
                  norm=None,
                  alpha=None,
                  values=None,
                  boundaries=None,
-                 orientation='vertical',
+                 orientation=None,
                  ticklocation='auto',
                  extend=None,
                  spacing='uniform',  # uniform or proportional
                  ticks=None,
                  format=None,
                  drawedges=False,
-                 filled=True,
                  extendfrac=None,
                  extendrect=False,
                  label='',
+                 location=None,
                  ):
 
         if mappable is None:
             mappable = cm.ScalarMappable(norm=norm, cmap=cmap)
 
-        # Ensure the given mappable's norm has appropriate vmin and vmax
-        # set even if mappable.draw has not yet been called.
-        if mappable.get_array() is not None:
-            mappable.autoscale_None()
-
         self.mappable = mappable
         cmap = mappable.cmap
         norm = mappable.norm
 
+        filled = True
         if isinstance(mappable, contour.ContourSet):
             cs = mappable
             alpha = cs.get_alpha()
@@ -305,13 +319,22 @@ class Colorbar:
         mappable.colorbar_cid = mappable.callbacks.connect(
             'changed', self.update_normal)
 
+        location_orientation = _get_orientation_from_location(location)
+
         _api.check_in_list(
-            ['vertical', 'horizontal'], orientation=orientation)
+            [None, 'vertical', 'horizontal'], orientation=orientation)
         _api.check_in_list(
             ['auto', 'left', 'right', 'top', 'bottom'],
             ticklocation=ticklocation)
         _api.check_in_list(
             ['uniform', 'proportional'], spacing=spacing)
+
+        if location_orientation is not None and orientation is not None:
+            if location_orientation != orientation:
+                raise TypeError(
+                    "location and orientation are mutually exclusive")
+        else:
+            orientation = orientation or location_orientation or "vertical"
 
         self.ax = ax
         self.ax._axes_locator = _ColorbarAxesLocator(self)
@@ -362,10 +385,10 @@ class Colorbar:
         self._minorlocator = None
         self._formatter = None
         self._minorformatter = None
-        self.__scale = None  # linear, log10 for now.  Hopefully more?
 
         if ticklocation == 'auto':
-            ticklocation = 'bottom' if orientation == 'horizontal' else 'right'
+            ticklocation = _get_ticklocation_from_orientation(
+                orientation) if location is None else location
         self.ticklocation = ticklocation
 
         self.set_label(label)
@@ -458,8 +481,6 @@ class Colorbar:
         del self.ax.cla
         self.ax.cla()
 
-    filled = _api.deprecate_privatize_attribute("3.6")
-
     def update_normal(self, mappable):
         """
         Update solid patches, lines, etc.
@@ -487,14 +508,6 @@ class Colorbar:
             if not CS.filled:
                 self.add_lines(CS)
         self.stale = True
-
-    @_api.deprecated("3.6", alternative="fig.draw_without_rendering()")
-    def draw_all(self):
-        """
-        Calculate any free parameters based on the current cmap and norm,
-        and do all the drawing.
-        """
-        self._draw_all()
 
     def _draw_all(self):
         """
@@ -737,15 +750,15 @@ class Colorbar:
              lambda self, levels, colors, linewidths, erase=True: locals()],
             self, *args, **kwargs)
         if "CS" in params:
-            self, CS, erase = params.values()
-            if not isinstance(CS, contour.ContourSet) or CS.filled:
+            self, cs, erase = params.values()
+            if not isinstance(cs, contour.ContourSet) or cs.filled:
                 raise ValueError("If a single artist is passed to add_lines, "
                                  "it must be a ContourSet of lines")
             # TODO: Make colorbar lines auto-follow changes in contour lines.
             return self.add_lines(
-                CS.levels,
-                [c[0] for c in CS.tcolors],
-                [t[0] for t in CS.tlinewidths],
+                cs.levels,
+                cs.to_rgba(cs.cvalues, cs.alpha),
+                cs.get_linewidths(),
                 erase=erase)
         else:
             self, levels, colors, linewidths, erase = params.values()
@@ -789,7 +802,7 @@ class Colorbar:
 
     def update_ticks(self):
         """
-        Setup the ticks and ticklabels. This should not be needed by users.
+        Set up the ticks and ticklabels. This should not be needed by users.
         """
         # Get the locator and formatter; defaults to self._locator if not None.
         self._get_ticker_locator_formatter()
@@ -845,15 +858,13 @@ class Colorbar:
         self._minorlocator = minorlocator
         _log.debug('locator: %r', locator)
 
-    @_api.delete_parameter("3.5", "update_ticks")
-    def set_ticks(self, ticks, update_ticks=True, labels=None, *,
-                  minor=False, **kwargs):
+    def set_ticks(self, ticks, *, labels=None, minor=False, **kwargs):
         """
         Set tick locations.
 
         Parameters
         ----------
-        ticks : list of floats
+        ticks : 1D array-like
             List of tick locations.
         labels : list of str, optional
             List of tick labels. If not set, the labels show the data value.
@@ -886,9 +897,7 @@ class Colorbar:
         else:
             return self._long_axis().get_majorticklocs()
 
-    @_api.delete_parameter("3.5", "update_ticks")
-    def set_ticklabels(self, ticklabels, update_ticks=True, *, minor=False,
-                       **kwargs):
+    def set_ticklabels(self, ticklabels, *, minor=False, **kwargs):
         """
         [*Discouraged*] Set tick labels.
 
@@ -915,7 +924,7 @@ class Colorbar:
             This keyword argument is ignored and will be removed.
             Deprecated
 
-         minor : bool
+        minor : bool
             If True, set minor ticks instead of major ticks.
 
         **kwargs
@@ -977,7 +986,7 @@ class Colorbar:
 
         Parameters
         ----------
-        value : {"linear", "log", "symlog", "logit", ...} or `.ScaleBase`
+        scale : {"linear", "log", "symlog", "logit", ...} or `.ScaleBase`
             The axis scale type to apply.
 
         **kwargs
@@ -992,19 +1001,12 @@ class Colorbar:
 
         Notes
         -----
-        By default, Matplotlib supports the above mentioned scales.
+        By default, Matplotlib supports the above-mentioned scales.
         Additionally, custom scales may be registered using
         `matplotlib.scale.register_scale`. These scales can then also
         be used here.
         """
-        if self.orientation == 'vertical':
-            self.ax.set_yscale(scale, **kwargs)
-        else:
-            self.ax.set_xscale(scale, **kwargs)
-        if isinstance(scale, mscale.ScaleBase):
-            self.__scale = scale.name
-        else:
-            self.__scale = scale
+        self._long_axis()._set_axes_scale(scale, **kwargs)
 
     def remove(self):
         """
@@ -1082,7 +1084,10 @@ class Colorbar:
             b = np.hstack((b, b[-1] + 1))
 
         # transform from 0-1 to vmin-vmax:
+        if self.mappable.get_array() is not None:
+            self.mappable.autoscale_None()
         if not self.norm.scaled():
+            # If we still aren't scaled after autoscaling, use 0, 1 as default
             self.norm.vmin = 0
             self.norm.vmax = 1
         self.norm.vmin, self.norm.vmax = mtransforms.nonsingular(
@@ -1156,7 +1161,11 @@ class Colorbar:
         self._minorlocator = None
         self._formatter = None
         self._minorformatter = None
-        if (self.boundaries is not None or
+        if (isinstance(self.mappable, contour.ContourSet) and
+                isinstance(self.norm, colors.LogNorm)):
+            # if contours have lognorm, give them a log scale...
+            self._set_scale('log')
+        elif (self.boundaries is not None or
                 isinstance(self.norm, colors.BoundaryNorm)):
             if self.spacing == 'uniform':
                 funcs = (self._forward_boundaries, self._inverse_boundaries)
@@ -1330,23 +1339,34 @@ ColorbarBase = Colorbar  # Backcompat API
 
 def _normalize_location_orientation(location, orientation):
     if location is None:
-        location = _api.check_getitem(
-            {None: "right", "vertical": "right", "horizontal": "bottom"},
-            orientation=orientation)
+        location = _get_ticklocation_from_orientation(orientation)
     loc_settings = _api.check_getitem({
-        "left":   {"location": "left", "orientation": "vertical",
-                   "anchor": (1.0, 0.5), "panchor": (0.0, 0.5), "pad": 0.10},
-        "right":  {"location": "right", "orientation": "vertical",
-                   "anchor": (0.0, 0.5), "panchor": (1.0, 0.5), "pad": 0.05},
-        "top":    {"location": "top", "orientation": "horizontal",
-                   "anchor": (0.5, 0.0), "panchor": (0.5, 1.0), "pad": 0.05},
-        "bottom": {"location": "bottom", "orientation": "horizontal",
-                   "anchor": (0.5, 1.0), "panchor": (0.5, 0.0), "pad": 0.15},
+        "left":   {"location": "left", "anchor": (1.0, 0.5),
+                   "panchor": (0.0, 0.5), "pad": 0.10},
+        "right":  {"location": "right", "anchor": (0.0, 0.5),
+                   "panchor": (1.0, 0.5), "pad": 0.05},
+        "top":    {"location": "top", "anchor": (0.5, 0.0),
+                   "panchor": (0.5, 1.0), "pad": 0.05},
+        "bottom": {"location": "bottom", "anchor": (0.5, 1.0),
+                   "panchor": (0.5, 0.0), "pad": 0.15},
     }, location=location)
+    loc_settings["orientation"] = _get_orientation_from_location(location)
     if orientation is not None and orientation != loc_settings["orientation"]:
         # Allow the user to pass both if they are consistent.
         raise TypeError("location and orientation are mutually exclusive")
     return loc_settings
+
+
+def _get_orientation_from_location(location):
+    return _api.check_getitem(
+        {None: None, "left": "vertical", "right": "vertical",
+         "top": "horizontal", "bottom": "horizontal"}, location=location)
+
+
+def _get_ticklocation_from_orientation(orientation):
+    return _api.check_getitem(
+        {None: "right", "vertical": "right", "horizontal": "bottom"},
+        orientation=orientation)
 
 
 @_docstring.interpd
@@ -1360,13 +1380,13 @@ def make_axes(parents, location=None, orientation=None, fraction=0.15,
 
     Parameters
     ----------
-    parents : `~.axes.Axes` or list or `numpy.ndarray` of `~.axes.Axes`
+    parents : `~matplotlib.axes.Axes` or iterable or `numpy.ndarray` of `~.axes.Axes`
         The Axes to use as parents for placing the colorbar.
     %(_make_axes_kw_doc)s
 
     Returns
     -------
-    cax : `~.axes.Axes`
+    cax : `~matplotlib.axes.Axes`
         The child axes.
     kwargs : dict
         The reduced keyword dictionary to be passed when creating the colorbar
@@ -1386,8 +1406,11 @@ def make_axes(parents, location=None, orientation=None, fraction=0.15,
     # reuse them, leading to a memory leak
     if isinstance(parents, np.ndarray):
         parents = list(parents.flat)
-    elif not isinstance(parents, list):
+    elif np.iterable(parents):
+        parents = list(parents)
+    else:
         parents = [parents]
+
     fig = parents[0].get_figure()
 
     pad0 = 0.05 if fig.get_constrained_layout() else loc_settings['pad']
@@ -1471,13 +1494,13 @@ def make_axes_gridspec(parent, *, location=None, orientation=None,
 
     Parameters
     ----------
-    parent : `~.axes.Axes`
+    parent : `~matplotlib.axes.Axes`
         The Axes to use as parent for placing the colorbar.
     %(_make_axes_kw_doc)s
 
     Returns
     -------
-    cax : `~.axes.Axes`
+    cax : `~matplotlib.axes.Axes`
         The child axes.
     kwargs : dict
         The reduced keyword dictionary to be passed when creating the colorbar

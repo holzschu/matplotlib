@@ -44,32 +44,6 @@ STYLE_BLACKLIST = {
     'toolbar', 'timezone', 'figure.max_open_warning',
     'figure.raise_window', 'savefig.directory', 'tk.window_focus',
     'docstring.hardcopy', 'date.epoch'}
-_DEPRECATED_SEABORN_STYLES = {
-    s: s.replace("seaborn", "seaborn-v0_8")
-    for s in [
-        "seaborn",
-        "seaborn-bright",
-        "seaborn-colorblind",
-        "seaborn-dark",
-        "seaborn-darkgrid",
-        "seaborn-dark-palette",
-        "seaborn-deep",
-        "seaborn-muted",
-        "seaborn-notebook",
-        "seaborn-paper",
-        "seaborn-pastel",
-        "seaborn-poster",
-        "seaborn-talk",
-        "seaborn-ticks",
-        "seaborn-white",
-        "seaborn-whitegrid",
-    ]
-}
-_DEPRECATED_SEABORN_MSG = (
-    "The seaborn styles shipped by Matplotlib are deprecated since %(since)s, "
-    "as they no longer correspond to the styles shipped by seaborn. However, "
-    "they will remain available as 'seaborn-v0_8-<style>'. Alternatively, "
-    "directly use the seaborn API instead.")
 
 
 @_docstring.Substitution(
@@ -91,27 +65,31 @@ def use(style):
     ----------
     style : str, dict, Path or list
 
-        A style specification.
+        A style specification. Valid options are:
 
-        - If a str, this can be one of the style names in `.style.available`
-          (a builtin style or a style installed in the user library path).
+        str
+            - One of the style names in `.style.available` (a builtin style or
+              a style installed in the user library path).
 
-          This can also be a dotted name of the form "package.style_name"; in
-          that case, "package" should be an importable Python package name,
-          e.g. at ``/path/to/package/__init__.py``; the loaded style file is
-          ``/path/to/package/style_name.mplstyle``.  (Style files in
-          subpackages are likewise supported.)
+            - A dotted name of the form "package.style_name"; in that case,
+              "package" should be an importable Python package name, e.g. at
+              ``/path/to/package/__init__.py``; the loaded style file is
+              ``/path/to/package/style_name.mplstyle``.  (Style files in
+              subpackages are likewise supported.)
 
-          This can also be the path or URL to a style file, which gets loaded
-          by `.rc_params_from_file`.
+            - The path or URL to a style file, which gets loaded by
+              `.rc_params_from_file`.
 
-        - If a dict, this is a mapping of key/value pairs for `.rcParams`.
+        dict
+            A mapping of key/value pairs for `matplotlib.rcParams`.
 
-        - If a Path, this is the path to a style file, which gets loaded by
-          `.rc_params_from_file`.
+        Path
+            The path to a style file, which gets loaded by
+            `.rc_params_from_file`.
 
-        - If a list, this is a list of style specifiers (str, Path or dict),
-          which get applied from first to last in the list.
+        list
+            A list of style specifiers (str, Path or dict), which are applied
+            from first to last in the list.
 
     Notes
     -----
@@ -131,9 +109,6 @@ def use(style):
     for style in styles:
         if isinstance(style, str):
             style = style_alias.get(style, style)
-            if style in _DEPRECATED_SEABORN_STYLES:
-                _api.warn_deprecated("3.6", message=_DEPRECATED_SEABORN_MSG)
-                style = _DEPRECATED_SEABORN_STYLES[style]
             if style == "default":
                 # Deprecation warnings were already handled when creating
                 # rcParamsDefault, no need to reemit them here.
@@ -149,7 +124,7 @@ def use(style):
                     path = (importlib_resources.files(pkg)
                             / f"{name}.{STYLE_EXTENSION}")
                     style = _rc_params_in_file(path)
-                except (ModuleNotFoundError, IOError) as exc:
+                except (ModuleNotFoundError, OSError, TypeError) as exc:
                     # There is an ambiguity whether a dotted name refers to a
                     # package.style_name or to a dotted file path.  Currently,
                     # we silently try the first form and then the second one;
@@ -160,8 +135,8 @@ def use(style):
         if isinstance(style, (str, Path)):
             try:
                 style = _rc_params_in_file(style)
-            except IOError as err:
-                raise IOError(
+            except OSError as err:
+                raise OSError(
                     f"{style!r} is not a valid package style, path of style "
                     f"file, URL of style file, or library style name (library "
                     f"styles are listed in `style.available`)") from err
@@ -186,18 +161,28 @@ def context(style, after_reset=False):
     style : str, dict, Path or list
         A style specification. Valid options are:
 
-        +------+-------------------------------------------------------------+
-        | str  | The name of a style or a path/URL to a style file. For a    |
-        |      | list of available style names, see `.style.available`.      |
-        +------+-------------------------------------------------------------+
-        | dict | Dictionary with valid key/value pairs for                   |
-        |      | `matplotlib.rcParams`.                                      |
-        +------+-------------------------------------------------------------+
-        | Path | A path-like object which is a path to a style file.         |
-        +------+-------------------------------------------------------------+
-        | list | A list of style specifiers (str, Path or dict) applied from |
-        |      | first to last in the list.                                  |
-        +------+-------------------------------------------------------------+
+        str
+            - One of the style names in `.style.available` (a builtin style or
+              a style installed in the user library path).
+
+            - A dotted name of the form "package.style_name"; in that case,
+              "package" should be an importable Python package name, e.g. at
+              ``/path/to/package/__init__.py``; the loaded style file is
+              ``/path/to/package/style_name.mplstyle``.  (Style files in
+              subpackages are likewise supported.)
+
+            - The path or URL to a style file, which gets loaded by
+              `.rc_params_from_file`.
+        dict
+            A mapping of key/value pairs for `matplotlib.rcParams`.
+
+        Path
+            The path to a style file, which gets loaded by
+            `.rc_params_from_file`.
+
+        list
+            A list of style specifiers (str, Path or dict), which are applied
+            from first to last in the list.
 
     after_reset : bool
         If True, apply style after resetting settings to their defaults;
@@ -243,19 +228,10 @@ def update_nested_dict(main_dict, new_dict):
     return main_dict
 
 
-class _StyleLibrary(dict):
-    def __getitem__(self, key):
-        if key in _DEPRECATED_SEABORN_STYLES:
-            _api.warn_deprecated("3.6", message=_DEPRECATED_SEABORN_MSG)
-            key = _DEPRECATED_SEABORN_STYLES[key]
-
-        return dict.__getitem__(self, key)
-
-
 # Load style library
 # ==================
 _base_library = read_style_directory(BASE_LIBRARY_PATH)
-library = _StyleLibrary()
+library = {}
 available = []
 
 

@@ -39,18 +39,6 @@ _log = logging.getLogger(__name__)
 PIXELS_PER_INCH = 75
 
 
-@_api.deprecated("3.6")
-def error_msg_wx(msg, parent=None):
-    """Signal an error condition with a popup error dialog."""
-    dialog = wx.MessageDialog(parent=parent,
-                              message=msg,
-                              caption='Matplotlib backend_wx error',
-                              style=wx.OK | wx.CENTRE)
-    dialog.ShowModal()
-    dialog.Destroy()
-    return None
-
-
 # lru_cache holds a reference to the App and prevents it from being gc'ed.
 @functools.lru_cache(1)
 def _create_wxapp():
@@ -148,10 +136,6 @@ class RendererWx(RendererBase):
 
     def flipy(self):
         # docstring inherited
-        return True
-
-    @_api.deprecated("3.6")
-    def offset_text_height(self):
         return True
 
     def get_text_width_height_descent(self, s, prop, ismath):
@@ -303,7 +287,7 @@ class GraphicsContextWx(GraphicsContextBase):
     seems to be fairly heavy, so these objects are cached based on the
     bitmap object that is passed in.
 
-    The base GraphicsContext stores colors as a RGB tuple on the unit
+    The base GraphicsContext stores colors as an RGB tuple on the unit
     interval, e.g., (0.5, 0.0, 1.0).  wxPython uses an int interval, but
     since wxPython colour management is rather simple, I have not chosen
     to implement a separate colour manager class.
@@ -398,7 +382,7 @@ class GraphicsContextWx(GraphicsContextBase):
         self.unselect()
 
     def get_wxcolour(self, color):
-        """Convert a RGB(A) color to a wx.Colour."""
+        """Convert an RGB(A) color to a wx.Colour."""
         _log.debug("%s - get_wx_color()", type(self))
         return wx.Colour(*[int(255 * x) for x in color])
 
@@ -537,8 +521,8 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
             open_success = wx.TheClipboard.Open()
             if open_success:
                 wx.TheClipboard.SetData(bmp_obj)
-                wx.TheClipboard.Close()
                 wx.TheClipboard.Flush()
+                wx.TheClipboard.Close()
 
     def draw_idle(self):
         # docstring inherited
@@ -584,7 +568,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         for i, (name, exts) in enumerate(sorted_filetypes):
             ext_list = ';'.join(['*.%s' % ext for ext in exts])
             extensions.append(exts[0])
-            wildcard = '%s (%s)|%s' % (name, ext_list, ext_list)
+            wildcard = f'{name} ({ext_list})|{ext_list}'
             if default_filetype in exts:
                 filter_index = i
             wildcards.append(wildcard)
@@ -595,8 +579,6 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         """
         Update the displayed image on the GUI canvas, using the supplied
         wx.PaintDC device context.
-
-        The 'WXAgg' backend sets origin accordingly.
         """
         _log.debug("%s - gui_repaint()", type(self))
         # The "if self" check avoids a "wrapped C/C++ object has been deleted"
@@ -605,7 +587,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
             return
         if not drawDC:  # not called from OnPaint use a ClientDC
             drawDC = wx.ClientDC(self)
-        # For 'WX' backend on Windows, the bitmap can not be in use by another
+        # For 'WX' backend on Windows, the bitmap cannot be in use by another
         # DC (see GraphicsContextWx._cache).
         bmp = (self.bitmap.ConvertToImage().ConvertToBitmap()
                if wx.Platform == '__WXMSW__'
@@ -631,15 +613,6 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         'tiff': 'Tagged Image Format File',
         'xpm': 'X pixmap',
     }
-
-    def print_figure(self, filename, *args, **kwargs):
-        # docstring inherited
-        super().print_figure(filename, *args, **kwargs)
-        # Restore the current view; this is needed because the artist contains
-        # methods rely on particular attributes of the rendered figure for
-        # determining things like bounding boxes.
-        if self._isDrawn:
-            self.draw()
 
     def _on_paint(self, event):
         """Called when wxPaintEvt is generated."""
@@ -696,8 +669,22 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         ResizeEvent("resize_event", self)._process()
         self.draw_idle()
 
-    def _get_key(self, event):
+    @staticmethod
+    def _mpl_modifiers(event=None, *, exclude=None):
+        mod_table = [
+            ("ctrl", wx.MOD_CONTROL, wx.WXK_CONTROL),
+            ("alt", wx.MOD_ALT, wx.WXK_ALT),
+            ("shift", wx.MOD_SHIFT, wx.WXK_SHIFT),
+        ]
+        if event is not None:
+            modifiers = event.GetModifiers()
+            return [name for name, mod, key in mod_table
+                    if modifiers & mod and exclude != key]
+        else:
+            return [name for name, mod, key in mod_table
+                    if wx.GetKeyState(key)]
 
+    def _get_key(self, event):
         keyval = event.KeyCode
         if keyval in self.keyvald:
             key = self.keyvald[keyval]
@@ -708,18 +695,11 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
             if not event.ShiftDown():
                 key = key.lower()
         else:
-            key = None
-
-        for meth, prefix, key_name in [
-                (event.ControlDown, 'ctrl', 'control'),
-                (event.AltDown, 'alt', 'alt'),
-                (event.ShiftDown, 'shift', 'shift'),
-        ]:
-            if meth() and key_name != key:
-                if not (key_name == 'shift' and key.isupper()):
-                    key = '{0}+{1}'.format(prefix, key)
-
-        return key
+            return None
+        mods = self._mpl_modifiers(event, exclude=keyval)
+        if "shift" in mods and key.isupper():
+            mods.remove("shift")
+        return "+".join([*mods, key])
 
     def _mpl_coords(self, pos=None):
         """
@@ -789,15 +769,17 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         }
         button = event.GetButton()
         button = button_map.get(button, button)
+        modifiers = self._mpl_modifiers(event)
         if event.ButtonDown():
-            MouseEvent("button_press_event", self,
-                       x, y, button, guiEvent=event)._process()
+            MouseEvent("button_press_event", self, x, y, button,
+                       modifiers=modifiers, guiEvent=event)._process()
         elif event.ButtonDClick():
-            MouseEvent("button_press_event", self,
-                       x, y, button, dblclick=True, guiEvent=event)._process()
+            MouseEvent("button_press_event", self, x, y, button,
+                       dblclick=True, modifiers=modifiers,
+                       guiEvent=event)._process()
         elif event.ButtonUp():
-            MouseEvent("button_release_event", self,
-                       x, y, button, guiEvent=event)._process()
+            MouseEvent("button_release_event", self, x, y, button,
+                       modifiers=modifiers, guiEvent=event)._process()
 
     def _on_mouse_wheel(self, event):
         """Translate mouse wheel events into matplotlib events"""
@@ -815,14 +797,16 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
                 return  # Return without processing event
             else:
                 self._skipwheelevent = True
-        MouseEvent("scroll_event", self,
-                   x, y, step=step, guiEvent=event)._process()
+        MouseEvent("scroll_event", self, x, y, step=step,
+                   modifiers=self._mpl_modifiers(event),
+                   guiEvent=event)._process()
 
     def _on_motion(self, event):
         """Start measuring on an axis."""
         event.Skip()
         MouseEvent("motion_notify_event", self,
                    *self._mpl_coords(event),
+                   modifiers=self._mpl_modifiers(event),
                    guiEvent=event)._process()
 
     def _on_enter(self, event):
@@ -830,6 +814,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         event.Skip()
         LocationEvent("figure_enter_event", self,
                       *self._mpl_coords(event),
+                      modifiers=self._mpl_modifiers(),
                       guiEvent=event)._process()
 
     def _on_leave(self, event):
@@ -837,6 +822,7 @@ class _FigureCanvasWxBase(FigureCanvasBase, wx.Panel):
         event.Skip()
         LocationEvent("figure_leave_event", self,
                       *self._mpl_coords(event),
+                      modifiers=self._mpl_modifiers(),
                       guiEvent=event)._process()
 
 
@@ -889,7 +875,7 @@ class FigureCanvasWx(_FigureCanvasWxBase):
 
 
 class FigureFrameWx(wx.Frame):
-    def __init__(self, num, fig, *, canvas_class=None):
+    def __init__(self, num, fig, *, canvas_class):
         # On non-Windows platform, explicitly set the position - fix
         # positioning bug on some Linux platforms
         if wx.Platform == '__WXMSW__':
@@ -901,16 +887,7 @@ class FigureFrameWx(wx.Frame):
         _log.debug("%s - __init__()", type(self))
         _set_frame_icon(self)
 
-        # The parameter will become required after the deprecation elapses.
-        if canvas_class is not None:
-            self.canvas = canvas_class(self, -1, fig)
-        else:
-            _api.warn_deprecated(
-                "3.6", message="The canvas_class parameter will become "
-                "required after the deprecation period starting in Matplotlib "
-                "%(since)s elapses.")
-            self.canvas = self.get_canvas(fig)
-
+        self.canvas = canvas_class(self, -1, fig)
         # Auto-attaches itself to self.canvas.manager
         manager = FigureManagerWx(self.canvas, num, self)
 
@@ -928,28 +905,6 @@ class FigureFrameWx(wx.Frame):
         self.Fit()
 
         self.Bind(wx.EVT_CLOSE, self._on_close)
-
-    sizer = _api.deprecated("3.6", alternative="frame.GetSizer()")(
-        property(lambda self: self.GetSizer()))
-    figmgr = _api.deprecated("3.6", alternative="frame.canvas.manager")(
-        property(lambda self: self.canvas.manager))
-    num = _api.deprecated("3.6", alternative="frame.canvas.manager.num")(
-        property(lambda self: self.canvas.manager.num))
-    toolbar = _api.deprecated("3.6", alternative="frame.GetToolBar()")(
-        property(lambda self: self.GetToolBar()))
-    toolmanager = _api.deprecated(
-        "3.6", alternative="frame.canvas.manager.toolmanager")(
-            property(lambda self: self.canvas.manager.toolmanager))
-
-    @_api.deprecated(
-        "3.6", alternative="the canvas_class constructor parameter")
-    def get_canvas(self, fig):
-        return FigureCanvasWx(self, -1, fig)
-
-    @_api.deprecated("3.6", alternative="frame.canvas.manager")
-    def get_figure_manager(self):
-        _log.debug("%s - get_figure_manager()", type(self))
-        return self.canvas.manager
 
     def _on_close(self, event):
         _log.debug("%s - on_close()", type(self))
@@ -998,6 +953,13 @@ class FigureManagerWx(FigureManagerBase):
             manager.frame.Show()
             figure.canvas.draw_idle()
         return manager
+
+    @classmethod
+    def start_main_loop(cls):
+        if not wx.App.IsMainLoopRunning():
+            wxapp = wx.GetApp()
+            if wxapp is not None:
+                wxapp.MainLoop()
 
     def show(self):
         # docstring inherited
@@ -1092,7 +1054,9 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
         *name*, including the extension and relative to Matplotlib's "images"
         data directory.
         """
-        image = np.array(PIL.Image.open(cbook._get_data_path("images", name)))
+        pilimg = PIL.Image.open(cbook._get_data_path("images", name))
+        # ensure RGBA as wx BitMap expects RGBA format
+        image = np.array(pilimg.convert("RGBA"))
         try:
             dark = wx.SystemSettings.GetAppearance().IsDark()
         except AttributeError:  # wxpython < 4.1
@@ -1172,7 +1136,7 @@ class NavigationToolbar2Wx(NavigationToolbar2, wx.ToolBar):
 
     def set_history_buttons(self):
         can_backward = self._nav_stack._pos > 0
-        can_forward = self._nav_stack._pos < len(self._nav_stack._elements) - 1
+        can_forward = self._nav_stack._pos < len(self._nav_stack) - 1
         if 'Back' in self.wx_ids:
             self.EnableTool(self.wx_ids['Back'], can_backward)
         if 'Forward' in self.wx_ids:
@@ -1365,10 +1329,4 @@ FigureManagerWx._toolmanager_toolbar_class = ToolbarWx
 class _BackendWx(_Backend):
     FigureCanvas = FigureCanvasWx
     FigureManager = FigureManagerWx
-
-    @staticmethod
-    def mainloop():
-        if not wx.App.IsMainLoopRunning():
-            wxapp = wx.GetApp()
-            if wxapp is not None:
-                wxapp.MainLoop()
+    mainloop = FigureManagerWx.start_main_loop

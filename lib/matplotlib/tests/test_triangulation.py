@@ -72,6 +72,29 @@ def test_triangulation_init():
         mtri.Triangulation(x, y, [[0, 1, -1]])
 
 
+def test_triangulation_set_mask():
+    x = [-1, 0, 1, 0]
+    y = [0, -1, 0, 1]
+    triangles = [[0, 1, 2], [2, 3, 0]]
+    triang = mtri.Triangulation(x, y, triangles)
+
+    # Check neighbors, which forces creation of C++ triangulation
+    assert_array_equal(triang.neighbors, [[-1, -1, 1], [-1, -1, 0]])
+
+    # Set mask
+    triang.set_mask([False, True])
+    assert_array_equal(triang.mask, [False, True])
+
+    # Reset mask
+    triang.set_mask(None)
+    assert triang.mask is None
+
+    msg = r"mask array must have same length as triangles array"
+    for mask in ([False, True, False], [False], [True], False, True):
+        with pytest.raises(ValueError, match=msg):
+            triang.set_mask(mask)
+
+
 def test_delaunay():
     # No duplicate points, regular grid.
     nx = 5
@@ -257,6 +280,8 @@ def test_tripcolor_color():
     with pytest.raises(TypeError,
                        match="positional.*'c'.*keyword-only.*'facecolors'"):
         ax.tripcolor(x, y, C=[1, 2, 3, 4])
+    with pytest.raises(TypeError, match="Unexpected positional parameter"):
+        ax.tripcolor(x, y, [1, 2], 'unused_positional')
 
     # smoke test for valid color specifications (via C or facecolors)
     ax.tripcolor(x, y, [1, 2, 3, 4])  # edges
@@ -280,9 +305,6 @@ def test_tripcolor_warnings():
     y = [0, -1, 0, 1]
     c = [0.4, 0.5]
     fig, ax = plt.subplots()
-    # additional parameters
-    with pytest.warns(DeprecationWarning, match="Additional positional param"):
-        ax.tripcolor(x, y, c, 'unused_positional')
     # facecolors takes precedence over c
     with pytest.warns(UserWarning, match="Positional parameter c .*no effect"):
         ax.tripcolor(x, y, c, facecolors=c)
@@ -1166,55 +1188,62 @@ def test_internal_cpp_api():
     # C++ Triangulation.
     with pytest.raises(
             TypeError,
-            match=r'function takes exactly 7 arguments \(0 given\)'):
+            match=r'__init__\(\): incompatible constructor arguments.'):
         mpl._tri.Triangulation()
 
     with pytest.raises(
             ValueError, match=r'x and y must be 1D arrays of the same length'):
-        mpl._tri.Triangulation([], [1], [[]], None, None, None, False)
+        mpl._tri.Triangulation([], [1], [[]], (), (), (), False)
 
     x = [0, 1, 1]
     y = [0, 0, 1]
     with pytest.raises(
             ValueError,
             match=r'triangles must be a 2D array of shape \(\?,3\)'):
-        mpl._tri.Triangulation(x, y, [[0, 1]], None, None, None, False)
+        mpl._tri.Triangulation(x, y, [[0, 1]], (), (), (), False)
 
     tris = [[0, 1, 2]]
     with pytest.raises(
             ValueError,
             match=r'mask must be a 1D array with the same length as the '
                   r'triangles array'):
-        mpl._tri.Triangulation(x, y, tris, [0, 1], None, None, False)
+        mpl._tri.Triangulation(x, y, tris, [0, 1], (), (), False)
 
     with pytest.raises(
             ValueError, match=r'edges must be a 2D array with shape \(\?,2\)'):
-        mpl._tri.Triangulation(x, y, tris, None, [[1]], None, False)
+        mpl._tri.Triangulation(x, y, tris, (), [[1]], (), False)
 
     with pytest.raises(
             ValueError,
             match=r'neighbors must be a 2D array with the same shape as the '
                   r'triangles array'):
-        mpl._tri.Triangulation(x, y, tris, None, None, [[-1]], False)
+        mpl._tri.Triangulation(x, y, tris, (), (), [[-1]], False)
 
-    triang = mpl._tri.Triangulation(x, y, tris, None, None, None, False)
+    triang = mpl._tri.Triangulation(x, y, tris, (), (), (), False)
 
     with pytest.raises(
             ValueError,
-            match=r'z array must have same length as triangulation x and y '
-                  r'array'):
+            match=r'z must be a 1D array with the same length as the '
+                  r'triangulation x and y arrays'):
         triang.calculate_plane_coefficients([])
 
-    with pytest.raises(
-            ValueError,
-            match=r'mask must be a 1D array with the same length as the '
-                  r'triangles array'):
-        triang.set_mask([0, 1])
+    for mask in ([0, 1], None):
+        with pytest.raises(
+                ValueError,
+                match=r'mask must be a 1D array with the same length as the '
+                      r'triangles array'):
+            triang.set_mask(mask)
+
+    triang.set_mask([True])
+    assert_array_equal(triang.get_edges(), np.empty((0, 2)))
+
+    triang.set_mask(())  # Equivalent to Python Triangulation mask=None
+    assert_array_equal(triang.get_edges(), [[1, 0], [2, 0], [2, 1]])
 
     # C++ TriContourGenerator.
     with pytest.raises(
             TypeError,
-            match=r'function takes exactly 2 arguments \(0 given\)'):
+            match=r'__init__\(\): incompatible constructor arguments.'):
         mpl._tri.TriContourGenerator()
 
     with pytest.raises(
@@ -1232,7 +1261,8 @@ def test_internal_cpp_api():
 
     # C++ TrapezoidMapTriFinder.
     with pytest.raises(
-            TypeError, match=r'function takes exactly 1 argument \(0 given\)'):
+            TypeError,
+            match=r'__init__\(\): incompatible constructor arguments.'):
         mpl._tri.TrapezoidMapTriFinder()
 
     trifinder = mpl._tri.TrapezoidMapTriFinder(triang)
@@ -1310,3 +1340,64 @@ def test_triplot_label():
     assert labels == ['label']
     assert len(handles) == 1
     assert handles[0] is lines
+
+
+def test_tricontour_path():
+    x = [0, 4, 4, 0, 2]
+    y = [0, 0, 4, 4, 2]
+    triang = mtri.Triangulation(x, y)
+    _, ax = plt.subplots()
+
+    # Line strip from boundary to boundary
+    cs = ax.tricontour(triang, [1, 0, 0, 0, 0], levels=[0.5])
+    paths = cs.get_paths()
+    assert len(paths) == 1
+    expected_vertices = [[2, 0], [1, 1], [0, 2]]
+    assert_array_almost_equal(paths[0].vertices, expected_vertices)
+    assert_array_equal(paths[0].codes, [1, 2, 2])
+    assert_array_almost_equal(
+        paths[0].to_polygons(closed_only=False), [expected_vertices])
+
+    # Closed line loop inside domain
+    cs = ax.tricontour(triang, [0, 0, 0, 0, 1], levels=[0.5])
+    paths = cs.get_paths()
+    assert len(paths) == 1
+    expected_vertices = [[3, 1], [3, 3], [1, 3], [1, 1], [3, 1]]
+    assert_array_almost_equal(paths[0].vertices, expected_vertices)
+    assert_array_equal(paths[0].codes, [1, 2, 2, 2, 79])
+    assert_array_almost_equal(paths[0].to_polygons(), [expected_vertices])
+
+
+def test_tricontourf_path():
+    x = [0, 4, 4, 0, 2]
+    y = [0, 0, 4, 4, 2]
+    triang = mtri.Triangulation(x, y)
+    _, ax = plt.subplots()
+
+    # Polygon inside domain
+    cs = ax.tricontourf(triang, [0, 0, 0, 0, 1], levels=[0.5, 1.5])
+    paths = cs.get_paths()
+    assert len(paths) == 1
+    expected_vertices = [[3, 1], [3, 3], [1, 3], [1, 1], [3, 1]]
+    assert_array_almost_equal(paths[0].vertices, expected_vertices)
+    assert_array_equal(paths[0].codes, [1, 2, 2, 2, 79])
+    assert_array_almost_equal(paths[0].to_polygons(), [expected_vertices])
+
+    # Polygon following boundary and inside domain
+    cs = ax.tricontourf(triang, [1, 0, 0, 0, 0], levels=[0.5, 1.5])
+    paths = cs.get_paths()
+    assert len(paths) == 1
+    expected_vertices = [[2, 0], [1, 1], [0, 2], [0, 0], [2, 0]]
+    assert_array_almost_equal(paths[0].vertices, expected_vertices)
+    assert_array_equal(paths[0].codes, [1, 2, 2, 2, 79])
+    assert_array_almost_equal(paths[0].to_polygons(), [expected_vertices])
+
+    # Polygon is outer boundary with hole
+    cs = ax.tricontourf(triang, [0, 0, 0, 0, 1], levels=[-0.5, 0.5])
+    paths = cs.get_paths()
+    assert len(paths) == 1
+    expected_vertices = [[0, 0], [4, 0], [4, 4], [0, 4], [0, 0],
+                         [1, 1], [1, 3], [3, 3], [3, 1], [1, 1]]
+    assert_array_almost_equal(paths[0].vertices, expected_vertices)
+    assert_array_equal(paths[0].codes, [1, 2, 2, 2, 79, 1, 2, 2, 2, 79])
+    assert_array_almost_equal(paths[0].to_polygons(), np.split(expected_vertices, [5]))

@@ -13,6 +13,7 @@ from . import axes_size as Size
 from .parasite_axes import HostAxes
 
 
+@_api.deprecated("3.8", alternative="Axes.inset_axes")
 class InsetPosition:
     @_docstring.dedent_interpd
     def __init__(self, parent, lbwh):
@@ -69,11 +70,13 @@ class AnchoredLocatorBase(AnchoredOffsetbox):
         raise RuntimeError("No draw method should be called")
 
     def __call__(self, ax, renderer):
+        if renderer is None:
+            renderer = ax.figure._get_renderer()
         self.axes = ax
         bbox = self.get_window_extent(renderer)
         px, py = self.get_offset(bbox.width, bbox.height, 0, 0, renderer)
         bbox_canvas = Bbox.from_bounds(px, py, bbox.width, bbox.height)
-        tr = ax.figure.transFigure.inverted()
+        tr = ax.figure.transSubfigure.inverted()
         return TransformedBbox(bbox_canvas, tr)
 
 
@@ -88,7 +91,7 @@ class AnchoredSizeLocator(AnchoredLocatorBase):
         self.x_size = Size.from_any(x_size)
         self.y_size = Size.from_any(y_size)
 
-    def get_extent(self, renderer):
+    def get_bbox(self, renderer):
         bbox = self.get_bbox_to_anchor()
         dpi = renderer.points_to_pixels(72.)
 
@@ -97,12 +100,10 @@ class AnchoredSizeLocator(AnchoredLocatorBase):
         r, a = self.y_size.get_size(renderer)
         height = bbox.height * r + a * dpi
 
-        xd, yd = 0, 0
-
         fontsize = renderer.points_to_pixels(self.prop.get_size_in_points())
         pad = self.pad * fontsize
 
-        return width + 2 * pad, height + 2 * pad, xd + pad, yd + pad
+        return Bbox.from_bounds(0, 0, width, height).padded(pad)
 
 
 class AnchoredZoomLocator(AnchoredLocatorBase):
@@ -118,13 +119,14 @@ class AnchoredZoomLocator(AnchoredLocatorBase):
             bbox_to_anchor, None, loc, borderpad=borderpad,
             bbox_transform=bbox_transform)
 
-    def get_extent(self, renderer):
+    def get_bbox(self, renderer):
         bb = self.parent_axes.transData.transform_bbox(self.axes.viewLim)
         fontsize = renderer.points_to_pixels(self.prop.get_size_in_points())
         pad = self.pad * fontsize
-        return (abs(bb.width * self.zoom) + 2 * pad,
-                abs(bb.height * self.zoom) + 2 * pad,
-                pad, pad)
+        return (
+            Bbox.from_bounds(
+                0, 0, abs(bb.width * self.zoom), abs(bb.height * self.zoom))
+            .padded(pad))
 
 
 class BboxPatch(Patch):
@@ -219,11 +221,9 @@ class BboxConnector(Patch):
             raise ValueError("transform should not be set")
 
         kwargs["transform"] = IdentityTransform()
-        if 'fill' in kwargs:
-            super().__init__(**kwargs)
-        else:
-            fill = bool({'fc', 'facecolor', 'color'}.intersection(kwargs))
-            super().__init__(fill=fill, **kwargs)
+        kwargs.setdefault(
+            "fill", bool({'fc', 'facecolor', 'color'}.intersection(kwargs)))
+        super().__init__(**kwargs)
         self.bbox1 = bbox1
         self.bbox2 = bbox2
         self.loc1 = loc1
@@ -281,10 +281,16 @@ class BboxConnectorPatch(BboxConnector):
         return Path(path_merged)
 
 
-def _add_inset_axes(parent_axes, inset_axes):
+def _add_inset_axes(parent_axes, axes_class, axes_kwargs, axes_locator):
     """Helper function to add an inset axes and disable navigation in it."""
-    parent_axes.figure.add_axes(inset_axes)
-    inset_axes.set_navigate(False)
+    if axes_class is None:
+        axes_class = HostAxes
+    if axes_kwargs is None:
+        axes_kwargs = {}
+    inset_axes = axes_class(
+        parent_axes.figure, parent_axes.get_position(),
+        **{"navigate": False, **axes_kwargs, "axes_locator": axes_locator})
+    return parent_axes.figure.add_axes(inset_axes)
 
 
 @_docstring.dedent_interpd
@@ -342,7 +348,7 @@ def inset_axes(parent_axes, width, height, loc='upper right',
         Location to place the inset axes.  Valid locations are
         'upper left', 'upper center', 'upper right',
         'center left', 'center', 'center right',
-        'lower left', 'lower center, 'lower right'.
+        'lower left', 'lower center', 'lower right'.
         For backward compatibility, numeric values are accepted as well.
         See the parameter *loc* of `.Legend` for details.
 
@@ -389,42 +395,25 @@ def inset_axes(parent_axes, width, height, loc='upper right',
         Inset axes object created.
     """
 
-    if axes_class is None:
-        axes_class = HostAxes
-    if axes_kwargs is None:
-        axes_kwargs = {}
-    inset_axes = axes_class(parent_axes.figure, parent_axes.get_position(),
-                            **axes_kwargs)
-
-    if bbox_transform in [parent_axes.transAxes,
-                          parent_axes.figure.transFigure]:
-        if bbox_to_anchor is None:
-            _api.warn_external("Using the axes or figure transform requires a "
-                               "bounding box in the respective coordinates. "
-                               "Using bbox_to_anchor=(0, 0, 1, 1) now.")
-            bbox_to_anchor = (0, 0, 1, 1)
-
+    if (bbox_transform in [parent_axes.transAxes, parent_axes.figure.transFigure]
+            and bbox_to_anchor is None):
+        _api.warn_external("Using the axes or figure transform requires a "
+                           "bounding box in the respective coordinates. "
+                           "Using bbox_to_anchor=(0, 0, 1, 1) now.")
+        bbox_to_anchor = (0, 0, 1, 1)
     if bbox_to_anchor is None:
         bbox_to_anchor = parent_axes.bbox
-
     if (isinstance(bbox_to_anchor, tuple) and
             (isinstance(width, str) or isinstance(height, str))):
         if len(bbox_to_anchor) != 4:
             raise ValueError("Using relative units for width or height "
                              "requires to provide a 4-tuple or a "
                              "`Bbox` instance to `bbox_to_anchor.")
-
-    axes_locator = AnchoredSizeLocator(bbox_to_anchor,
-                                       width, height,
-                                       loc=loc,
-                                       bbox_transform=bbox_transform,
-                                       borderpad=borderpad)
-
-    inset_axes.set_axes_locator(axes_locator)
-
-    _add_inset_axes(parent_axes, inset_axes)
-
-    return inset_axes
+    return _add_inset_axes(
+        parent_axes, axes_class, axes_kwargs,
+        AnchoredSizeLocator(
+            bbox_to_anchor, width, height, loc=loc,
+            bbox_transform=bbox_transform, borderpad=borderpad))
 
 
 @_docstring.dedent_interpd
@@ -450,7 +439,7 @@ def zoomed_inset_axes(parent_axes, zoom, loc='upper right',
         Location to place the inset axes.  Valid locations are
         'upper left', 'upper center', 'upper right',
         'center left', 'center', 'center right',
-        'lower left', 'lower center, 'lower right'.
+        'lower left', 'lower center', 'lower right'.
         For backward compatibility, numeric values are accepted as well.
         See the parameter *loc* of `.Legend` for details.
 
@@ -496,22 +485,12 @@ def zoomed_inset_axes(parent_axes, zoom, loc='upper right',
         Inset axes object created.
     """
 
-    if axes_class is None:
-        axes_class = HostAxes
-    if axes_kwargs is None:
-        axes_kwargs = {}
-    inset_axes = axes_class(parent_axes.figure, parent_axes.get_position(),
-                            **axes_kwargs)
-
-    axes_locator = AnchoredZoomLocator(parent_axes, zoom=zoom, loc=loc,
-                                       bbox_to_anchor=bbox_to_anchor,
-                                       bbox_transform=bbox_transform,
-                                       borderpad=borderpad)
-    inset_axes.set_axes_locator(axes_locator)
-
-    _add_inset_axes(parent_axes, inset_axes)
-
-    return inset_axes
+    return _add_inset_axes(
+        parent_axes, axes_class, axes_kwargs,
+        AnchoredZoomLocator(
+            parent_axes, zoom=zoom, loc=loc,
+            bbox_to_anchor=bbox_to_anchor, bbox_transform=bbox_transform,
+            borderpad=borderpad))
 
 
 class _TransformedBboxWithCallback(TransformedBbox):
@@ -568,11 +547,8 @@ def mark_inset(parent_axes, inset_axes, loc1, loc2, **kwargs):
         inset_axes.viewLim, parent_axes.transData,
         callback=parent_axes._unstale_viewLim)
 
-    if 'fill' in kwargs:
-        pp = BboxPatch(rect, **kwargs)
-    else:
-        fill = bool({'fc', 'facecolor', 'color'}.intersection(kwargs))
-        pp = BboxPatch(rect, fill=fill, **kwargs)
+    kwargs.setdefault("fill", bool({'fc', 'facecolor', 'color'}.intersection(kwargs)))
+    pp = BboxPatch(rect, **kwargs)
     parent_axes.add_patch(pp)
 
     p1 = BboxConnector(inset_axes.bbox, rect, loc1=loc1, **kwargs)

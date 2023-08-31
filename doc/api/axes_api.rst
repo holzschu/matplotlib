@@ -2,6 +2,10 @@
 ``matplotlib.axes``
 *******************
 
+The `~.axes.Axes` class represents one (sub-)plot in a figure. It contains the
+plotted data, axis ticks, labels, title, legend, etc. Its methods are the main
+interface for manipulating the plot.
+
 .. currentmodule:: matplotlib.axes
 
 .. contents:: Table of Contents
@@ -14,18 +18,15 @@
    :no-members:
    :no-undoc-members:
 
-Inheritance
-===========
-.. inheritance-diagram:: matplotlib.axes.Axes
-   :private-bases:
-
 The Axes class
 ==============
 
-.. autoclass:: Axes
-   :no-members:
-   :no-undoc-members:
-   :show-inheritance:
+.. autosummary::
+   :toctree: _as_gen
+   :template: autosummary_class_only.rst
+   :nosignatures:
+
+   Axes
 
 Plotting
 ========
@@ -109,11 +110,12 @@ Statistics
    :template: autosummary.rst
    :nosignatures:
 
+   Axes.ecdf
    Axes.boxplot
    Axes.violinplot
 
-   Axes.violin
    Axes.bxp
+   Axes.violin
 
 Binned
 ------
@@ -555,7 +557,6 @@ Drawing
    Axes.draw
    Axes.draw_artist
    Axes.redraw_in_frame
-   Axes.get_renderer_cache
 
    Axes.get_rasterization_zorder
    Axes.set_rasterization_zorder

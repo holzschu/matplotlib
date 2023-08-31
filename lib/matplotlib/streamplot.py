@@ -39,7 +39,7 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
         For different densities in each direction, use a tuple
         (density_x, density_y).
     linewidth : float or 2D array
-        The width of the stream lines. With a 2D array the line width can be
+        The width of the streamlines. With a 2D array the line width can be
         varied across the grid. The array must have the same shape as *u*
         and *v*.
     color : color or 2D array
@@ -57,11 +57,11 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
         See `~matplotlib.patches.FancyArrowPatch`.
     minlength : float
         Minimum length of streamline in axes coordinates.
-    start_points : Nx2 array
+    start_points : (N, 2) array
         Coordinates of starting points for the streamlines in data coordinates
         (the same coordinates as the *x* and *y* arrays).
-    zorder : int
-        The zorder of the stream lines and arrows.
+    zorder : float
+        The zorder of the streamlines and arrows.
         Artists with lower zorder values are drawn first.
     maxlength : float
         Maximum length of streamline in axes coordinates.
@@ -82,7 +82,7 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
         - ``lines``: `.LineCollection` of streamlines
 
         - ``arrows``: `.PatchCollection` containing `.FancyArrowPatch`
-          objects representing the arrows half-way along stream lines.
+          objects representing the arrows half-way along streamlines.
 
         This container will probably change in the future to allow changes
         to the colormap, alpha, etc. for both lines and arrows, but these
@@ -162,8 +162,8 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
         for xs, ys in sp2:
             if not (grid.x_origin <= xs <= grid.x_origin + grid.width and
                     grid.y_origin <= ys <= grid.y_origin + grid.height):
-                raise ValueError("Starting point ({}, {}) outside of data "
-                                 "boundaries".format(xs, ys))
+                raise ValueError(f"Starting point ({xs}, {ys}) outside of "
+                                 "data boundaries")
 
         # Convert start_points from data to array coords
         # Shift the seed points from the bottom left of the data so that
@@ -198,10 +198,15 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
         tx += grid.x_origin
         ty += grid.y_origin
 
-        points = np.transpose([tx, ty]).reshape(-1, 1, 2)
-        streamlines.extend(np.hstack([points[:-1], points[1:]]))
+        # Create multiple tiny segments if varying width or color is given
+        if isinstance(linewidth, np.ndarray) or use_multicolor_lines:
+            points = np.transpose([tx, ty]).reshape(-1, 1, 2)
+            streamlines.extend(np.hstack([points[:-1], points[1:]]))
+        else:
+            points = np.transpose([tx, ty])
+            streamlines.append(points)
 
-        # Add arrows half way along each trajectory.
+        # Add arrows halfway along each trajectory.
         s = np.cumsum(np.hypot(np.diff(tx), np.diff(ty)))
         n = np.searchsorted(s, s[-1] / 2.)
         arrow_tail = (tx[n], ty[n])

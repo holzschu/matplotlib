@@ -1,10 +1,10 @@
 from collections import namedtuple
 import contextlib
-from functools import lru_cache, wraps
+from functools import cache, wraps
 import inspect
 from inspect import Signature, Parameter
 import logging
-from numbers import Number
+from numbers import Number, Real
 import re
 import warnings
 
@@ -19,6 +19,27 @@ from .transforms import (Bbox, IdentityTransform, Transform, TransformedBbox,
                          TransformedPatchPath, TransformedPath)
 
 _log = logging.getLogger(__name__)
+
+
+def _prevent_rasterization(draw):
+    # We assume that by default artists are not allowed to rasterize (unless
+    # its draw method is explicitly decorated). If it is being drawn after a
+    # rasterized artist and it has reached a raster_depth of 0, we stop
+    # rasterization so that it does not affect the behavior of normal artist
+    # (e.g., change in dpi).
+
+    @wraps(draw)
+    def draw_wrapper(artist, renderer, *args, **kwargs):
+        if renderer._raster_depth == 0 and renderer._rasterizing:
+            # Only stop when we are not in a rasterized parent
+            # and something has been rasterized since last stop.
+            renderer.stop_rasterizing()
+            renderer._rasterizing = False
+
+        return draw(artist, renderer, *args, **kwargs)
+
+    draw_wrapper._supports_rasterization = False
+    return draw_wrapper
 
 
 def allow_rasterization(draw):
@@ -103,6 +124,15 @@ class Artist:
     zorder = 0
 
     def __init_subclass__(cls):
+
+        # Decorate draw() method so that all artists are able to stop
+        # rastrization when necessary. If the artist's draw method is already
+        # decorated (has a `_supports_rasterization` attribute), it won't be
+        # decorated.
+
+        if not hasattr(cls.draw, "_supports_rasterization"):
+            cls.draw = _prevent_rasterization(cls.draw)
+
         # Inject custom set() methods into the subclass with signature and
         # docstring based on the subclasses' properties.
 
@@ -185,8 +215,6 @@ class Artist:
 
     def __getstate__(self):
         d = self.__dict__.copy()
-        # remove the unpicklable remove method, this will get re-added on load
-        # (by the Axes) if the artist lives on an Axes.
         d['stale_callback'] = None
         return d
 
@@ -204,7 +232,7 @@ class Artist:
         Note: there is no support for removing the artist's legend entry.
         """
 
-        # There is no method to set the callback.  Instead the parent should
+        # There is no method to set the callback.  Instead, the parent should
         # set the _remove_method attribute directly.  This would be a
         # protected attribute if Python supported that sort of thing.  The
         # callback has one parameter, which is the child to be removed.
@@ -221,9 +249,9 @@ class Artist:
                 _ax_flag = True
 
             if self.figure:
-                self.figure = None
                 if not _ax_flag:
-                    self.figure = True
+                    self.figure.stale = True
+                self.figure = None
 
         else:
             raise NotImplementedError('cannot remove artist')
@@ -293,7 +321,7 @@ class Artist:
         # if the artist is animated it does not take normal part in the
         # draw stack and is not expected to be drawn as part of the normal
         # draw loop (when not saving) so do not propagate this change
-        if self.get_animated():
+        if self._animated:
             return
 
         if val and self.stale_callback is not None:
@@ -325,14 +353,15 @@ class Artist:
 
         Parameters
         ----------
-        renderer : `.RendererBase` subclass
+        renderer : `~matplotlib.backend_bases.RendererBase` subclass, optional
             renderer that will be used to draw the figures (i.e.
             ``fig.canvas.get_renderer()``)
 
         Returns
         -------
-        `.Bbox`
+        `.Bbox` or None
             The enclosing bounding box (in figure pixel coordinates).
+            Returns None if clipping results in no intersection.
         """
         bbox = self.get_window_extent(renderer)
         if self.get_clip_on():
@@ -340,7 +369,7 @@ class Artist:
             if clip_box is not None:
                 bbox = Bbox.intersection(bbox, clip_box)
             clip_path = self.get_clip_path()
-            if clip_path is not None:
+            if clip_path is not None and bbox is not None:
                 clip_path = clip_path.get_fully_transformed_path()
                 bbox = Bbox.intersection(bbox, clip_path.get_extents())
         return bbox
@@ -411,7 +440,7 @@ class Artist:
 
         Parameters
         ----------
-        t : `.Transform`
+        t : `~matplotlib.transforms.Transform`
         """
         self._transform = t
         self._transformSet = True
@@ -431,28 +460,22 @@ class Artist:
         r"""Return a list of the child `.Artist`\s of this `.Artist`."""
         return []
 
-    def _default_contains(self, mouseevent, figure=None):
+    def _different_canvas(self, event):
         """
-        Base impl. for checking whether a mouseevent happened in an artist.
+        Check whether an *event* occurred on a canvas other that this artist's canvas.
 
-        1. If the artist figure is known and the event did not occur in that
-           figure (by checking its ``canvas`` attribute), reject it.
-        2. Otherwise, return `None, {}`, indicating that the subclass'
-           implementation should be used.
+        If this method returns True, the event definitely occurred on a different
+        canvas; if it returns False, either it occurred on the same canvas, or we may
+        not have enough information to know.
 
-        Subclasses should start their definition of `contains` as follows:
+        Subclasses should start their definition of `contains` as follows::
 
-            inside, info = self._default_contains(mouseevent)
-            if inside is not None:
-                return inside, info
+            if self._different_canvas(mouseevent):
+                return False, {}
             # subclass-specific implementation follows
-
-        The *figure* kwarg is provided for the implementation of
-        `.Figure.contains`.
         """
-        if figure is not None and mouseevent.canvas is not figure.canvas:
-            return False, {}
-        return None, {}
+        return (getattr(event, "canvas", None) is not None and self.figure is not None
+                and event.canvas is not self.figure.canvas)
 
     def contains(self, mouseevent):
         """
@@ -460,7 +483,7 @@ class Artist:
 
         Parameters
         ----------
-        mouseevent : `matplotlib.backend_bases.MouseEvent`
+        mouseevent : `~matplotlib.backend_bases.MouseEvent`
 
         Returns
         -------
@@ -521,7 +544,7 @@ class Artist:
                 # tick label) can be outside the bounding box of the
                 # Axes and inaxes will be None
                 # also check that ax is None so that it traverse objects
-                # which do no have an axes property but children might
+                # which do not have an axes property but children might
                 a.pick(mouseevent)
 
     def set_picker(self, picker):
@@ -692,7 +715,7 @@ class Artist:
 
         Parameters
         ----------
-        path_effects : `.AbstractPathEffect`
+        path_effects : list of `.AbstractPathEffect`
         """
         self._path_effects = path_effects
         self.stale = True
@@ -710,7 +733,7 @@ class Artist:
 
         Parameters
         ----------
-        fig : `.Figure`
+        fig : `~matplotlib.figure.Figure`
         """
         # if this is a no-op just return
         if self.figure is fig:
@@ -734,11 +757,16 @@ class Artist:
 
         Parameters
         ----------
-        clipbox : `.Bbox`
+        clipbox : `~matplotlib.transforms.BboxBase` or None
+            Will typically be created from a `.TransformedBbox`. For instance,
+            ``TransformedBbox(Bbox([[0, 0], [1, 1]]), ax.transAxes)`` is the default
+            clipping for an artist added to an Axes.
+
         """
-        self.clipbox = clipbox
-        self.pchanged()
-        self.stale = True
+        if clipbox != self.clipbox:
+            self.clipbox = clipbox
+            self.pchanged()
+            self.stale = True
 
     def set_clip_path(self, path, transform=None):
         """
@@ -746,7 +774,7 @@ class Artist:
 
         Parameters
         ----------
-        path : `.Patch` or `.Path` or `.TransformedPath` or None
+        path : `~matplotlib.patches.Patch` or `.Path` or `.TransformedPath` or None
             The clip path. If given a `.Path`, *transform* must be provided as
             well. If *None*, a previously set clip path is removed.
         transform : `~matplotlib.transforms.Transform`, optional
@@ -795,8 +823,8 @@ class Artist:
 
         if not success:
             raise TypeError(
-                "Invalid arguments to set_clip_path, of type {} and {}"
-                .format(type(path).__name__, type(transform).__name__))
+                "Invalid arguments to set_clip_path, of type "
+                f"{type(path).__name__} and {type(transform).__name__}")
         # This may result in the callbacks being hit twice, but guarantees they
         # will be hit at least once.
         self.pchanged()
@@ -822,7 +850,7 @@ class Artist:
         Return boolean flag, ``True`` if artist is included in layout
         calculations.
 
-        E.g. :doc:`/tutorials/intermediate/constrainedlayout_guide`,
+        E.g. :ref:`constrainedlayout_guide`,
         `.Figure.tight_layout()`, and
         ``fig.savefig(fname, bbox_inches='tight')``.
         """
@@ -878,7 +906,7 @@ class Artist:
         """
         Set whether the artist uses clipping.
 
-        When False artists will be visible outside of the Axes which
+        When False, artists will be visible outside the Axes which
         can lead to unexpected results.
 
         Parameters
@@ -921,7 +949,9 @@ class Artist:
         ----------
         rasterized : bool
         """
-        if rasterized and not hasattr(self.draw, "_supports_rasterization"):
+        supports_rasterization = getattr(self.draw,
+                                         "_supports_rasterization", False)
+        if rasterized and not supports_rasterization:
             _api.warn_external(f"Rasterization of '{self}' will be ignored")
 
         self._rasterized = rasterized
@@ -957,7 +987,7 @@ class Artist:
 
         Parameters
         ----------
-        renderer : `.RendererBase` subclass.
+        renderer : `~matplotlib.backend_bases.RendererBase` subclass.
 
         Notes
         -----
@@ -976,14 +1006,15 @@ class Artist:
         alpha : scalar or None
             *alpha* must be within the 0-1 range, inclusive.
         """
-        if alpha is not None and not isinstance(alpha, Number):
+        if alpha is not None and not isinstance(alpha, Real):
             raise TypeError(
                 f'alpha must be numeric or None, not {type(alpha)}')
         if alpha is not None and not (0 <= alpha <= 1):
             raise ValueError(f'alpha ({alpha}) is outside 0-1 range')
-        self._alpha = alpha
-        self.pchanged()
-        self.stale = True
+        if alpha != self._alpha:
+            self._alpha = alpha
+            self.pchanged()
+            self.stale = True
 
     def _set_alpha_for_array(self, alpha):
         """
@@ -1016,9 +1047,10 @@ class Artist:
         ----------
         b : bool
         """
-        self._visible = b
-        self.pchanged()
-        self.stale = True
+        if b != self._visible:
+            self._visible = b
+            self.pchanged()
+            self.stale = True
 
     def set_animated(self, b):
         """
@@ -1030,7 +1062,7 @@ class Artist:
         using blitting.
 
         See also `matplotlib.animation` and
-        :doc:`/tutorials/advanced/blitting`.
+        :ref:`blitting`.
 
         Parameters
         ----------
@@ -1043,7 +1075,7 @@ class Artist:
     def set_in_layout(self, in_layout):
         """
         Set if artist is to be included in layout calculations,
-        E.g. :doc:`/tutorials/intermediate/constrainedlayout_guide`,
+        E.g. :ref:`constrainedlayout_guide`,
         `.Figure.tight_layout()`, and
         ``fig.savefig(fname, bbox_inches='tight')``.
 
@@ -1066,12 +1098,11 @@ class Artist:
         s : object
             *s* will be converted to a string by calling `str`.
         """
-        if s is not None:
-            self._label = str(s)
-        else:
-            self._label = None
-        self.pchanged()
-        self.stale = True
+        label = str(s) if s is not None else None
+        if label != self._label:
+            self._label = label
+            self.pchanged()
+            self.stale = True
 
     def get_zorder(self):
         """Return the artist's zorder."""
@@ -1088,9 +1119,10 @@ class Artist:
         """
         if level is None:
             level = self.__class__.zorder
-        self.zorder = level
-        self.pchanged()
-        self.stale = True
+        if level != self.zorder:
+            self.zorder = level
+            self.pchanged()
+            self.stale = True
 
     @property
     def sticky_edges(self):
@@ -1145,7 +1177,7 @@ class Artist:
         Helper for `.Artist.set` and `.Artist.update`.
 
         *errfmt* is used to generate error messages for invalid property
-        names; it get formatted with ``type(self)`` and the property name.
+        names; it gets formatted with ``type(self)`` and the property name.
         """
         ret = []
         with cbook._setattr_cm(self, eventson=False):
@@ -1270,7 +1302,7 @@ class Artist:
 
         Parameters
         ----------
-        event : `matplotlib.backend_bases.MouseEvent`
+        event : `~matplotlib.backend_bases.MouseEvent`
 
         See Also
         --------
@@ -1325,13 +1357,13 @@ class Artist:
                 g_sig_digits = cbook._g_sig_digits(data, delta)
             else:
                 g_sig_digits = 3  # Consistent with default below.
-            return "[{:-#.{}g}]".format(data, g_sig_digits)
+            return f"[{data:-#.{g_sig_digits}g}]"
         else:
             try:
                 data[0]
             except (TypeError, IndexError):
                 data = [data]
-            data_str = ', '.join('{:0.3g}'.format(item) for item in data
+            data_str = ', '.join(f'{item:0.3g}' for item in data
                                  if isinstance(item, Number))
             return "[" + data_str + "]"
 
@@ -1371,7 +1403,7 @@ class Artist:
 def _get_tightbbox_for_layout_only(obj, *args, **kwargs):
     """
     Matplotlib's `.Axes.get_tightbbox` and `.Axis.get_tightbbox` support a
-    *for_layout_only* kwarg; this helper tries to uses the kwarg but skips it
+    *for_layout_only* kwarg; this helper tries to use the kwarg but skips it
     when encountering third-party subclasses that do not support it.
     """
     try:
@@ -1425,7 +1457,7 @@ class ArtistInspector:
             func = getattr(self.o, name)
             if not self.is_alias(func):
                 continue
-            propname = re.search("`({}.*)`".format(name[:4]),  # get_.*/set_.*
+            propname = re.search(f"`({name[:4]}.*)`",  # get_.*/set_.*
                                  inspect.getdoc(func)).group(1)
             aliases.setdefault(propname[4:], set()).add(name[4:])
         return aliases
@@ -1445,7 +1477,7 @@ class ArtistInspector:
 
         name = 'set_%s' % attr
         if not hasattr(self.o, name):
-            raise AttributeError('%s has no function %s' % (self.o, name))
+            raise AttributeError(f'{self.o} has no function {name}')
         func = getattr(self.o, name)
 
         docstring = inspect.getdoc(func)
@@ -1463,8 +1495,8 @@ class ArtistInspector:
         # although barely relevant wrt. matplotlib's total import time.
         param_name = func.__code__.co_varnames[1]
         # We could set the presence * based on whether the parameter is a
-        # varargs (it can't be a varkwargs) but it's not really worth the it.
-        match = re.search(r"(?m)^ *\*?{} : (.+)".format(param_name), docstring)
+        # varargs (it can't be a varkwargs) but it's not really worth it.
+        match = re.search(fr"(?m)^ *\*?{param_name} : (.+)", docstring)
         if match:
             return match.group(1)
 
@@ -1501,13 +1533,13 @@ class ArtistInspector:
         return setters
 
     @staticmethod
-    @lru_cache(maxsize=None)
+    @cache
     def number_of_parameters(func):
         """Return number of parameters of the callable *func*."""
         return len(inspect.signature(func).parameters)
 
     @staticmethod
-    @lru_cache(maxsize=None)
+    @cache
     def is_alias(method):
         """
         Return whether the object *method* is an alias for another method.
@@ -1523,7 +1555,7 @@ class ArtistInspector:
         """
         Return 'PROPNAME or alias' if *s* has an alias, else return 'PROPNAME'.
 
-        e.g., for the line markerfacecolor property, which has an
+        For example, for the line markerfacecolor property, which has an
         alias, return 'markerfacecolor or mfc' and for the transform
         property, which does not, return 'transform'.
         """
@@ -1551,7 +1583,7 @@ class ArtistInspector:
         Return 'PROPNAME or alias' if *s* has an alias, else return 'PROPNAME',
         formatted for reST.
 
-        e.g., for the line markerfacecolor property, which has an
+        For example, for the line markerfacecolor property, which has an
         alias, return 'markerfacecolor or mfc' and for the transform
         property, which does not, return 'transform'.
         """
@@ -1560,7 +1592,7 @@ class ArtistInspector:
             return f'``{s}``'
 
         aliases = ''.join(' or %s' % x for x in sorted(self.aliasd.get(s, [])))
-        return ':meth:`%s <%s>`%s' % (s, target, aliases)
+        return f':meth:`{s} <{target}>`{aliases}'
 
     def pprint_setters(self, prop=None, leadingspace=2):
         """
@@ -1577,13 +1609,13 @@ class ArtistInspector:
             pad = ''
         if prop is not None:
             accepts = self.get_valid_values(prop)
-            return '%s%s: %s' % (pad, prop, accepts)
+            return f'{pad}{prop}: {accepts}'
 
         lines = []
         for prop in sorted(self.get_setters()):
             accepts = self.get_valid_values(prop)
             name = self.aliased_name(prop)
-            lines.append('%s%s: %s' % (pad, name, accepts))
+            lines.append(f'{pad}{name}: {accepts}')
         return lines
 
     def pprint_setters_rest(self, prop=None, leadingspace=4):
@@ -1601,7 +1633,7 @@ class ArtistInspector:
             pad = ''
         if prop is not None:
             accepts = self.get_valid_values(prop)
-            return '%s%s: %s' % (pad, prop, accepts)
+            return f'{pad}{prop}: {accepts}'
 
         prop_and_qualnames = []
         for prop in sorted(self.get_setters()):
@@ -1674,7 +1706,7 @@ class ArtistInspector:
             if len(s) > 50:
                 s = s[:50] + '...'
             name = self.aliased_name(name)
-            lines.append('    %s = %s' % (name, s))
+            lines.append(f'    {name} = {s}')
         return lines
 
 
@@ -1684,7 +1716,7 @@ def getp(obj, property=None):
 
     Parameters
     ----------
-    obj : `.Artist`
+    obj : `~matplotlib.artist.Artist`
         The queried artist; e.g., a `.Line2D`, a `.Text`, or an `~.axes.Axes`.
 
     property : str or None, default: None
@@ -1723,7 +1755,7 @@ def setp(obj, *args, file=None, **kwargs):
 
     Parameters
     ----------
-    obj : `.Artist` or list of `.Artist`
+    obj : `~matplotlib.artist.Artist` or list of `.Artist`
         The artist(s) whose properties are being set or queried.  When setting
         properties, all artists are affected; when querying the allowed values,
         only the first instance in the sequence is queried.

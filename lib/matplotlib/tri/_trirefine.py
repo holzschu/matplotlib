@@ -63,7 +63,7 @@ class UniformTriRefiner(TriRefiner):
 
     def refine_triangulation(self, return_tri_index=False, subdiv=3):
         """
-        Compute an uniformly refined triangulation *refi_triangulation* of
+        Compute a uniformly refined triangulation *refi_triangulation* of
         the encapsulated :attr:`triangulation`.
 
         This function refines the encapsulated triangulation by splitting each
@@ -203,9 +203,9 @@ class UniformTriRefiner(TriRefiner):
             ancestors = np.asarray(ancestors)
             if np.shape(ancestors) != (ntri,):
                 raise ValueError(
-                    "Incompatible shapes provide for triangulation"
-                    ".masked_triangles and ancestors: {0} and {1}".format(
-                        np.shape(triangles), np.shape(ancestors)))
+                    "Incompatible shapes provide for "
+                    "triangulation.masked_triangles and ancestors: "
+                    f"{np.shape(triangles)} and {np.shape(ancestors)}")
 
         # Initiating tables refi_x and refi_y of the refined triangulation
         # points

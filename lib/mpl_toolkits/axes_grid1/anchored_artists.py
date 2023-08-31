@@ -1,4 +1,4 @@
-from matplotlib import transforms
+from matplotlib import _api, transforms
 from matplotlib.offsetbox import (AnchoredOffsetbox, AuxTransformBox,
                                   DrawingArea, TextArea, VPacker)
 from matplotlib.patches import (Rectangle, Ellipse, ArrowStyle,
@@ -30,7 +30,7 @@ class AnchoredDrawingArea(AnchoredOffsetbox):
             Location of this artist.  Valid locations are
             'upper left', 'upper center', 'upper right',
             'center left', 'center', 'center right',
-            'lower left', 'lower center, 'lower right'.
+            'lower left', 'lower center', 'lower right'.
             For backward compatibility, numeric values are accepted as well.
             See the parameter *loc* of `.Legend` for details.
         pad : float, default: 0.4
@@ -88,7 +88,7 @@ class AnchoredAuxTransformBox(AnchoredOffsetbox):
             Location of this artist.  Valid locations are
             'upper left', 'upper center', 'upper right',
             'center left', 'center', 'center right',
-            'lower left', 'lower center, 'lower right'.
+            'lower left', 'lower center', 'lower right'.
             For backward compatibility, numeric values are accepted as well.
             See the parameter *loc* of `.Legend` for details.
         pad : float, default: 0.4
@@ -124,6 +124,7 @@ class AnchoredAuxTransformBox(AnchoredOffsetbox):
                          **kwargs)
 
 
+@_api.deprecated("3.8")
 class AnchoredEllipse(AnchoredOffsetbox):
     def __init__(self, transform, width, height, angle, loc,
                  pad=0.1, borderpad=0.1, prop=None, frameon=True, **kwargs):
@@ -144,7 +145,7 @@ class AnchoredEllipse(AnchoredOffsetbox):
             Location of the ellipse.  Valid locations are
             'upper left', 'upper center', 'upper right',
             'center left', 'center', 'center right',
-            'lower left', 'lower center, 'lower right'.
+            'lower left', 'lower center', 'lower right'.
             For backward compatibility, numeric values are accepted as well.
             See the parameter *loc* of `.Legend` for details.
         pad : float, default: 0.1
@@ -194,7 +195,7 @@ class AnchoredSizeBar(AnchoredOffsetbox):
             Location of the size bar.  Valid locations are
             'upper left', 'upper center', 'upper right',
             'center left', 'center', 'center right',
-            'lower left', 'lower center, 'lower right'.
+            'lower left', 'lower center', 'lower right'.
             For backward compatibility, numeric values are accepted as well.
             See the parameter *loc* of `.Legend` for details.
         pad : float, default: 0.1
@@ -314,7 +315,7 @@ class AnchoredDirectionArrows(AnchoredOffsetbox):
             Location of the arrow.  Valid locations are
             'upper left', 'upper center', 'upper right',
             'center left', 'center', 'center right',
-            'lower left', 'lower center, 'lower right'.
+            'lower left', 'lower center', 'lower right'.
             For backward compatibility, numeric values are accepted as well.
             See the parameter *loc* of `.Legend` for details.
         angle : float, default: 0
@@ -340,14 +341,14 @@ class AnchoredDirectionArrows(AnchoredOffsetbox):
         back_length : float, default: 0.15
             Fraction of the arrow behind the arrow crossing.
         head_width : float, default: 10
-            Width of arrow head, sent to ArrowStyle.
+            Width of arrow head, sent to `.ArrowStyle`.
         head_length : float, default: 15
-            Length of arrow head, sent to ArrowStyle.
+            Length of arrow head, sent to `.ArrowStyle`.
         tail_width : float, default: 2
-            Width of arrow tail, sent to ArrowStyle.
+            Width of arrow tail, sent to `.ArrowStyle`.
         text_props, arrow_props : dict
-            Properties of the text and arrows, passed to
-            `~.textpath.TextPath` and `~.patches.FancyArrowPatch`.
+            Properties of the text and arrows, passed to `.TextPath` and
+            `.FancyArrowPatch`.
         **kwargs
             Keyword arguments forwarded to `.AnchoredOffsetbox`.
 
@@ -355,7 +356,7 @@ class AnchoredDirectionArrows(AnchoredOffsetbox):
         ----------
         arrow_x, arrow_y : `~matplotlib.patches.FancyArrowPatch`
             Arrow x and y
-        text_path_x, text_path_y : `~matplotlib.textpath.TextPath`
+        text_path_x, text_path_y : `~matplotlib.text.TextPath`
             Path for arrow labels
         p_x, p_y : `~matplotlib.patches.PathPatch`
             Patch for arrow labels

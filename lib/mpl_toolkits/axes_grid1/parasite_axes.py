@@ -19,6 +19,10 @@ class ParasiteAxesBase:
         super().clear()
         martist.setp(self.get_children(), visible=False)
         self._get_lines = self._parent_axes._get_lines
+        self._parent_axes.callbacks._connect_picklable(
+            "xlim_changed", self._sync_lims)
+        self._parent_axes.callbacks._connect_picklable(
+            "ylim_changed", self._sync_lims)
 
     def pick(self, mouseevent):
         # This most likely goes to Artist.pick (depending on axes_class given
@@ -52,22 +56,17 @@ class ParasiteAxesBase:
     def get_viewlim_mode(self):
         return self._viewlim_mode
 
-    def _update_viewlim(self):  # Inline after deprecation elapses.
-        viewlim = self._parent_axes.viewLim.frozen()
+    def _sync_lims(self, parent):
+        viewlim = parent.viewLim.frozen()
         mode = self.get_viewlim_mode()
         if mode is None:
             pass
         elif mode == "equal":
-            self.axes.viewLim.set(viewlim)
+            self.viewLim.set(viewlim)
         elif mode == "transform":
-            self.axes.viewLim.set(
-                viewlim.transformed(self.transAux.inverted()))
+            self.viewLim.set(viewlim.transformed(self.transAux.inverted()))
         else:
             _api.check_in_list([None, "equal", "transform"], mode=mode)
-
-    def apply_aspect(self, position=None):
-        self._update_viewlim()
-        super().apply_aspect()
 
     # end of aux_transform support
 
@@ -137,12 +136,12 @@ class HostAxesBase:
             self._children.extend(ax.get_children())
 
         super().draw(renderer)
-        self._children = self._children[:orig_children_len]
+        del self._children[orig_children_len:]
 
     def clear(self):
+        super().clear()
         for ax in self.parasites:
             ax.clear()
-        super().clear()
 
     def pick(self, mouseevent):
         super().pick(mouseevent)
@@ -216,6 +215,7 @@ class HostAxesBase:
         self.axis[tuple(restore)].set_visible(True)
         self.axis[tuple(restore)].toggle(ticklabels=False, label=False)
 
+    @_api.make_keyword_only("3.8", "call_axes_locator")
     def get_tightbbox(self, renderer=None, call_axes_locator=True,
                       bbox_extra_artists=None):
         bbs = [

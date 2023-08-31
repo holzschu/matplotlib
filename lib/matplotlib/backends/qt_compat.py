@@ -9,7 +9,6 @@ The selection logic is as follows:
 - otherwise, use whatever the rcParams indicate.
 """
 
-import functools
 import operator
 import os
 import platform
@@ -69,7 +68,7 @@ else:
 
 def _setup_pyqt5plus():
     global QtCore, QtGui, QtWidgets, __version__
-    global _getSaveFileName, _isdeleted, _to_int
+    global _isdeleted, _to_int
 
     if QT_API == QT_API_PYQT6:
         from PyQt6 import QtCore, QtGui, QtWidgets, sip
@@ -107,7 +106,6 @@ def _setup_pyqt5plus():
         _to_int = int
     else:
         raise AssertionError(f"Unexpected QT_API: {QT_API}")
-    _getSaveFileName = QtWidgets.QFileDialog.getSaveFileName
 
 
 if QT_API in [QT_API_PYQT6, QT_API_PYQT5, QT_API_PYSIDE6, QT_API_PYSIDE2]:
@@ -125,7 +123,6 @@ elif QT_API is None:  # See above re: dict.__getitem__.
             (_setup_pyqt5plus, QT_API_PYQT5),
             (_setup_pyqt5plus, QT_API_PYSIDE2),
         ]
-
     for _setup, QT_API in _candidates:
         try:
             _setup()
@@ -135,28 +132,26 @@ elif QT_API is None:  # See above re: dict.__getitem__.
     else:
         raise ImportError(
             "Failed to import any of the following Qt binding modules: {}"
-            .format(", ".join(_ETS.values())))
+            .format(", ".join([QT_API for _, QT_API in _candidates]))
+        )
 else:  # We should not get there.
     raise AssertionError(f"Unexpected QT_API: {QT_API}")
+_version_info = tuple(QtCore.QLibraryInfo.version().segments())
+
+
+if _version_info < (5, 12):
+    raise ImportError(
+        f"The Qt version imported is "
+        f"{QtCore.QLibraryInfo.version().toString()} but Matplotlib requires "
+        f"Qt>=5.12")
 
 
 # Fixes issues with Big Sur
 # https://bugreports.qt.io/browse/QTBUG-87014, fixed in qt 5.15.2
 if (sys.platform == 'darwin' and
         parse_version(platform.mac_ver()[0]) >= parse_version("10.16") and
-        QtCore.QLibraryInfo.version().segments() <= [5, 15, 2]):
+        _version_info < (5, 15, 2)):
     os.environ.setdefault("QT_MAC_WANTS_LAYER", "1")
-
-
-# PyQt6 enum compat helpers.
-
-
-@functools.lru_cache(None)
-def _enum(name):
-    # foo.bar.Enum.Entry (PyQt6) <=> foo.bar.Entry (non-PyQt6).
-    return operator.attrgetter(
-        name if QT_API == 'PyQt6' else name.rpartition(".")[0]
-    )(sys.modules[QtCore.__package__])
 
 
 # Backports.
@@ -165,36 +160,6 @@ def _enum(name):
 def _exec(obj):
     # exec on PyQt6, exec_ elsewhere.
     obj.exec() if hasattr(obj, "exec") else obj.exec_()
-
-
-def _devicePixelRatioF(obj):
-    """
-    Return obj.devicePixelRatioF() with graceful fallback for older Qt.
-
-    This can be replaced by the direct call when we require Qt>=5.6.
-    """
-    try:
-        # Not available on Qt<5.6
-        return obj.devicePixelRatioF() or 1
-    except AttributeError:
-        pass
-    try:
-        # Not available on older Qt5.
-        # self.devicePixelRatio() returns 0 in rare cases
-        return obj.devicePixelRatio() or 1
-    except AttributeError:
-        return 1
-
-
-def _setDevicePixelRatio(obj, val):
-    """
-    Call obj.setDevicePixelRatio(val) with graceful fallback for older Qt.
-
-    This can be replaced by the direct call when we require Qt>=5.6.
-    """
-    if hasattr(obj, 'setDevicePixelRatio'):
-        # Not available on older Qt5.
-        obj.setDevicePixelRatio(val)
 
 
 @contextlib.contextmanager
@@ -221,48 +186,45 @@ def _maybe_allow_interrupt(qapp):
     that a non-python handler was installed, i.e. in Julia, and not SIG_IGN
     which means we should ignore the interrupts.
     """
+
     old_sigint_handler = signal.getsignal(signal.SIGINT)
-    handler_args = None
-    skip = False
     if old_sigint_handler in (None, signal.SIG_IGN, signal.SIG_DFL):
-        skip = True
-    else:
-        wsock, rsock = socket.socketpair()
-        wsock.setblocking(False)
-        old_wakeup_fd = signal.set_wakeup_fd(wsock.fileno())
-        sn = QtCore.QSocketNotifier(
-            rsock.fileno(), _enum('QtCore.QSocketNotifier.Type').Read
-        )
+        yield
+        return
 
-        # We do not actually care about this value other than running some
-        # Python code to ensure that the interpreter has a chance to handle the
-        # signal in Python land.  We also need to drain the socket because it
-        # will be written to as part of the wakeup!  There are some cases where
-        # this may fire too soon / more than once on Windows so we should be
-        # forgiving about reading an empty socket.
-        rsock.setblocking(False)
-        # Clear the socket to re-arm the notifier.
-        @sn.activated.connect
-        def _may_clear_sock(*args):
-            try:
-                rsock.recv(1)
-            except BlockingIOError:
-                pass
+    handler_args = None
+    wsock, rsock = socket.socketpair()
+    wsock.setblocking(False)
+    rsock.setblocking(False)
+    old_wakeup_fd = signal.set_wakeup_fd(wsock.fileno())
+    sn = QtCore.QSocketNotifier(rsock.fileno(), QtCore.QSocketNotifier.Type.Read)
 
-        def handle(*args):
-            nonlocal handler_args
-            handler_args = args
-            qapp.quit()
+    # We do not actually care about this value other than running some Python code to
+    # ensure that the interpreter has a chance to handle the signal in Python land.  We
+    # also need to drain the socket because it will be written to as part of the wakeup!
+    # There are some cases where this may fire too soon / more than once on Windows so
+    # we should be forgiving about reading an empty socket.
+    # Clear the socket to re-arm the notifier.
+    @sn.activated.connect
+    def _may_clear_sock(*args):
+        try:
+            rsock.recv(1)
+        except BlockingIOError:
+            pass
 
-        signal.signal(signal.SIGINT, handle)
+    def handle(*args):
+        nonlocal handler_args
+        handler_args = args
+        qapp.quit()
+
+    signal.signal(signal.SIGINT, handle)
     try:
         yield
     finally:
-        if not skip:
-            wsock.close()
-            rsock.close()
-            sn.setEnabled(False)
-            signal.set_wakeup_fd(old_wakeup_fd)
-            signal.signal(signal.SIGINT, old_sigint_handler)
-            if handler_args is not None:
-                old_sigint_handler(*handler_args)
+        wsock.close()
+        rsock.close()
+        sn.setEnabled(False)
+        signal.set_wakeup_fd(old_wakeup_fd)
+        signal.signal(signal.SIGINT, old_sigint_handler)
+        if handler_args is not None:
+            old_sigint_handler(*handler_args)

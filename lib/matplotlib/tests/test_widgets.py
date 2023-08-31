@@ -1,12 +1,14 @@
-from contextlib import nullcontext
 import functools
+import io
 from unittest import mock
 
-from matplotlib._api.deprecation import MatplotlibDeprecationWarning
+import matplotlib as mpl
 from matplotlib.backend_bases import MouseEvent
 import matplotlib.colors as mcolors
 import matplotlib.widgets as widgets
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.lines import Line2D
 from matplotlib.testing.decorators import check_figures_equal, image_comparison
 from matplotlib.testing.widgets import (click_and_drag, do_event, get_ax,
                                         mock_event, noop)
@@ -22,22 +24,55 @@ def ax():
     return get_ax()
 
 
-@pytest.mark.parametrize('kwargs, warning_msg', [
-    (dict(), None),
-    (dict(drawtype='line', useblit=False),
-     "Support for drawtype='line' is deprecated"),
-    (dict(useblit=True, button=1), None),
-    (dict(drawtype='none', minspanx=10, minspany=10),
-     "Support for drawtype='none' is deprecated"),
-    (dict(minspanx=10, minspany=10, spancoords='pixels'), None),
-    (dict(props=dict(fill=True)), None),
+def test_save_blitted_widget_as_pdf():
+    from matplotlib.widgets import CheckButtons, RadioButtons
+    from matplotlib.cbook import _get_running_interactive_framework
+    if _get_running_interactive_framework() not in ['headless', None]:
+        pytest.xfail("Callback exceptions are not raised otherwise.")
+
+    fig, ax = plt.subplots(
+        nrows=2, ncols=2, figsize=(5, 2), width_ratios=[1, 2]
+    )
+    default_rb = RadioButtons(ax[0, 0], ['Apples', 'Oranges'])
+    styled_rb = RadioButtons(
+        ax[0, 1], ['Apples', 'Oranges'],
+        label_props={'color': ['red', 'orange'],
+                     'fontsize': [16, 20]},
+        radio_props={'edgecolor': ['red', 'orange'],
+                     'facecolor': ['mistyrose', 'peachpuff']}
+    )
+
+    default_cb = CheckButtons(ax[1, 0], ['Apples', 'Oranges'],
+                              actives=[True, True])
+    styled_cb = CheckButtons(
+        ax[1, 1], ['Apples', 'Oranges'],
+        actives=[True, True],
+        label_props={'color': ['red', 'orange'],
+                     'fontsize': [16, 20]},
+        frame_props={'edgecolor': ['red', 'orange'],
+                     'facecolor': ['mistyrose', 'peachpuff']},
+        check_props={'color': ['darkred', 'darkorange']}
+    )
+
+    ax[0, 0].set_title('Default')
+    ax[0, 1].set_title('Stylized')
+    # force an Agg render
+    fig.canvas.draw()
+    # force a pdf save
+    with io.BytesIO() as result_after:
+        fig.savefig(result_after, format='pdf')
+
+
+@pytest.mark.parametrize('kwargs', [
+    dict(),
+    dict(useblit=True, button=1),
+    dict(minspanx=10, minspany=10, spancoords='pixels'),
+    dict(props=dict(fill=True)),
 ])
-def test_rectangle_selector(ax, kwargs, warning_msg):
+def test_rectangle_selector(ax, kwargs):
     onselect = mock.Mock(spec=noop, return_value=None)
 
-    with (pytest.warns(MatplotlibDeprecationWarning, match=warning_msg)
-            if warning_msg else nullcontext()):
-        tool = widgets.RectangleSelector(ax, onselect, **kwargs)
+    tool = widgets.RectangleSelector(ax, onselect, **kwargs)
     do_event(tool, 'press', xdata=100, ydata=100, button=1)
     do_event(tool, 'onmove', xdata=199, ydata=199, button=1)
 
@@ -102,11 +137,9 @@ def test_deprecation_selector_visible_attribute(ax):
 
     assert tool.get_visible()
 
-    with pytest.warns(
-        MatplotlibDeprecationWarning,
-            match="was deprecated in Matplotlib 3.6"):
-        tool.visible = False
-    assert not tool.get_visible()
+    with pytest.warns(mpl.MatplotlibDeprecationWarning,
+                      match="was deprecated in Matplotlib 3.8"):
+        tool.visible
 
 
 @pytest.mark.parametrize('drag_from_anywhere, new_center',
@@ -426,7 +459,7 @@ def test_rectangle_rotate(ax, selector_class):
 
     # Rotate anticlockwise using top-right corner
     do_event(tool, 'on_key_press', key='r')
-    assert tool._state == set(['rotate'])
+    assert tool._state == {'rotate'}
     assert len(tool._state) == 1
     click_and_drag(tool, start=(130, 140), end=(120, 145))
     do_event(tool, 'on_key_press', key='r')
@@ -609,6 +642,13 @@ def test_span_selector(ax, orientation, onmove_callback, kwargs):
     onmove = mock.Mock(spec=noop, return_value=None)
     if onmove_callback:
         kwargs['onmove_callback'] = onmove
+
+    # While at it, also test that span selectors work in the presence of twin axes on
+    # top of the axes that contain the selector.  Note that we need to unforce the axes
+    # aspect here, otherwise the twin axes forces the original axes' limits (to respect
+    # aspect=1) which makes some of the values below go out of bounds.
+    ax.set_aspect("auto")
+    tax = ax.twinx()
 
     tool = widgets.SpanSelector(ax, onselect, orientation, **kwargs)
     do_event(tool, 'press', xdata=100, ydata=100, button=1)
@@ -835,8 +875,8 @@ def test_span_selector_bound(direction):
     bound = x_bound if direction == 'horizontal' else y_bound
     assert tool._edge_handles.positions == list(bound)
 
-    press_data = [10.5, 11.5]
-    move_data = [11, 13]  # Updating selector is done in onmove
+    press_data = (10.5, 11.5)
+    move_data = (11, 13)  # Updating selector is done in onmove
     release_data = move_data
     click_and_drag(tool, start=press_data, end=move_data)
 
@@ -869,7 +909,7 @@ def test_span_selector_animated_artists_callback():
         # Return mean of values in x between *vmin* and *vmax*
         indmin, indmax = np.searchsorted(x, (vmin, vmax))
         v = values[indmin:indmax].mean()
-        ln2.set_data(x, v)
+        ln2.set_data(x, np.full_like(x, v))
 
     span = widgets.SpanSelector(ax, mean, direction='horizontal',
                                 onmove_callback=mean,
@@ -886,20 +926,20 @@ def test_span_selector_animated_artists_callback():
     assert span._get_animated_artists() == (ln, ln2)
     assert ln.stale is False
     assert ln2.stale
-    assert ln2.get_ydata() == 0.9547335049088455
+    assert_allclose(ln2.get_ydata(), 0.9547335049088455)
     span.update()
     assert ln2.stale is False
 
     # Change span selector and check that the line is drawn/updated after its
     # value was updated by the callback
-    press_data = [4, 2]
+    press_data = [4, 0]
     move_data = [5, 2]
     release_data = [5, 2]
     do_event(span, 'press', xdata=press_data[0], ydata=press_data[1], button=1)
     do_event(span, 'onmove', xdata=move_data[0], ydata=move_data[1], button=1)
     assert ln.stale is False
     assert ln2.stale
-    assert ln2.get_ydata() == -0.9424150707548072
+    assert_allclose(ln2.get_ydata(), -0.9424150707548072)
     do_event(span, 'release', xdata=release_data[0],
              ydata=release_data[1], button=1)
     assert ln2.stale is False
@@ -952,6 +992,19 @@ def test_lasso_selector(ax, kwargs):
     onselect.assert_called_once_with([(100, 100), (125, 125), (150, 150)])
 
 
+def test_lasso_selector_set_props(ax):
+    onselect = mock.Mock(spec=noop, return_value=None)
+
+    tool = widgets.LassoSelector(ax, onselect, props=dict(color='b', alpha=0.2))
+
+    artist = tool._selection_artist
+    assert mcolors.same_color(artist.get_color(), 'b')
+    assert artist.get_alpha() == 0.2
+    tool.set_props(color='r', alpha=0.3)
+    assert mcolors.same_color(artist.get_color(), 'r')
+    assert artist.get_alpha() == 0.3
+
+
 def test_CheckButtons(ax):
     check = widgets.CheckButtons(ax, ('a', 'b', 'c'), (True, False, True))
     assert check.get_status() == [True, False, True]
@@ -965,7 +1018,7 @@ def test_CheckButtons(ax):
 @pytest.mark.parametrize("toolbar", ["none", "toolbar2", "toolmanager"])
 def test_TextBox(ax, toolbar):
     # Avoid "toolmanager is provisional" warning.
-    dict.__setitem__(plt.rcParams, "toolbar", toolbar)
+    plt.rcParams._set("toolbar", toolbar)
 
     submit_event = mock.Mock(spec=noop, return_value=None)
     text_change_event = mock.Mock(spec=noop, return_value=None)
@@ -982,12 +1035,12 @@ def test_TextBox(ax, toolbar):
     assert tool.text == 'x**2'
     assert text_change_event.call_count == 1
 
-    tool.begin_typing(tool.text)
+    tool.begin_typing()
     tool.stop_typing()
 
     assert submit_event.call_count == 2
 
-    do_event(tool, '_click')
+    do_event(tool, '_click', xdata=.5, ydata=.5)  # Ensure the click is in the axes.
     do_event(tool, '_keypress', key='+')
     do_event(tool, '_keypress', key='5')
 
@@ -997,24 +1050,169 @@ def test_TextBox(ax, toolbar):
 @image_comparison(['check_radio_buttons.png'], style='mpl20', remove_text=True)
 def test_check_radio_buttons_image():
     ax = get_ax()
-    # Remove this line when this test image is regenerated.
-    plt.rcParams['text.kerning_factor'] = 6
+    fig = ax.figure
+    fig.subplots_adjust(left=0.3)
 
-    plt.subplots_adjust(left=0.3)
-    rax1 = plt.axes([0.05, 0.7, 0.15, 0.15])
-    rax2 = plt.axes([0.05, 0.2, 0.15, 0.15])
-    widgets.RadioButtons(rax1, ('Radio 1', 'Radio 2', 'Radio 3'))
-    widgets.CheckButtons(rax2, ('Check 1', 'Check 2', 'Check 3'),
-                         (False, True, True))
+    rax1 = fig.add_axes((0.05, 0.7, 0.2, 0.15))
+    rb1 = widgets.RadioButtons(rax1, ('Radio 1', 'Radio 2', 'Radio 3'))
+    with pytest.warns(DeprecationWarning,
+                      match='The circles attribute was deprecated'):
+        rb1.circles  # Trigger the old-style elliptic radiobuttons.
+
+    rax2 = fig.add_axes((0.05, 0.5, 0.2, 0.15))
+    cb1 = widgets.CheckButtons(rax2, ('Check 1', 'Check 2', 'Check 3'),
+                               (False, True, True))
+    with pytest.warns(DeprecationWarning,
+                      match='The rectangles attribute was deprecated'):
+        cb1.rectangles  # Trigger old-style Rectangle check boxes
+
+    rax3 = fig.add_axes((0.05, 0.3, 0.2, 0.15))
+    rb3 = widgets.RadioButtons(
+        rax3, ('Radio 1', 'Radio 2', 'Radio 3'),
+        label_props={'fontsize': [8, 12, 16],
+                     'color': ['red', 'green', 'blue']},
+        radio_props={'edgecolor': ['red', 'green', 'blue'],
+                     'facecolor': ['mistyrose', 'palegreen', 'lightblue']})
+
+    rax4 = fig.add_axes((0.05, 0.1, 0.2, 0.15))
+    cb4 = widgets.CheckButtons(
+        rax4, ('Check 1', 'Check 2', 'Check 3'), (False, True, True),
+        label_props={'fontsize': [8, 12, 16],
+                     'color': ['red', 'green', 'blue']},
+        frame_props={'edgecolor': ['red', 'green', 'blue'],
+                     'facecolor': ['mistyrose', 'palegreen', 'lightblue']},
+        check_props={'color': ['red', 'green', 'blue']})
 
 
-@image_comparison(['check_bunch_of_radio_buttons.png'],
-                  style='mpl20', remove_text=True)
-def test_check_bunch_of_radio_buttons():
-    rax = plt.axes([0.05, 0.1, 0.15, 0.7])
-    widgets.RadioButtons(rax, ('B1', 'B2', 'B3', 'B4', 'B5', 'B6',
-                               'B7', 'B8', 'B9', 'B10', 'B11', 'B12',
-                               'B13', 'B14', 'B15'))
+@check_figures_equal(extensions=["png"])
+def test_radio_buttons(fig_test, fig_ref):
+    widgets.RadioButtons(fig_test.subplots(), ["tea", "coffee"])
+    ax = fig_ref.add_subplot(xticks=[], yticks=[])
+    ax.scatter([.15, .15], [2/3, 1/3], transform=ax.transAxes,
+               s=(plt.rcParams["font.size"] / 2) ** 2, c=["C0", "none"])
+    ax.text(.25, 2/3, "tea", transform=ax.transAxes, va="center")
+    ax.text(.25, 1/3, "coffee", transform=ax.transAxes, va="center")
+
+
+@check_figures_equal(extensions=['png'])
+def test_radio_buttons_props(fig_test, fig_ref):
+    label_props = {'color': ['red'], 'fontsize': [24]}
+    radio_props = {'facecolor': 'green', 'edgecolor': 'blue', 'linewidth': 2}
+
+    widgets.RadioButtons(fig_ref.subplots(), ['tea', 'coffee'],
+                         label_props=label_props, radio_props=radio_props)
+
+    cb = widgets.RadioButtons(fig_test.subplots(), ['tea', 'coffee'])
+    cb.set_label_props(label_props)
+    # Setting the label size automatically increases default marker size, so we
+    # need to do that here as well.
+    cb.set_radio_props({**radio_props, 's': (24 / 2)**2})
+
+
+def test_radio_button_active_conflict(ax):
+    with pytest.warns(UserWarning,
+                      match=r'Both the \*activecolor\* parameter'):
+        rb = widgets.RadioButtons(ax, ['tea', 'coffee'], activecolor='red',
+                                  radio_props={'facecolor': 'green'})
+    # *radio_props*' facecolor wins over *activecolor*
+    assert mcolors.same_color(rb._buttons.get_facecolor(), ['green', 'none'])
+
+
+@check_figures_equal(extensions=['png'])
+def test_radio_buttons_activecolor_change(fig_test, fig_ref):
+    widgets.RadioButtons(fig_ref.subplots(), ['tea', 'coffee'],
+                         activecolor='green')
+
+    # Test property setter.
+    cb = widgets.RadioButtons(fig_test.subplots(), ['tea', 'coffee'],
+                              activecolor='red')
+    cb.activecolor = 'green'
+
+
+@check_figures_equal(extensions=["png"])
+def test_check_buttons(fig_test, fig_ref):
+    widgets.CheckButtons(fig_test.subplots(), ["tea", "coffee"], [True, True])
+    ax = fig_ref.add_subplot(xticks=[], yticks=[])
+    ax.scatter([.15, .15], [2/3, 1/3], marker='s', transform=ax.transAxes,
+               s=(plt.rcParams["font.size"] / 2) ** 2, c=["none", "none"])
+    ax.scatter([.15, .15], [2/3, 1/3], marker='x', transform=ax.transAxes,
+               s=(plt.rcParams["font.size"] / 2) ** 2, c=["k", "k"])
+    ax.text(.25, 2/3, "tea", transform=ax.transAxes, va="center")
+    ax.text(.25, 1/3, "coffee", transform=ax.transAxes, va="center")
+
+
+@check_figures_equal(extensions=['png'])
+def test_check_button_props(fig_test, fig_ref):
+    label_props = {'color': ['red'], 'fontsize': [24]}
+    frame_props = {'facecolor': 'green', 'edgecolor': 'blue', 'linewidth': 2}
+    check_props = {'facecolor': 'red', 'linewidth': 2}
+
+    widgets.CheckButtons(fig_ref.subplots(), ['tea', 'coffee'], [True, True],
+                         label_props=label_props, frame_props=frame_props,
+                         check_props=check_props)
+
+    cb = widgets.CheckButtons(fig_test.subplots(), ['tea', 'coffee'],
+                              [True, True])
+    cb.set_label_props(label_props)
+    # Setting the label size automatically increases default marker size, so we
+    # need to do that here as well.
+    cb.set_frame_props({**frame_props, 's': (24 / 2)**2})
+    # FIXME: Axes.scatter promotes facecolor to edgecolor on unfilled markers,
+    # but Collection.update doesn't do that (it forgot the marker already).
+    # This means we cannot pass facecolor to both setters directly.
+    check_props['edgecolor'] = check_props.pop('facecolor')
+    cb.set_check_props({**check_props, 's': (24 / 2)**2})
+
+
+@check_figures_equal(extensions=["png"])
+def test_check_buttons_rectangles(fig_test, fig_ref):
+    # Test should be removed once .rectangles is removed
+    cb = widgets.CheckButtons(fig_test.subplots(), ["", ""],
+                              [False, False])
+    with pytest.warns(DeprecationWarning,
+                      match='The rectangles attribute was deprecated'):
+        cb.rectangles
+    ax = fig_ref.add_subplot(xticks=[], yticks=[])
+    ys = [2/3, 1/3]
+    dy = 1/3
+    w, h = dy / 2, dy / 2
+    rectangles = [
+        Rectangle(xy=(0.05, ys[i] - h / 2), width=w, height=h,
+                  edgecolor="black",
+                  facecolor="none",
+                  transform=ax.transAxes
+                  )
+        for i, y in enumerate(ys)
+    ]
+    for rectangle in rectangles:
+        ax.add_patch(rectangle)
+
+
+@check_figures_equal(extensions=["png"])
+def test_check_buttons_lines(fig_test, fig_ref):
+    # Test should be removed once .lines is removed
+    cb = widgets.CheckButtons(fig_test.subplots(), ["", ""], [True, True])
+    with pytest.warns(DeprecationWarning,
+                      match='The lines attribute was deprecated'):
+        cb.lines
+    for rectangle in cb._rectangles:
+        rectangle.set_visible(False)
+    ax = fig_ref.add_subplot(xticks=[], yticks=[])
+    ys = [2/3, 1/3]
+    dy = 1/3
+    w, h = dy / 2, dy / 2
+    lineparams = {'color': 'k', 'linewidth': 1.25,
+                    'transform': ax.transAxes,
+                    'solid_capstyle': 'butt'}
+    for i, y in enumerate(ys):
+        x, y = 0.05, y - h / 2
+        l1 = Line2D([x, x + w], [y + h, y], **lineparams)
+        l2 = Line2D([x, x + w], [y, y + h], **lineparams)
+
+        l1.set_visible(True)
+        l2.set_visible(True)
+        ax.add_line(l1)
+        ax.add_line(l2)
 
 
 def test_slider_slidermin_slidermax_invalid():
@@ -1117,12 +1315,12 @@ def test_range_slider(orientation):
         else:
             return [h.get_xdata()[0] for h in slider._handles]
 
-    slider.set_val((0.2, 0.6))
-    assert_allclose(slider.val, (0.2, 0.6))
-    assert_allclose(handle_positions(slider), (0.2, 0.6))
+    slider.set_val((0.4, 0.6))
+    assert_allclose(slider.val, (0.4, 0.6))
+    assert_allclose(handle_positions(slider), (0.4, 0.6))
 
     box = slider.poly.get_extents().transformed(ax.transAxes.inverted())
-    assert_allclose(box.get_points().flatten()[idx], [0.2, .25, 0.6, .75])
+    assert_allclose(box.get_points().flatten()[idx], [0.4, .25, 0.6, .75])
 
     slider.set_val((0.2, 0.1))
     assert_allclose(slider.val, (0.1, 0.2))
@@ -1441,7 +1639,8 @@ def test_polygon_selector_verts_setter(fig_test, fig_ref, draw_bounding_box):
 
 
 def test_polygon_selector_box(ax):
-    # Create a diamond shape
+    # Create a diamond (adjusting axes lims s.t. the diamond lies within axes limits).
+    ax.set(xlim=(-10, 50), ylim=(-10, 50))
     verts = [(20, 0), (0, 20), (20, 40), (40, 20)]
     event_sequence = [
         *polygon_place_vertex(*verts[0]),
@@ -1495,6 +1694,29 @@ def test_polygon_selector_box(ax):
         tool._box.extents, (20.0, 40.0, 30.0, 40.0))
 
 
+def test_polygon_selector_clear_method(ax):
+    onselect = mock.Mock(spec=noop, return_value=None)
+    tool = widgets.PolygonSelector(ax, onselect)
+
+    for result in ([(50, 50), (150, 50), (50, 150), (50, 50)],
+                   [(50, 50), (100, 50), (50, 150), (50, 50)]):
+        for x, y in result:
+            for etype, event_args in polygon_place_vertex(x, y):
+                do_event(tool, etype, **event_args)
+
+        artist = tool._selection_artist
+
+        assert tool._selection_completed
+        assert tool.get_visible()
+        assert artist.get_visible()
+        np.testing.assert_equal(artist.get_xydata(), result)
+        assert onselect.call_args == ((result[:-1],), {})
+
+        tool.clear()
+        assert not tool._selection_completed
+        np.testing.assert_equal(artist.get_xydata(), [(0, 0)])
+
+
 @pytest.mark.parametrize("horizOn", [False, True])
 @pytest.mark.parametrize("vertOn", [False, True])
 def test_MultiCursor(horizOn, vertOn):
@@ -1507,20 +1729,37 @@ def test_MultiCursor(horizOn, vertOn):
     )
 
     # Only two of the axes should have a line drawn on them.
-    assert len(multi.vlines) == (2 if vertOn else 0)
-    assert len(multi.hlines) == (2 if horizOn else 0)
+    assert len(multi.vlines) == 2
+    assert len(multi.hlines) == 2
 
     # mock a motion_notify_event
     # Can't use `do_event` as that helper requires the widget
     # to have a single .ax attribute.
     event = mock_event(ax1, xdata=.5, ydata=.25)
     multi.onmove(event)
+    # force a draw + draw event to exercise clear
+    ax1.figure.canvas.draw()
 
     # the lines in the first two ax should both move
     for l in multi.vlines:
         assert l.get_xdata() == (.5, .5)
     for l in multi.hlines:
         assert l.get_ydata() == (.25, .25)
+    # The relevant lines get turned on after move.
+    assert len([line for line in multi.vlines if line.get_visible()]) == (
+        2 if vertOn else 0)
+    assert len([line for line in multi.hlines if line.get_visible()]) == (
+        2 if horizOn else 0)
+
+    # After toggling settings, the opposite lines should be visible after move.
+    multi.horizOn = not multi.horizOn
+    multi.vertOn = not multi.vertOn
+    event = mock_event(ax1, xdata=.5, ydata=.25)
+    multi.onmove(event)
+    assert len([line for line in multi.vlines if line.get_visible()]) == (
+        0 if vertOn else 2)
+    assert len([line for line in multi.hlines if line.get_visible()]) == (
+        0 if horizOn else 2)
 
     # test a move event in an Axes not part of the MultiCursor
     # the lines in ax1 and ax2 should not have moved.

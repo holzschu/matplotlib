@@ -94,7 +94,7 @@ The following module-level classes/variables have been removed:
   ``mathtext.latex_to_standard``
 - ``mathtext.MathtextBackendPdf``, ``mathtext.MathtextBackendPs``,
   ``mathtext.MathtextBackendSvg``, ``mathtext.MathtextBackendCairo``; use
-  `.MathtextBackendPath` instead.
+  ``.MathtextBackendPath`` instead.
 - ``mathtext.Node`` and all its subclasses
 - ``mathtext.NUM_SIZE_LEVELS``
 - ``mathtext.Parser``
@@ -152,7 +152,7 @@ The following class methods have been removed:
   ``RendererAgg.tostring_rgba_minimized()``
 - ``NavigationToolbar2Wx.get_canvas()``
 
-- ``ParasiteAxesBase.update_viewlim()``; use `.ParasiteAxesBase.apply_aspect`
+- ``ParasiteAxesBase.update_viewlim()``; use ``ParasiteAxesBase.apply_aspect``
   instead.
 - ``Subplot.get_geometry()``; use ``SubplotBase.get_subplotspec`` instead.
 - ``Subplot.change_geometry()``; use ``SubplotBase.set_subplotspec`` instead.
