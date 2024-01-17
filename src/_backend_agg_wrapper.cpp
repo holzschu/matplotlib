@@ -12,7 +12,11 @@ typedef struct
     Py_ssize_t suboffsets[3];
 } PyRendererAgg;
 
+#if !TARGET_OS_IPHONE
 static PyTypeObject PyRendererAggType;
+#else
+static __thread PyTypeObject PyRendererAggType;
+#endif
 
 typedef struct
 {
@@ -23,7 +27,11 @@ typedef struct
     Py_ssize_t suboffsets[3];
 } PyBufferRegion;
 
+#if !TARGET_OS_IPHONE
 static PyTypeObject PyBufferRegionType;
+#else
+static __thread PyTypeObject PyBufferRegionType;
+#endif
 
 
 /**********************************************************************
@@ -135,7 +143,11 @@ int PyBufferRegion_get_buffer(PyBufferRegion *self, Py_buffer *buf, int flags)
 
 static PyTypeObject *PyBufferRegion_init_type()
 {
+#if !TARGET_OS_IPHONE
     static PyMethodDef methods[] = {
+#else
+    static __thread PyMethodDef methods[] = {
+#endif
         { "to_string", (PyCFunction)PyBufferRegion_to_string, METH_NOARGS, NULL },
         { "to_string_argb", (PyCFunction)PyBufferRegion_to_string_argb, METH_NOARGS, NULL },
         { "set_x", (PyCFunction)PyBufferRegion_set_x, METH_VARARGS, NULL },
@@ -144,7 +156,11 @@ static PyTypeObject *PyBufferRegion_init_type()
         { NULL }
     };
 
+#if !TARGET_OS_IPHONE
     static PyBufferProcs buffer_procs;
+#else
+    static __thread PyBufferProcs buffer_procs;
+#endif
     buffer_procs.bf_getbuffer = (getbufferproc)PyBufferRegion_get_buffer;
 
     PyBufferRegionType.tp_name = "matplotlib.backends._backend_agg.BufferRegion";
@@ -662,7 +678,11 @@ static PyObject *PyRendererAgg_restore_region(PyRendererAgg *self, PyObject *arg
 
 static PyTypeObject *PyRendererAgg_init_type()
 {
+#if !TARGET_OS_IPHONE
     static PyMethodDef methods[] = {
+#else
+    static __thread PyMethodDef methods[] = {
+#endif
         {"draw_path", (PyCFunction)PyRendererAgg_draw_path, METH_VARARGS, NULL},
         {"draw_markers", (PyCFunction)PyRendererAgg_draw_markers, METH_VARARGS, NULL},
         {"draw_text_image", (PyCFunction)PyRendererAgg_draw_text_image, METH_VARARGS, NULL},
@@ -679,7 +699,11 @@ static PyTypeObject *PyRendererAgg_init_type()
         {NULL}
     };
 
+#if !TARGET_OS_IPHONE
     static PyBufferProcs buffer_procs;
+#else
+    static __thread PyBufferProcs buffer_procs;
+#endif
     buffer_procs.bf_getbuffer = (getbufferproc)PyRendererAgg_get_buffer;
 
     PyRendererAggType.tp_name = "matplotlib.backends._backend_agg.RendererAgg";

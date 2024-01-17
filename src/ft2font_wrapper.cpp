@@ -36,7 +36,11 @@ typedef struct
     Py_ssize_t suboffsets[2];
 } PyFT2Image;
 
+#if !TARGET_OS_IPHONE
 static PyTypeObject PyFT2ImageType;
+#else
+static __thread PyTypeObject PyFT2ImageType;
+#endif
 
 static PyObject *PyFT2Image_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
@@ -66,6 +70,8 @@ static void PyFT2Image_dealloc(PyFT2Image *self)
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
+#if !TARGET_OS_IPHONE
+// We need to initialize thread-local variables with a compiler-time-constant, hence the #define instead of the const char.
 const char *PyFT2Image_draw_rect__doc__ =
     "draw_rect(self, x0, y0, x1, y1)\n"
     "--\n\n"
@@ -73,6 +79,9 @@ const char *PyFT2Image_draw_rect__doc__ =
     "\n"
     ".. deprecated:: 3.8\n";
 ;
+#else
+#define PyFT2Image_draw_rect__doc__ (char *)"draw_rect(self, x0, y0, x1, y1)\n--\n\nDraw an empty rectangle to the image.\n\n.. deprecated:: 3.8\n"
+#endif
 
 static PyObject *PyFT2Image_draw_rect(PyFT2Image *self, PyObject *args)
 {
@@ -95,10 +104,14 @@ static PyObject *PyFT2Image_draw_rect(PyFT2Image *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Image_draw_rect_filled__doc__ =
     "draw_rect_filled(self, x0, y0, x1, y1)\n"
     "--\n\n"
     "Draw a filled rectangle to the image.\n";
+#else 
+#define PyFT2Image_draw_rect_filled__doc__ (char *)"draw_rect_filled(self, x0, y0, x1, y1)\n--\n\nDraw a filled rectangle to the image.\n"
+#endif
 
 static PyObject *PyFT2Image_draw_rect_filled(PyFT2Image *self, PyObject *args)
 {
@@ -139,13 +152,21 @@ static int PyFT2Image_get_buffer(PyFT2Image *self, Py_buffer *buf, int flags)
 
 static PyTypeObject* PyFT2Image_init_type()
 {
+#if !TARGET_OS_IPHONE
     static PyMethodDef methods[] = {
+#else
+    static __thread PyMethodDef methods[] = {
+#endif		
         {"draw_rect", (PyCFunction)PyFT2Image_draw_rect, METH_VARARGS, PyFT2Image_draw_rect__doc__},
         {"draw_rect_filled", (PyCFunction)PyFT2Image_draw_rect_filled, METH_VARARGS, PyFT2Image_draw_rect_filled__doc__},
         {NULL}
     };
 
+#if !TARGET_OS_IPHONE
     static PyBufferProcs buffer_procs;
+#else
+    static __thread PyBufferProcs buffer_procs;
+#endif
     buffer_procs.bf_getbuffer = (getbufferproc)PyFT2Image_get_buffer;
 
     PyFT2ImageType.tp_name = "matplotlib.ft2font.FT2Image";
@@ -180,7 +201,11 @@ typedef struct
     FT_BBox bbox;
 } PyGlyph;
 
+#if !TARGET_OS_IPHONE
 static PyTypeObject PyGlyphType;
+#else
+static __thread PyTypeObject PyGlyphType;
+#endif
 
 static PyObject *PyGlyph_from_FT2Font(const FT2Font *font)
 {
@@ -220,7 +245,11 @@ static PyObject *PyGlyph_get_bbox(PyGlyph *self, void *closure)
 
 static PyTypeObject *PyGlyph_init_type()
 {
+#if !TARGET_OS_IPHONE
     static PyMemberDef members[] = {
+#else
+    static __thread PyMemberDef members[] = {
+#endif
         {(char *)"width", T_LONG, offsetof(PyGlyph, width), READONLY, (char *)""},
         {(char *)"height", T_LONG, offsetof(PyGlyph, height), READONLY, (char *)""},
         {(char *)"horiBearingX", T_LONG, offsetof(PyGlyph, horiBearingX), READONLY, (char *)""},
@@ -233,7 +262,11 @@ static PyTypeObject *PyGlyph_init_type()
         {NULL}
     };
 
+#if !TARGET_OS_IPHONE
     static PyGetSetDef getset[] = {
+#else
+    static __thread PyGetSetDef getset[] = {
+#endif
         {(char *)"bbox", (getter)PyGlyph_get_bbox, NULL, NULL, NULL},
         {NULL}
     };
@@ -264,7 +297,11 @@ struct PyFT2Font
     std::vector<PyObject *> fallbacks;
 };
 
+#if !TARGET_OS_IPHONE
 static PyTypeObject PyFT2FontType;
+#else
+static __thread PyTypeObject PyFT2FontType;
+#endif
 
 static unsigned long read_from_file_callback(FT_Stream stream,
                                              unsigned long offset,
@@ -323,6 +360,7 @@ static PyObject *PyFT2Font_new(PyTypeObject *type, PyObject *args, PyObject *kwd
     return (PyObject *)self;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_init__doc__ =
     "FT2Font(filename, hinting_factor=8, *, _fallback_list=None, _kerning_factor=0)\n"
     "--\n\n"
@@ -377,6 +415,9 @@ const char *PyFT2Font_init__doc__ =
     "    Vertical position and thickness of the underline bar.\n"
     "postscript_name : str\n"
     "    PostScript name of the font.\n";
+#else
+#define PyFT2Font_init__doc__ (char *)"FT2Font(filename, hinting_factor=8, *, _fallback_list=None, _kerning_factor=0)\n--\n\nCreate a new FT2Font object.\n\nParameters\n----------\nfilename : str or file-like\nThe source of the font data in a format (ttf or ttc) that FreeType can read\n\nhinting_factor : int, optional\nMust be positive. Used to scale the hinting in the x-direction\n_fallback_list : list of FT2Font, optional\nA list of FT2Font objects used to find missing glyphs.\n\n.. warning::\nThis API is both private and provisional: do not use it directly\n\n_kerning_factor : int, optional\nUsed to adjust the degree of kerning.\n\n.. warning::\nThis API is private: do not use it directly\n\nAttributes\n----------\nnum_faces : int\nNumber of faces in file.\nface_flags, style_flags : int\nFace and style flags; see the ft2font constants.\nnum_glyphs : int\nNumber of glyphs in the face.\nfamily_name, style_name : str\nFace family and style name.\nnum_fixed_sizes : int\nNumber of bitmap in the face.\nscalable : bool\nWhether face is scalable; attributes after this one are only\ndefined for scalable faces.\nbbox : tuple[int, int, int, int]\nFace global bounding box (xmin, ymin, xmax, ymax).\nunits_per_EM : int\nNumber of font units covered by the EM.\nascender, descender : int\nAscender and descender in 26.6 units.\nheight : int\nHeight in 26.6 units; used to compute a default line spacing\n(baseline-to-baseline distance).\nmax_advance_width, max_advance_height : int\nMaximum horizontal and vertical cursor advance for all glyphs.\nunderline_position, underline_thickness : int\nVertical position and thickness of the underline bar.\npostscript_name : str\nPostScript name of the font.\n"
+#endif
 
 static int PyFT2Font_init(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
@@ -464,6 +505,7 @@ static int PyFT2Font_init(PyFT2Font *self, PyObject *args, PyObject *kwds)
         Py_CLEAR(self->py_file), -1);
 
     CALL_CPP_INIT("FT2Font->set_kerning_factor", (self->x->set_kerning_factor(kerning_factor)));
+	
 
 exit:
     return PyErr_Occurred() ? -1 : 0;
@@ -480,10 +522,14 @@ static void PyFT2Font_dealloc(PyFT2Font *self)
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_clear__doc__ =
     "clear(self)\n"
     "--\n\n"
     "Clear all the glyphs, reset for a new call to `.set_text`.\n";
+#else
+#define PyFT2Font_clear__doc__ (char*)"clear(self)\n--\n\nClear all the glyphs, reset for a new call to `.set_text`.\n"
+#endif
 
 static PyObject *PyFT2Font_clear(PyFT2Font *self, PyObject *args)
 {
@@ -492,10 +538,14 @@ static PyObject *PyFT2Font_clear(PyFT2Font *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_set_size__doc__ =
     "set_size(self, ptsize, dpi)\n"
     "--\n\n"
     "Set the point size and dpi of the text.\n";
+#else
+#define PyFT2Font_set_size__doc__ (char*)"set_size(self, ptsize, dpi)\n--\n\nSet the point size and dpi of the text.\n"
+#endif
 
 static PyObject *PyFT2Font_set_size(PyFT2Font *self, PyObject *args)
 {
@@ -511,10 +561,14 @@ static PyObject *PyFT2Font_set_size(PyFT2Font *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_set_charmap__doc__ =
     "set_charmap(self, i)\n"
     "--\n\n"
     "Make the i-th charmap current.\n";
+#else
+#define PyFT2Font_set_charmap__doc__ (char*) "set_charmap(self, i)\n--\n\nMake the i-th charmap current.\n"
+#endif
 
 static PyObject *PyFT2Font_set_charmap(PyFT2Font *self, PyObject *args)
 {
@@ -529,10 +583,14 @@ static PyObject *PyFT2Font_set_charmap(PyFT2Font *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_select_charmap__doc__ =
     "select_charmap(self, i)\n"
     "--\n\n"
     "Select a charmap by its FT_Encoding number.\n";
+#else
+#define PyFT2Font_select_charmap__doc__ (char*) "select_charmap(self, i)\n--\n\nSelect a charmap by its FT_Encoding number.\n"
+#endif
 
 static PyObject *PyFT2Font_select_charmap(PyFT2Font *self, PyObject *args)
 {
@@ -547,6 +605,7 @@ static PyObject *PyFT2Font_select_charmap(PyFT2Font *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_kerning__doc__ =
     "get_kerning(self, left, right, mode)\n"
     "--\n\n"
@@ -555,6 +614,9 @@ const char *PyFT2Font_get_kerning__doc__ =
     "- KERNING_DEFAULT  - Return scaled and grid-fitted kerning distances\n"
     "- KERNING_UNFITTED - Return scaled but un-grid-fitted kerning distances\n"
     "- KERNING_UNSCALED - Return the kerning vector in original font units\n";
+#else
+#define PyFT2Font_get_kerning__doc__ (char*)"get_kerning(self, left, right, mode)\n--\n\nGet the kerning between *left* and *right* glyph indices.\n*mode* is a kerning mode constant:\n\n- KERNING_DEFAULT  - Return scaled and grid-fitted kerning distances\n- KERNING_UNFITTED - Return scaled but un-grid-fitted kerning distances\n- KERNING_UNSCALED - Return the kerning vector in original font units\n"
+#endif
 
 static PyObject *PyFT2Font_get_kerning(PyFT2Font *self, PyObject *args)
 {
@@ -571,11 +633,15 @@ static PyObject *PyFT2Font_get_kerning(PyFT2Font *self, PyObject *args)
     return PyLong_FromLong(result);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_fontmap__doc__ =
     "_get_fontmap(self, string)\n"
     "--\n\n"
     "Get a mapping between characters and the font that includes them.\n"
     "A dictionary mapping unicode characters to PyFT2Font objects.";
+#else
+#define PyFT2Font_get_fontmap__doc__ (char*)"_get_fontmap(self, string)\n--\n\nGet a mapping between characters and the font that includes them.\nA dictionary mapping unicode characters to PyFT2Font objects."
+#endif
 static PyObject *PyFT2Font_get_fontmap(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
     PyObject *textobj;
@@ -631,6 +697,7 @@ static PyObject *PyFT2Font_get_fontmap(PyFT2Font *self, PyObject *args, PyObject
 }
 
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_set_text__doc__ =
     "set_text(self, string, angle=0.0, flags=32)\n"
     "--\n\n"
@@ -639,6 +706,9 @@ const char *PyFT2Font_set_text__doc__ =
     "the default value is LOAD_FORCE_AUTOHINT.\n"
     "You must call this before `.draw_glyphs_to_bitmap`.\n"
     "A sequence of x,y positions is returned.\n";
+#else
+#define PyFT2Font_set_text__doc__ (char*)"set_text(self, string, angle=0.0, flags=32)\n--\n\nSet the text *string* and *angle*.\n*flags* can be a bitwise-or of the LOAD_XXX constants;\nthe default value is LOAD_FORCE_AUTOHINT.\nYou must call this before `.draw_glyphs_to_bitmap`.\nA sequence of x,y positions is returned.\n"
+#endif
 
 static PyObject *PyFT2Font_set_text(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
@@ -679,16 +749,21 @@ static PyObject *PyFT2Font_set_text(PyFT2Font *self, PyObject *args, PyObject *k
     return convert_xys_to_array(xys);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_num_glyphs__doc__ =
     "get_num_glyphs(self)\n"
     "--\n\n"
     "Return the number of loaded glyphs.\n";
+#else
+#define PyFT2Font_get_num_glyphs__doc__ (char*)"get_num_glyphs(self)\n--\n\nReturn the number of loaded glyphs.\n"
+#endif
 
 static PyObject *PyFT2Font_get_num_glyphs(PyFT2Font *self, PyObject *args)
 {
     return PyLong_FromSize_t(self->x->get_num_glyphs());
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_load_char__doc__ =
     "load_char(self, charcode, flags=32)\n"
     "--\n\n"
@@ -705,6 +780,9 @@ const char *PyFT2Font_load_char__doc__ =
     "- vertBearingX: left side bearing in vertical layouts\n"
     "- vertBearingY: top side bearing in vertical layouts\n"
     "- vertAdvance: advance height for vertical layout\n";
+#else
+#define PyFT2Font_load_char__doc__ (char*)"load_char(self, charcode, flags=32)\n--\n\nLoad character with *charcode* in current fontfile and set glyph.\n*flags* can be a bitwise-or of the LOAD_XXX constants;\nthe default value is LOAD_FORCE_AUTOHINT.\nReturn value is a Glyph object, with attributes\n\n- width: glyph width\n- height: glyph height\n- bbox: the glyph bbox (xmin, ymin, xmax, ymax)\n- horiBearingX: left side bearing in horizontal layouts\n- horiBearingY: top side bearing in horizontal layouts\n- horiAdvance: advance width for horizontal layout\n- vertBearingX: left side bearing in vertical layouts\n- vertBearingY: top side bearing in vertical layouts\n- vertAdvance: advance height for vertical layout\n"
+#endif
 
 static PyObject *PyFT2Font_load_char(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
@@ -727,6 +805,7 @@ static PyObject *PyFT2Font_load_char(PyFT2Font *self, PyObject *args, PyObject *
     return PyGlyph_from_FT2Font(ft_object);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_load_glyph__doc__ =
     "load_glyph(self, glyphindex, flags=32)\n"
     "--\n\n"
@@ -743,6 +822,9 @@ const char *PyFT2Font_load_glyph__doc__ =
     "- vertBearingX: left side bearing in vertical layouts\n"
     "- vertBearingY: top side bearing in vertical layouts\n"
     "- vertAdvance: advance height for vertical layout\n";
+#else
+#define PyFT2Font_load_glyph__doc__ (char*)"load_glyph(self, glyphindex, flags=32)\n--\n\nLoad character with *glyphindex* in current fontfile and set glyph.\n*flags* can be a bitwise-or of the LOAD_XXX constants;\nthe default value is LOAD_FORCE_AUTOHINT.\nReturn value is a Glyph object, with attributes\n\n- width: glyph width\n- height: glyph height\n- bbox: the glyph bbox (xmin, ymin, xmax, ymax)\n- horiBearingX: left side bearing in horizontal layouts\n- horiBearingY: top side bearing in horizontal layouts\n- horiAdvance: advance width for horizontal layout\n- vertBearingX: left side bearing in vertical layouts\n- vertBearingY: top side bearing in vertical layouts\n- vertAdvance: advance height for vertical layout\n"
+#endif
 
 static PyObject *PyFT2Font_load_glyph(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
@@ -765,12 +847,16 @@ static PyObject *PyFT2Font_load_glyph(PyFT2Font *self, PyObject *args, PyObject 
     return PyGlyph_from_FT2Font(ft_object);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_width_height__doc__ =
     "get_width_height(self)\n"
     "--\n\n"
     "Get the width and height in 26.6 subpixels of the current string set by `.set_text`.\n"
     "The rotation of the string is accounted for.  To get width and height\n"
     "in pixels, divide these values by 64.\n";
+#else
+#define PyFT2Font_get_width_height__doc__ (char*)"get_width_height(self)\n--\n\nGet the width and height in 26.6 subpixels of the current string set by `.set_text`.\nThe rotation of the string is accounted for.  To get width and height\nin pixels, divide these values by 64.\n"
+#endif
 
 static PyObject *PyFT2Font_get_width_height(PyFT2Font *self, PyObject *args)
 {
@@ -781,11 +867,15 @@ static PyObject *PyFT2Font_get_width_height(PyFT2Font *self, PyObject *args)
     return Py_BuildValue("ll", width, height);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_bitmap_offset__doc__ =
     "get_bitmap_offset(self)\n"
     "--\n\n"
     "Get the (x, y) offset in 26.6 subpixels for the bitmap if ink hangs left or below (0, 0).\n"
     "Since Matplotlib only supports left-to-right text, y is always 0.\n";
+#else
+#define PyFT2Font_get_bitmap_offset__doc__ (char*)"get_bitmap_offset(self)\n--\n\nGet the (x, y) offset in 26.6 subpixels for the bitmap if ink hangs left or below (0, 0).\nSince Matplotlib only supports left-to-right text, y is always 0.\n"
+#endif
 
 static PyObject *PyFT2Font_get_bitmap_offset(PyFT2Font *self, PyObject *args)
 {
@@ -796,12 +886,16 @@ static PyObject *PyFT2Font_get_bitmap_offset(PyFT2Font *self, PyObject *args)
     return Py_BuildValue("ll", x, y);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_descent__doc__ =
     "get_descent(self)\n"
     "--\n\n"
     "Get the descent in 26.6 subpixels of the current string set by `.set_text`.\n"
     "The rotation of the string is accounted for.  To get the descent\n"
     "in pixels, divide this value by 64.\n";
+#else
+#define PyFT2Font_get_descent__doc__ (char*)"get_descent(self)\n--\n\nGet the descent in 26.6 subpixels of the current string set by `.set_text`.\nThe rotation of the string is accounted for.  To get the descent\nin pixels, divide this value by 64.\n"
+#endif
 
 static PyObject *PyFT2Font_get_descent(PyFT2Font *self, PyObject *args)
 {
@@ -812,11 +906,15 @@ static PyObject *PyFT2Font_get_descent(PyFT2Font *self, PyObject *args)
     return PyLong_FromLong(descent);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_draw_glyphs_to_bitmap__doc__ =
     "draw_glyphs_to_bitmap(self, antialiased=True)\n"
     "--\n\n"
     "Draw the glyphs that were loaded by `.set_text` to the bitmap.\n"
     "The bitmap size will be automatically set to include the glyphs.\n";
+#else
+#define PyFT2Font_draw_glyphs_to_bitmap__doc__ (char*)"draw_glyphs_to_bitmap(self, antialiased=True)\n--\n\nDraw the glyphs that were loaded by `.set_text` to the bitmap.\nThe bitmap size will be automatically set to include the glyphs.\n"
+#endif
 
 static PyObject *PyFT2Font_draw_glyphs_to_bitmap(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
@@ -833,12 +931,16 @@ static PyObject *PyFT2Font_draw_glyphs_to_bitmap(PyFT2Font *self, PyObject *args
     Py_RETURN_NONE;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_xys__doc__ =
     "get_xys(self, antialiased=True)\n"
     "--\n\n"
     "Get the xy locations of the current glyphs.\n"
     "\n"
     ".. deprecated:: 3.8\n";
+#else
+#define PyFT2Font_get_xys__doc__ (char*)"get_xys(self, antialiased=True)\n--\n\nGet the xy locations of the current glyphs.\n\n.. deprecated:: 3.8\n"
+#endif
 
 static PyObject *PyFT2Font_get_xys(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
@@ -864,6 +966,7 @@ static PyObject *PyFT2Font_get_xys(PyFT2Font *self, PyObject *args, PyObject *kw
     return convert_xys_to_array(xys);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_draw_glyph_to_bitmap__doc__ =
     "draw_glyph_to_bitmap(self, image, x, y, glyph, antialiased=True)\n"
     "--\n\n"
@@ -875,6 +978,9 @@ const char *PyFT2Font_draw_glyph_to_bitmap__doc__ =
     "`.draw_glyphs_to_bitmap`.  This function is instead intended for people\n"
     "who want to render individual glyphs (e.g., returned by `.load_char`)\n"
     "at precise locations.\n";
+#else
+#define PyFT2Font_draw_glyph_to_bitmap__doc__ (char*)"draw_glyph_to_bitmap(self, image, x, y, glyph, antialiased=True)\n--\n\nDraw a single glyph to the bitmap at pixel locations x, y\nNote it is your responsibility to set up the bitmap manually\nwith ``set_bitmap_size(w, h)`` before this call is made.\n\nIf you want automatic layout, use `.set_text` in combinations with\n`.draw_glyphs_to_bitmap`.  This function is instead intended for people\nwho want to render individual glyphs (e.g., returned by `.load_char`)\nat precise locations.\n"
+#endif
 
 static PyObject *PyFT2Font_draw_glyph_to_bitmap(PyFT2Font *self, PyObject *args, PyObject *kwds)
 {
@@ -905,6 +1011,7 @@ static PyObject *PyFT2Font_draw_glyph_to_bitmap(PyFT2Font *self, PyObject *args,
     Py_RETURN_NONE;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_glyph_name__doc__ =
     "get_glyph_name(self, index)\n"
     "--\n\n"
@@ -913,6 +1020,9 @@ const char *PyFT2Font_get_glyph_name__doc__ =
     "Due to Matplotlib's internal design, for fonts that do not contain glyph\n"
     "names (per FT_FACE_FLAG_GLYPH_NAMES), this returns a made-up name which\n"
     "does *not* roundtrip through `.get_name_index`.\n";
+#else
+#define PyFT2Font_get_glyph_name__doc__ (char*)"get_glyph_name(self, index)\n--\n\nRetrieve the ASCII name of a given glyph *index* in a face.\n\nDue to Matplotlib's internal design, for fonts that do not contain glyph\nnames (per FT_FACE_FLAG_GLYPH_NAMES), this returns a made-up name which\ndoes *not* roundtrip through `.get_name_index`.\n"
+#endif
 
 static PyObject *PyFT2Font_get_glyph_name(PyFT2Font *self, PyObject *args)
 {
@@ -927,11 +1037,15 @@ static PyObject *PyFT2Font_get_glyph_name(PyFT2Font *self, PyObject *args)
     return PyUnicode_FromString(buffer);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_charmap__doc__ =
     "get_charmap(self)\n"
     "--\n\n"
     "Return a dict that maps the character codes of the selected charmap\n"
     "(Unicode by default) to their corresponding glyph indices.\n";
+#else
+#define PyFT2Font_get_charmap__doc__ (char*)"get_charmap(self)\n--\n\nReturn a dict that maps the character codes of the selected charmap\n(Unicode by default) to their corresponding glyph indices.\n"
+#endif
 
 static PyObject *PyFT2Font_get_charmap(PyFT2Font *self, PyObject *args)
 {
@@ -957,11 +1071,14 @@ static PyObject *PyFT2Font_get_charmap(PyFT2Font *self, PyObject *args)
     return charmap;
 }
 
-
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_char_index__doc__ =
     "get_char_index(self, codepoint)\n"
     "--\n\n"
     "Return the glyph index corresponding to a character *codepoint*.\n";
+#else
+#define PyFT2Font_get_char_index__doc__ (char*)"get_char_index(self, codepoint)\n--\n\nReturn the glyph index corresponding to a character *codepoint*.\n"
+#endif
 
 static PyObject *PyFT2Font_get_char_index(PyFT2Font *self, PyObject *args)
 {
@@ -979,12 +1096,16 @@ static PyObject *PyFT2Font_get_char_index(PyFT2Font *self, PyObject *args)
 }
 
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_sfnt__doc__ =
     "get_sfnt(self)\n"
     "--\n\n"
     "Load the entire SFNT names table, as a dict whose keys are\n"
     "(platform-ID, ISO-encoding-scheme, language-code, and description)\n"
     "tuples.\n";
+#else
+#define PyFT2Font_get_sfnt__doc__ (char*)"get_sfnt(self)\n--\n\nLoad the entire SFNT names table, as a dict whose keys are\n(platform-ID, ISO-encoding-scheme, language-code, and description)\ntuples.\n"
+#endif
 
 static PyObject *PyFT2Font_get_sfnt(PyFT2Font *self, PyObject *args)
 {
@@ -1040,11 +1161,15 @@ static PyObject *PyFT2Font_get_sfnt(PyFT2Font *self, PyObject *args)
     return names;
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_name_index__doc__ =
     "get_name_index(self, name)\n"
     "--\n\n"
     "Return the glyph index of a given glyph *name*.\n"
     "The glyph index 0 means 'undefined character code'.\n";
+#else
+#define PyFT2Font_get_name_index__doc__ (char*)"get_name_index(self, name)\n--\n\nReturn the glyph index of a given glyph *name*.\nThe glyph index 0 means 'undefined character code'.\n"
+#endif
 
 static PyObject *PyFT2Font_get_name_index(PyFT2Font *self, PyObject *args)
 {
@@ -1057,10 +1182,14 @@ static PyObject *PyFT2Font_get_name_index(PyFT2Font *self, PyObject *args)
     return PyLong_FromLong(name_index);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_ps_font_info__doc__ =
     "get_ps_font_info(self)\n"
     "--\n\n"
     "Return the information in the PS Font Info structure.\n";
+#else
+#define PyFT2Font_get_ps_font_info__doc__ (char*)"get_ps_font_info(self)\n--\n\nReturn the information in the PS Font Info structure.\n"
+#endif
 
 static PyObject *PyFT2Font_get_ps_font_info(PyFT2Font *self, PyObject *args)
 {
@@ -1084,11 +1213,15 @@ static PyObject *PyFT2Font_get_ps_font_info(PyFT2Font *self, PyObject *args)
                          fontinfo.underline_thickness);
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_sfnt_table__doc__ =
     "get_sfnt_table(self, name)\n"
     "--\n\n"
     "Return one of the following SFNT tables: head, maxp, OS/2, hhea, "
     "vhea, post, or pclt.\n";
+#else
+#define PyFT2Font_get_sfnt_table__doc__ (char*)"get_sfnt_table(self, name)\n--\n\nReturn one of the following SFNT tables: head, maxp, OS/2, hhea, vhea, post, or pclt.\n"
+#endif
 
 static PyObject *PyFT2Font_get_sfnt_table(PyFT2Font *self, PyObject *args)
 {
@@ -1386,21 +1519,29 @@ static PyObject *PyFT2Font_get_sfnt_table(PyFT2Font *self, PyObject *args)
     }
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_path__doc__ =
     "get_path(self)\n"
     "--\n\n"
     "Get the path data from the currently loaded glyph as a tuple of vertices, "
     "codes.\n";
+#else
+#define PyFT2Font_get_path__doc__ (char*)"get_path(self)\n--\n\nGet the path data from the currently loaded glyph as a tuple of vertices, codes.\n"
+#endif
 
 static PyObject *PyFT2Font_get_path(PyFT2Font *self, PyObject *args)
 {
     CALL_CPP("get_path", return self->x->get_path());
 }
 
+#if !TARGET_OS_IPHONE
 const char *PyFT2Font_get_image__doc__ =
     "get_image(self)\n"
     "--\n\n"
     "Return the underlying image buffer for this font object.\n";
+#else
+#define PyFT2Font_get_image__doc__ (char*)"get_image(self)\n--\n\nReturn the underlying image buffer for this font object.\n"
+#endif
 
 static PyObject *PyFT2Font_get_image(PyFT2Font *self, PyObject *args)
 {
@@ -1559,7 +1700,11 @@ static int PyFT2Font_get_buffer(PyFT2Font *self, Py_buffer *buf, int flags)
 
 static PyTypeObject *PyFT2Font_init_type()
 {
+#if !TARGET_OS_IPHONE
     static PyGetSetDef getset[] = {
+#else
+    static __thread PyGetSetDef getset[] = {
+#endif
         {(char *)"postscript_name", (getter)PyFT2Font_postscript_name, NULL, NULL, NULL},
         {(char *)"num_faces", (getter)PyFT2Font_num_faces, NULL, NULL, NULL},
         {(char *)"family_name", (getter)PyFT2Font_family_name, NULL, NULL, NULL},
@@ -1583,7 +1728,11 @@ static PyTypeObject *PyFT2Font_init_type()
         {NULL}
     };
 
+#if !TARGET_OS_IPHONE
     static PyMethodDef methods[] = {
+#else
+    static __thread PyMethodDef methods[] = {
+#endif
         {"clear", (PyCFunction)PyFT2Font_clear, METH_NOARGS, PyFT2Font_clear__doc__},
         {"set_size", (PyCFunction)PyFT2Font_set_size, METH_VARARGS, PyFT2Font_set_size__doc__},
         {"set_charmap", (PyCFunction)PyFT2Font_set_charmap, METH_VARARGS, PyFT2Font_set_charmap__doc__},
@@ -1612,7 +1761,11 @@ static PyTypeObject *PyFT2Font_init_type()
         {NULL}
     };
 
+#if !TARGET_OS_IPHONE
     static PyBufferProcs buffer_procs;
+#else
+    static __thread PyBufferProcs buffer_procs;
+#endif
     buffer_procs.bf_getbuffer = (getbufferproc)PyFT2Font_get_buffer;
 
     PyFT2FontType.tp_name = "matplotlib.ft2font.FT2Font";
@@ -1629,7 +1782,11 @@ static PyTypeObject *PyFT2Font_init_type()
     return &PyFT2FontType;
 }
 
+#if !TARGET_OS_IPHONE
 static struct PyModuleDef moduledef = { PyModuleDef_HEAD_INIT, "ft2font" };
+#else
+static __thread struct PyModuleDef moduledef = { PyModuleDef_HEAD_INIT, "ft2font" };
+#endif
 
 PyMODINIT_FUNC PyInit_ft2font(void)
 {
