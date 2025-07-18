@@ -58,7 +58,7 @@ depending on the library, by methods with names like ``_exec``,
 ``run``, or ``start``.
 
 
-All GUI frameworks (Qt, Wx, Gtk, tk, OSX, or web) have some method of
+All GUI frameworks (Qt, Wx, Gtk, tk, macOS, or web) have some method of
 capturing user interactions and passing them back to the application
 (for example ``Signal`` / ``Slot`` framework in Qt) but the exact
 details depend on the toolkit.  Matplotlib has a :ref:`backend
@@ -236,7 +236,7 @@ which would poll for new data and update the figure at 1Hz.
 
 .. _spin_event_loop:
 
-Explicitly spinning the event Loop
+Explicitly spinning the event loop
 ----------------------------------
 
 .. autosummary::

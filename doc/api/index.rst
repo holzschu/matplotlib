@@ -4,25 +4,23 @@ API Reference
 Matplotlib interfaces
 ---------------------
 
-Matplotlib provides two different interfaces:
-
-- **Axes interface**: create a `.Figure` and one or more `~.axes.Axes` objects
-  (typically using `.pyplot.subplots`), then *explicitly* use methods on these objects
-  to add data, configure limits, set labels etc.
-- **pyplot interface**: consists of functions in the `.pyplot` module. Figure and Axes
-  are manipulated through these functions and are only *implicitly* present in the
-  background.
-
-See :ref:`api_interfaces` for a more detailed description of both and their recommended
-use cases.
+Matplotlib has two interfaces. See :ref:`api_interfaces` for a more detailed
+description of both and their recommended use cases.
 
 .. grid:: 1 1 2 2
-    :padding: 0 0 1 1
+    :padding: 0
+    :gutter: 2
 
     .. grid-item-card::
+        :shadow: none
+        :class-footer: api-interface-footer
 
         **Axes interface** (object-based, explicit)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+        create a `.Figure` and one or more `~.axes.Axes` objects, then *explicitly* use
+        methods on these objects to add data, configure limits, set labels etc.
+
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
         API:
 
@@ -30,14 +28,44 @@ use cases.
         - :mod:`~matplotlib.axes`: add data, limits, labels etc.
         - `.Figure`: for figure-level methods
 
+        +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        Example:
+
+        .. code-block:: python
+           :class: api-interface-example
+
+           fig, ax = plt.subplots()
+           ax.plot(x, y)
+           ax.set_title("Sample plot")
+           plt.show()
+
+
     .. grid-item-card::
+        :shadow: none
+        :class-footer: api-interface-footer
 
         **pyplot interface** (function-based, implicit)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+        consists of functions in the `.pyplot` module. Figure and Axes are manipulated
+        through these functions and are only *implicitly* present in the background.
+
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
         API:
 
         - `matplotlib.pyplot`
+
+        +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        Example:
+
+        .. code-block:: python
+           :class: api-interface-example
+
+           plt.plot(x, y)
+           plt.title("Sample plot")
+           plt.show()
 
 
 .. _api-index:
@@ -51,7 +79,6 @@ Alphabetical list of modules:
    :maxdepth: 1
 
    matplotlib_configuration_api.rst
-   afm_api.rst
    animation_api.rst
    artist_api.rst
    axes_api.rst
@@ -70,7 +97,6 @@ Alphabetical list of modules:
    container_api.rst
    contour_api.rst
    dates_api.rst
-   docstring_api.rst
    dviread.rst
    figure_api.rst
    font_manager_api.rst
@@ -98,6 +124,7 @@ Alphabetical list of modules:
    sphinxext_mathmpl_api.rst
    sphinxext_plot_directive_api.rst
    sphinxext_figmpl_directive_api.rst
+   sphinxext_roles.rst
    spines_api.rst
    style_api.rst
    table_api.rst
@@ -105,16 +132,18 @@ Alphabetical list of modules:
    text_api.rst
    texmanager_api.rst
    ticker_api.rst
-   tight_bbox_api.rst
-   tight_layout_api.rst
    transformations.rst
    tri_api.rst
-   type1font.rst
    typing_api.rst
    units_api.rst
    widgets_api.rst
+   _afm_api.rst
    _api_api.rst
+   _docstring_api.rst
    _enums_api.rst
+   _type1font.rst
+   _tight_bbox_api.rst
+   _tight_layout_api.rst
    toolkits/mplot3d.rst
    toolkits/axes_grid1.rst
    toolkits/axisartist.rst
