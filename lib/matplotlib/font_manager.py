@@ -289,7 +289,7 @@ def findSystemFonts(fontpaths=None, fontext='ttf'):
         if sys.platform == 'win32':
             installed_fonts = _get_win32_installed_fonts()
             fontpaths = []
-        elif sys.platform == 'darwin' and os.uname().machine.startswith('iP'): 
+        elif sys.platform == 'darwin' or sys.platform == 'ios': 
             # iOS, no "fc-list" command, we just use system fonts:
             installed_fonts = []
             fontpaths = OSXFontDirectories
